@@ -1,0 +1,8 @@
+{
+  "w_criticality": 0.35,
+  "w_deadline_urgency": 0.25,
+  "w_mission_relevance": 0.20,
+  "w_efficiency": 0.10,
+  "w_cost": 0.05,
+  "w_risk": 0.05
+}

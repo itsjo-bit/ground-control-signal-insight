@@ -1,0 +1,74 @@
+{
+  "scenario_id": "nominal_pass_001",
+  "simulated": true,
+  "link_inputs": {
+    "timestamp": "2024-06-01T10:00:00+00:00",
+    "snr_db": 12.0,
+    "rssi_dbm": -80.0,
+    "nominal_data_rate_bps": 100000.0,
+    "latency_s": 0.25,
+    "link_stability": 0.92,
+    "remaining_window_s": 300.0
+  },
+  "mission_state": {
+    "mission_id": "GCSI-MISSION-001",
+    "mission_phase": "science_downlink",
+    "current_event": "nominal_pass",
+    "event_time_remaining_s": 300.0,
+    "comm_window_remaining_s": 300.0,
+    "risk_score": 0.1,
+    "risk_level": "LOW"
+  },
+  "packets": [
+    {
+      "packet_id": "pkt-hk-001",
+      "packet_type": "housekeeping",
+      "size_bits": 4096,
+      "criticality": 0.5,
+      "mission_relevance": 0.4,
+      "deadline_s": 280.0,
+      "retry_cost": 0.2,
+      "delivery_requirement": "best-effort"
+    },
+    {
+      "packet_id": "pkt-sci-001",
+      "packet_type": "science",
+      "size_bits": 65536,
+      "criticality": 0.9,
+      "mission_relevance": 1.0,
+      "deadline_s": 200.0,
+      "retry_cost": 0.8,
+      "delivery_requirement": "required"
+    },
+    {
+      "packet_id": "pkt-cmd-001",
+      "packet_type": "command_ack",
+      "size_bits": 1024,
+      "criticality": 1.0,
+      "mission_relevance": 0.9,
+      "deadline_s": 60.0,
+      "retry_cost": 0.9,
+      "delivery_requirement": "required"
+    },
+    {
+      "packet_id": "pkt-tel-001",
+      "packet_type": "telemetry",
+      "size_bits": 16384,
+      "criticality": 0.7,
+      "mission_relevance": 0.75,
+      "deadline_s": 150.0,
+      "retry_cost": 0.5,
+      "delivery_requirement": "required"
+    },
+    {
+      "packet_id": "pkt-img-001",
+      "packet_type": "image",
+      "size_bits": 262144,
+      "criticality": 0.6,
+      "mission_relevance": 0.85,
+      "deadline_s": 290.0,
+      "retry_cost": 0.6,
+      "delivery_requirement": "best-effort"
+    }
+  ]
+}
