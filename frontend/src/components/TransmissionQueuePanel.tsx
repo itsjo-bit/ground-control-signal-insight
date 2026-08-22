@@ -7,7 +7,7 @@ interface Props {
 export function TransmissionQueuePanel({ plan }: Props) {
   return (
     <section className="panel">
-      <h2>Transmission Queue <small>({plan.strategy})</small></h2>
+      <h2>Baseline Plan <small style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400 }}>({plan.strategy})</small></h2>
       <table>
         <thead>
           <tr>

@@ -1,6 +1,73 @@
 # AGENTS.md
 
-This file provides guidance to agents when working with code in this repository.
+This file provides guidance to agents working with code in this repository.
+
+## Granite AI Agent — architecture (Phase 6)
+
+### How the agent works (current implementation)
+
+`GraniteAgent.recommend()` operates as a **context-injection** (prompt-based) agent:
+
+1. The deterministic pipeline runs first:
+   - `TelecomEngine` computes `LinkState` from raw scenario inputs.
+   - `CandidateGenerator` produces four `CandidatePlan` variants.
+   - `PlanEvaluator` evaluates all four plans analytically (no RNG).
+2. All four objects — `LinkState`, `MissionState`, `list[CandidatePlan]`,
+   `list[EvaluationResult]` — are serialized to JSON and passed to Granite
+   as a structured user message.
+3. Granite reasons over these pre-computed facts and returns a structured
+   `AIRecommendation` JSON object.
+4. The response is parsed and validated server-side before being returned.
+
+### What Granite does and does not do
+
+| Responsibility | Python (deterministic) | Granite (LLM) |
+|----------------|----------------------|---------------|
+| RF calculations (Eb/N0, BER, goodput) | ✓ | ✗ never |
+| Packet scheduling / scoring | ✓ | ✗ never |
+| Plan evaluation metrics | ✓ | ✗ never |
+| Stochastic simulation | ✓ | ✗ never |
+| Plan recommendation reasoning | — | ✓ |
+| Evidence citation | — | ✓ (validated server-side) |
+| Human-readable justification | — | ✓ |
+
+### TOOL_SCHEMAS — deferred / future capability
+
+`backend/app/agent/tools.py` defines `TOOL_SCHEMAS`: a list of
+OpenAI-compatible function-calling schemas for six domain tools
+(`get_link_state`, `get_mission_state`, `get_transmission_queue`,
+`generate_candidate_plans`, `evaluate_plan`, `simulate_what_if`).
+
+**These schemas are NOT currently passed to the Granite API.**
+The current implementation does not use Granite's function-calling
+interface. `TOOL_SCHEMAS` exists as a clearly-labelled draft for a
+future iterative tool-calling loop.
+
+Do not describe the current implementation as "tool-calling" or
+"function-calling" — it is prompt-based context injection.
+
+### Validation invariants (enforced in code)
+
+- `recommended_plan_id` **must** be one of the provided `plan_id` values →
+  `GraniteResponseError` if violated.
+- `alternative_plan_id` **must** be `None` or one of the provided `plan_id`
+  values → `GraniteResponseError` if violated.
+- `EvidenceItem.field` **must** be a real field name in `LinkState`,
+  `MissionState`, or `EvaluationResult` → `EvidenceHallucinationError`.
+- `risk_level` **must** be a valid `RiskLevel` enum value →
+  `GraniteResponseError`.
+- `confidence` and `risk_score` **must** be in `[0.0, 1.0]`; Pydantic
+  `ValidationError` is caught and re-raised as `GraniteResponseError` so
+  the route returns HTTP 422, not an unhandled 500.
+
+### Granite unavailability
+
+When `GCSI_GRANITE_API_KEY` is empty or the API call fails, `GraniteAPIError`
+is raised. `routes_agent.py` maps this to HTTP 502. No fabricated fallback
+recommendation is ever returned. The frontend gracefully hides the
+`RecommendationPanel` when the endpoint returns an error.
+
+---
 
 ## Stack
 

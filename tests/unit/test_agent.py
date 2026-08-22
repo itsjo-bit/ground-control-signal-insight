@@ -195,6 +195,63 @@ class TestParseResponse:
         result = agent._parse_response(fenced, self._plans())
         assert isinstance(result, AIRecommendation)
 
+    def test_invalid_alternative_plan_id_raises_response_error(self):
+        """alternative_plan_id must be None or a known plan_id."""
+        agent = self._agent()
+        data = json.loads(_valid_response("baseline"))
+        data["alternative_plan_id"] = "invented-plan-xyz"
+        with pytest.raises(GraniteResponseError, match="alternative_plan_id"):
+            agent._parse_response(json.dumps(data), self._plans())
+
+    def test_none_alternative_plan_id_is_accepted(self):
+        """alternative_plan_id=None must pass validation."""
+        agent = self._agent()
+        data = json.loads(_valid_response("baseline"))
+        data["alternative_plan_id"] = None
+        result = agent._parse_response(json.dumps(data), self._plans())
+        assert result.alternative_plan_id is None
+
+    def test_valid_alternative_plan_id_is_accepted(self):
+        """alternative_plan_id pointing to a real plan must pass."""
+        agent = self._agent()
+        plans = [make_plan("baseline"), make_plan("deadline-first")]
+        data = json.loads(_valid_response("baseline"))
+        data["alternative_plan_id"] = "deadline-first"
+        result = agent._parse_response(json.dumps(data), plans)
+        assert result.alternative_plan_id == "deadline-first"
+
+    def test_confidence_above_1_raises_response_error(self):
+        """confidence > 1.0 from Granite must raise GraniteResponseError, not an unhandled 500."""
+        agent = self._agent()
+        data = json.loads(_valid_response())
+        data["confidence"] = 1.5
+        with pytest.raises(GraniteResponseError):
+            agent._parse_response(json.dumps(data), self._plans())
+
+    def test_confidence_below_0_raises_response_error(self):
+        """confidence < 0.0 from Granite must raise GraniteResponseError."""
+        agent = self._agent()
+        data = json.loads(_valid_response())
+        data["confidence"] = -0.1
+        with pytest.raises(GraniteResponseError):
+            agent._parse_response(json.dumps(data), self._plans())
+
+    def test_risk_score_above_1_raises_response_error(self):
+        """risk_score > 1.0 from Granite must raise GraniteResponseError."""
+        agent = self._agent()
+        data = json.loads(_valid_response())
+        data["risk_score"] = 1.1
+        with pytest.raises(GraniteResponseError):
+            agent._parse_response(json.dumps(data), self._plans())
+
+    def test_risk_score_below_0_raises_response_error(self):
+        """risk_score < 0.0 from Granite must raise GraniteResponseError."""
+        agent = self._agent()
+        data = json.loads(_valid_response())
+        data["risk_score"] = -0.5
+        with pytest.raises(GraniteResponseError):
+            agent._parse_response(json.dumps(data), self._plans())
+
 
 # ---------------------------------------------------------------------------
 # API unavailability — no API key

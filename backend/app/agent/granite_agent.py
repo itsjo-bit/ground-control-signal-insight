@@ -295,6 +295,14 @@ class GraniteAgent:
                 )
             )
 
+        # Validate alternative_plan_id — must be None or a known plan_id.
+        alt_plan_id: str | None = data.get("alternative_plan_id")
+        if alt_plan_id is not None and alt_plan_id not in valid_plan_ids:
+            raise GraniteResponseError(
+                f"Granite returned unknown alternative_plan_id '{alt_plan_id}'. "
+                f"Valid plan IDs: {valid_plan_ids}"
+            )
+
         # Build packet_actions: transmit all packets in recommended plan order.
         recommended_plan = next(
             (p for p in plans if p.plan_id == data["recommended_plan_id"]), None
@@ -308,13 +316,22 @@ class GraniteAgent:
                     "rank": rank,
                 })
 
-        return AIRecommendation(
-            recommended_plan_id=data["recommended_plan_id"],
-            packet_actions=packet_actions,
-            reasoning=data["reasoning"],
-            confidence=float(data["confidence"]),
-            risk_score=float(data["risk_score"]),
-            risk_level=risk_level,
-            evidence=evidence_items,
-            alternative_plan_id=data.get("alternative_plan_id"),
-        )
+        # Construct and return AIRecommendation.
+        # Catch Pydantic ValidationError (e.g. out-of-range confidence/risk_score)
+        # and re-raise as GraniteResponseError so callers receive a well-typed
+        # error and the route maps it to HTTP 422 rather than an unhandled 500.
+        try:
+            return AIRecommendation(
+                recommended_plan_id=data["recommended_plan_id"],
+                packet_actions=packet_actions,
+                reasoning=data["reasoning"],
+                confidence=float(data["confidence"]),
+                risk_score=float(data["risk_score"]),
+                risk_level=risk_level,
+                evidence=evidence_items,
+                alternative_plan_id=alt_plan_id,
+            )
+        except Exception as exc:  # noqa: BLE001  (catches pydantic.ValidationError)
+            raise GraniteResponseError(
+                f"Granite response failed AIRecommendation validation: {exc}"
+            ) from exc
