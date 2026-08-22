@@ -306,3 +306,150 @@ class TestEmptyPlan:
         assert result.delivered_packets == []
         assert result.deferred_packets == []
         assert result.failed_packets == []
+
+# ===========================================================================
+# Phase 4 fix regression tests
+# ===========================================================================
+
+class TestElapsedNeverExceedsWindow:
+    """Fix 4 — elapsed_time_s must never exceed window_s."""
+
+    def test_elapsed_never_exceeds_window(self):
+        """elapsed_time_s <= window_s for any BER and packet configuration."""
+        sim = TransmissionSimulator()
+        # Use a packet that fills almost half the window to stress retransmission.
+        pkt = make_packet("p", size_bits=100_000)  # tx = 1 s at 100 kbps
+        ls = make_link_state(ber=1e-3, link_goodput_bps=100_000.0, remaining_window_s=3.0)
+        ms = make_mission_state(comm_window_remaining_s=3.0)
+        for seed in range(30):
+            result = sim.simulate(make_plan([pkt]), ls, ms, seed=seed)
+            assert result.elapsed_time_s <= 3.0, (
+                f"seed={seed}: elapsed {result.elapsed_time_s} > window 3.0"
+            )
+
+    def test_elapsed_never_exceeds_window_tight_fit(self):
+        """Specifically targets the previous overshoot bug.
+
+        Old behaviour: attempt would start at elapsed = window - epsilon,
+        complete at elapsed = window + (tx - epsilon), and still be marked
+        delivered.
+
+        Setup: window = 1.5 s, tx = 1.0 s.
+          Attempt 1 starts at elapsed=0 (fits: 0+1 ≤ 1.5).
+          If it fails, attempt 2 would start at elapsed=1.0, needing 1.0 s
+          more → completion = 2.0 s > 1.5 s window.
+          The pre-attempt guard must catch this and defer the packet.
+        """
+        sim = TransmissionSimulator()
+        pkt = make_packet("p", size_bits=100_000)  # tx = 1.0 s at 100 kbps
+        ls = make_link_state(ber=0.999, link_goodput_bps=100_000.0, remaining_window_s=1.5)
+        ms = make_mission_state(comm_window_remaining_s=1.5)
+        for seed in range(50):
+            result = sim.simulate(make_plan([pkt]), ls, ms, seed=seed)
+            assert result.elapsed_time_s <= 1.5, (
+                f"seed={seed}: elapsed {result.elapsed_time_s:.4f} > window 1.5"
+            )
+
+    def test_attempt_deferred_when_tx_cannot_fit(self):
+        """A packet whose tx_time exceeds the remaining window must be deferred.
+
+        window = 0.5 s, tx = 1.0 s → first attempt already cannot fit.
+        Packet must be deferred immediately, elapsed_s stays at 0.
+        """
+        sim = TransmissionSimulator()
+        pkt = make_packet("p", size_bits=100_000)  # tx = 1.0 s
+        ls = make_link_state(ber=0.0, link_goodput_bps=100_000.0, remaining_window_s=0.5)
+        ms = make_mission_state(comm_window_remaining_s=0.5)
+        result = sim.simulate(make_plan([pkt]), ls, ms, seed=0)
+        assert "p" in result.deferred_packets
+        assert result.elapsed_time_s == pytest.approx(0.0)
+
+
+class TestSimulatorBerOne:
+    """Fix 2 applied to simulator — BER=1 must defer immediately."""
+
+    def test_ber_one_defers_packet(self):
+        sim = TransmissionSimulator()
+        pkt = make_packet("p")
+        result = sim.simulate(
+            make_plan([pkt]),
+            make_link_state(ber=1.0),
+            make_mission_state(),
+            seed=0,
+        )
+        assert "p" in result.deferred_packets
+        assert "p" not in result.delivered_packets
+
+    def test_ber_one_does_not_consume_elapsed_time(self):
+        sim = TransmissionSimulator()
+        pkts = [make_packet(f"p{i}") for i in range(5)]
+        result = sim.simulate(
+            make_plan(pkts),
+            make_link_state(ber=1.0),
+            make_mission_state(),
+            seed=0,
+        )
+        assert result.elapsed_time_s == pytest.approx(0.0)
+        assert set(result.deferred_packets) == {f"p{i}" for i in range(5)}
+
+
+class TestFailedPackets:
+    """Fix 5 — failed_packets is populated when MAX_ATTEMPTS is exhausted."""
+
+    def test_failed_packets_populated_on_max_attempts(self):
+        """Force MAX_ATTEMPTS exhaustion by patching the constant.
+
+        We set MAX_ATTEMPTS to 1 via monkeypatching and use a BER that
+        guarantees p_success < 0.5 so a single Bernoulli trial frequently
+        fails, eventually producing a failed outcome.
+
+        To avoid flakiness we run many seeds and verify at least one
+        produces a failed packet (expected ~63% of the time with p≈0.37).
+        """
+        import backend.app.simulation.transmission_sim as sim_mod
+
+        original_max = sim_mod.MAX_ATTEMPTS
+        sim_mod.MAX_ATTEMPTS = 1  # only one attempt allowed
+        try:
+            sim = TransmissionSimulator()
+            # p_success = exp(100 * log1p(-0.01)) ≈ 0.366 → ~63% chance of failure per attempt
+            pkt = make_packet("p", size_bits=100)
+            ls = make_link_state(ber=0.01, remaining_window_s=600.0)
+            ms = make_mission_state(comm_window_remaining_s=600.0)
+
+            failed_seen = False
+            for seed in range(50):
+                result = sim.simulate(make_plan([pkt]), ls, ms, seed=seed)
+                if result.failed_packets:
+                    failed_seen = True
+                    assert "p" in result.failed_packets
+                    assert "p" not in result.delivered_packets
+                    assert "p" not in result.deferred_packets
+                    break
+            assert failed_seen, "No failed_packets observed over 50 seeds with MAX_ATTEMPTS=1"
+        finally:
+            sim_mod.MAX_ATTEMPTS = original_max
+
+    def test_failed_not_treated_as_deferred(self):
+        """failed_packets and deferred_packets are disjoint."""
+        import backend.app.simulation.transmission_sim as sim_mod
+
+        original_max = sim_mod.MAX_ATTEMPTS
+        sim_mod.MAX_ATTEMPTS = 1
+        try:
+            sim = TransmissionSimulator()
+            pkt = make_packet("p", size_bits=100)
+            ls = make_link_state(ber=0.01, remaining_window_s=600.0)
+            ms = make_mission_state(comm_window_remaining_s=600.0)
+            for seed in range(50):
+                result = sim.simulate(make_plan([pkt]), ls, ms, seed=seed)
+                # The three outcome lists must be mutually exclusive and exhaustive.
+                all_outcomes = (
+                    result.delivered_packets
+                    + result.deferred_packets
+                    + result.failed_packets
+                )
+                assert len(all_outcomes) == 1
+                assert len(set(all_outcomes)) == 1  # no duplicates
+        finally:
+            sim_mod.MAX_ATTEMPTS = original_max

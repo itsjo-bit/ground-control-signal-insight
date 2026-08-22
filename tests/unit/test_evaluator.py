@@ -337,3 +337,247 @@ class TestRiskScore:
         ev = PlanEvaluator(risk_weights=rw)
         result = ev.evaluate(make_plan([make_packet("p")]), make_link_state(), make_mission_state())
         assert isinstance(result, EvaluationResult)
+
+
+# ===========================================================================
+# Phase 4 fix regression tests
+# ===========================================================================
+
+class TestWindowPressureNonZero:
+    """Fix 1 — window_pressure = cumulative_time_s / window_s."""
+
+    def test_window_pressure_zero_when_no_packets(self):
+        """An empty plan consumes no budget → window_pressure = 0."""
+        ev = PlanEvaluator(risk_weights=RiskWeights(
+            w_deadline_miss=1e-9, w_critical_deficit=1e-9, w_window_pressure=1.0
+        ))
+        result = ev.evaluate(make_plan([]), make_link_state(), make_mission_state())
+        assert result.risk_score == pytest.approx(0.0)
+
+    def test_window_pressure_numerically_correct(self):
+        """Single packet that consumes exactly half the window.
+
+        Setup:
+          goodput = 100 000 bps, window = 300 s (both link and mission)
+          packet size_bits = 15 000 000 → tx_time = 150 s  (half the window)
+          ber = 0 → p_success = 1.0 → cost = tx_time = 150 s
+          expected_completion = 150 s ≤ 300 s → delivered
+
+        window_pressure = cumulative_time_s / window_s = 150 / 300 = 0.5
+
+        With weights w_deadline_miss=0, w_critical_deficit=0, w_window_pressure=1:
+          risk_score = 1.0 * 0.5 = 0.5
+        """
+        ev = PlanEvaluator(risk_weights=RiskWeights(
+            w_deadline_miss=1e-9, w_critical_deficit=1e-9, w_window_pressure=1.0
+        ))
+        pkt = make_packet("pkt-x", size_bits=15_000_000, deadline_s=300.0)
+        ls = make_link_state(ber=0.0, link_goodput_bps=100_000.0, remaining_window_s=300.0)
+        ms = make_mission_state(comm_window_remaining_s=300.0)
+        result = ev.evaluate(make_plan([pkt]), ls, ms)
+        assert result.risk_score == pytest.approx(0.5, rel=1e-5)
+
+    def test_window_pressure_one_when_full_window_consumed(self):
+        """Plan that exactly fills the window → window_pressure = 1."""
+        ev = PlanEvaluator(risk_weights=RiskWeights(
+            w_deadline_miss=1e-9, w_critical_deficit=1e-9, w_window_pressure=1.0
+        ))
+        # 300 s window, one packet that takes exactly 300 s
+        pkt = make_packet("pkt-x", size_bits=30_000_000, deadline_s=300.0)
+        ls = make_link_state(ber=0.0, link_goodput_bps=100_000.0, remaining_window_s=300.0)
+        ms = make_mission_state(comm_window_remaining_s=300.0)
+        result = ev.evaluate(make_plan([pkt]), ls, ms)
+        assert result.risk_score == pytest.approx(1.0, rel=1e-5)
+
+    def test_window_pressure_zero_budget_returns_one(self):
+        """Zero-window → pressure = 1.0 (no budget available at all)."""
+        ev = PlanEvaluator(risk_weights=RiskWeights(
+            w_deadline_miss=1e-9, w_critical_deficit=1e-9, w_window_pressure=1.0
+        ))
+        result = ev.evaluate(
+            make_plan([make_packet("p")]),
+            make_link_state(remaining_window_s=0.0),
+            make_mission_state(comm_window_remaining_s=0.0),
+        )
+        assert result.risk_score == pytest.approx(1.0)
+
+
+class TestZeroProbabilityPacket:
+    """Fix 2 — BER=1 / p_success=0 packets must be deferred, not delivered."""
+
+    def test_ber_one_packet_is_deferred(self):
+        """With BER=1.0 every packet has p_success=0 and must be deferred."""
+        ev = PlanEvaluator()
+        pkt = make_packet("pkt-x")
+        result = ev.evaluate(
+            make_plan([pkt]),
+            make_link_state(ber=1.0),
+            make_mission_state(),
+        )
+        assert "pkt-x" in result.deferred_packets
+        assert "pkt-x" not in result.delivered_ids if hasattr(result, "delivered_ids") else True
+
+    def test_ber_one_packet_not_in_mission_value(self):
+        pkt = make_packet("pkt-x", criticality=1.0, mission_relevance=1.0)
+        ev = PlanEvaluator()
+        result = ev.evaluate(
+            make_plan([pkt]),
+            make_link_state(ber=1.0),
+            make_mission_state(),
+        )
+        assert result.mission_value == pytest.approx(0.0)
+
+    def test_ber_one_packet_does_not_consume_window(self):
+        """Deferred zero-prob packet must not advance cumulative_time_s."""
+        ev = PlanEvaluator(risk_weights=RiskWeights(
+            w_deadline_miss=1e-9, w_critical_deficit=1e-9, w_window_pressure=1.0
+        ))
+        pkt = make_packet("pkt-x", size_bits=8_000)
+        result = ev.evaluate(
+            make_plan([pkt]),
+            make_link_state(ber=1.0, remaining_window_s=300.0),
+            make_mission_state(comm_window_remaining_s=300.0),
+        )
+        # No budget consumed → window_pressure = 0 → risk_score = 0
+        assert result.risk_score == pytest.approx(0.0)
+
+    def test_ber_one_does_not_count_as_critical_delivered(self):
+        pkt = make_packet("pkt-x", criticality=0.9)
+        ev = PlanEvaluator()
+        result = ev.evaluate(
+            make_plan([pkt]),
+            make_link_state(ber=1.0),
+            make_mission_state(),
+        )
+        assert result.critical_packets_delivered == 0
+        assert result.total_critical_packets == 1
+
+    def test_all_packets_deferred_on_ber_one(self):
+        pkts = [make_packet(f"p{i}") for i in range(4)]
+        ev = PlanEvaluator()
+        result = ev.evaluate(make_plan(pkts), make_link_state(ber=1.0), make_mission_state())
+        assert set(result.deferred_packets) == {f"p{i}" for i in range(4)}
+
+    def test_ber_one_retransmission_overhead_is_zero(self):
+        """Zero-prob packets contribute no retransmission overhead."""
+        pkt = make_packet("pkt-x")
+        ev = PlanEvaluator()
+        result = ev.evaluate(
+            make_plan([pkt]),
+            make_link_state(ber=1.0),
+            make_mission_state(),
+        )
+        assert result.retransmission_overhead == pytest.approx(0.0)
+
+
+class TestExpectedCompletionWindowFit:
+    """Fix 3 — packet deferred when expected_completion > window_s."""
+
+    def test_packet_deferred_when_expected_completion_exceeds_window(self):
+        """Packet whose expected cost would overflow the window is deferred.
+
+        Setup:
+          goodput = 100 000 bps, window = 10 s
+          packet size = 1 500 000 bits → tx_time = 15 s > 10 s window
+          Even though cumulative_time_s = 0 < 10 s, expected_completion = 15 s > 10 s.
+        """
+        ev = PlanEvaluator()
+        pkt = make_packet("big", size_bits=1_500_000)
+        ls = make_link_state(ber=0.0, link_goodput_bps=100_000.0, remaining_window_s=10.0)
+        ms = make_mission_state(comm_window_remaining_s=10.0)
+        result = ev.evaluate(make_plan([pkt]), ls, ms)
+        assert "big" in result.deferred_packets
+
+    def test_deferred_overflow_packet_not_in_mission_value(self):
+        pkt = make_packet("big", size_bits=1_500_000, criticality=1.0, mission_relevance=1.0)
+        ls = make_link_state(ber=0.0, link_goodput_bps=100_000.0, remaining_window_s=10.0)
+        ms = make_mission_state(comm_window_remaining_s=10.0)
+        ev = PlanEvaluator()
+        result = ev.evaluate(make_plan([pkt]), ls, ms)
+        assert result.mission_value == pytest.approx(0.0)
+
+    def test_deferred_overflow_does_not_consume_budget(self):
+        """An overflowing packet must not advance cumulative_time_s."""
+        ev = PlanEvaluator(risk_weights=RiskWeights(
+            w_deadline_miss=1e-9, w_critical_deficit=1e-9, w_window_pressure=1.0
+        ))
+        pkt = make_packet("big", size_bits=1_500_000)
+        ls = make_link_state(ber=0.0, link_goodput_bps=100_000.0, remaining_window_s=10.0)
+        ms = make_mission_state(comm_window_remaining_s=10.0)
+        result = ev.evaluate(make_plan([pkt]), ls, ms)
+        # No budget consumed → window_pressure = 0 → risk_score = 0
+        assert result.risk_score == pytest.approx(0.0)
+
+    def test_exact_fit_packet_is_delivered(self):
+        """Packet whose expected_completion == window_s exactly fits."""
+        ev = PlanEvaluator()
+        # tx = 10 s, window = 10 s → expected_completion = 10 s ≤ 10 s
+        pkt = make_packet("exact", size_bits=1_000_000)
+        ls = make_link_state(ber=0.0, link_goodput_bps=100_000.0, remaining_window_s=10.0)
+        ms = make_mission_state(comm_window_remaining_s=10.0)
+        result = ev.evaluate(make_plan([pkt]), ls, ms)
+        assert "exact" not in result.deferred_packets
+
+
+class TestRetransmissionOverheadNonTrivial:
+    """Test 5 — retransmission_overhead > 0 with known non-trivial p_success."""
+
+    def test_overhead_positive_with_nonzero_ber(self):
+        """With ber > 0, retransmission_overhead must be strictly positive."""
+        ev = PlanEvaluator()
+        pkt = make_packet("pkt-x", size_bits=8_000)
+        result = ev.evaluate(
+            make_plan([pkt]),
+            make_link_state(ber=1e-4),
+            make_mission_state(),
+        )
+        assert result.retransmission_overhead > 0.0
+
+    def test_overhead_numerical_value(self):
+        """Verify overhead = (1/p_success - 1) * tx_time with known inputs.
+
+        Setup:
+          size_bits = 8_000, goodput = 100_000 bps → tx = 0.08 s
+          ber = 0.0  →  p_success = 1.0
+          overhead = (1/1.0 - 1) * 0.08 = 0.0
+
+        With ber = 0.001, size=1000 bits:
+          p_success = exp(1000 * log1p(-0.001)) ≈ exp(-1.0005) ≈ 0.3677
+          tx = 1000 / 100_000 = 0.01 s
+          overhead = (1/0.3677 - 1) * 0.01 ≈ (2.7196 - 1) * 0.01 ≈ 0.01720 s
+        """
+        import math as _math
+        ber = 0.001
+        size_bits = 1_000
+        goodput = 100_000.0
+        tx = size_bits / goodput
+        p_s = _math.exp(size_bits * _math.log1p(-ber))
+        expected_overhead = (1.0 / p_s - 1.0) * tx
+
+        ev = PlanEvaluator()
+        pkt = make_packet("pkt-x", size_bits=size_bits)
+        ls = make_link_state(ber=ber, link_goodput_bps=goodput, remaining_window_s=300.0)
+        ms = make_mission_state(comm_window_remaining_s=300.0)
+        result = ev.evaluate(make_plan([pkt]), ls, ms)
+        assert result.retransmission_overhead == pytest.approx(expected_overhead, rel=1e-5)
+
+
+class TestAvgPacketCompletionTime:
+    """Test 6 — avg_packet_delay_s with two packets and known expected times."""
+
+    def test_two_packet_avg_completion_time(self):
+        """With two packets and BER=0, avg completion = (t1 + t2) / 2.
+
+        Setup:
+          goodput = 100_000 bps, window = 300 s
+          pkt_a: 10_000 bits → tx_a = 0.1 s → completion_a = 0.1 s
+          pkt_b: 20_000 bits → tx_b = 0.2 s → completion_b = 0.3 s
+          avg = (0.1 + 0.3) / 2 = 0.2 s
+        """
+        ev = PlanEvaluator()
+        pkt_a = make_packet("a", size_bits=10_000)
+        pkt_b = make_packet("b", size_bits=20_000)
+        ls = make_link_state(ber=0.0, link_goodput_bps=100_000.0, remaining_window_s=300.0)
+        ms = make_mission_state(comm_window_remaining_s=300.0)
+        result = ev.evaluate(make_plan([pkt_a, pkt_b]), ls, ms)
+        assert result.avg_packet_delay_s == pytest.approx(0.2, rel=1e-5)

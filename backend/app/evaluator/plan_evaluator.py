@@ -10,7 +10,7 @@ Risk score formula::
 
     deadline_miss_rate  = deadline_misses / max(total_packets, 1)
     critical_deficit    = 1 - (critical_packets_delivered / max(total_critical_packets, 1))
-    window_pressure     = 1 - min(comm_window_remaining_s / window_s, 1.0)
+    window_pressure     = min(cumulative_time_s / window_s, 1.0)   # fraction of budget consumed
 
     risk_score = clamp(
         w_deadline_miss    * deadline_miss_rate
@@ -29,8 +29,6 @@ Risk level thresholds::
 ``criticality_threshold`` for counting "critical" packets is 0.7 (configurable
 via constructor; not a SchedulerWeights concern).
 """
-
-import math
 
 from ..config import RiskWeights
 from ..models.candidate_plan import CandidatePlan
@@ -123,31 +121,38 @@ class PlanEvaluator:
         for pkt in plan.packets:
             tx = transmission_time(pkt.size_bits, link_state.link_goodput_bps)
             p_s = packet_success_probability(link_state.ber, pkt.size_bits)
-            cost = expected_transmission_cost(tx, p_s)
 
-            # Expected delivery timestamp for this packet (mid-packet not counted —
-            # we use the *completion* time: when this packet finishes).
-            expected_completion = cumulative_time_s + (cost if not math.isinf(cost) else tx)
-
-            # If adding this packet exceeds the window budget, defer it.
-            if cumulative_time_s >= window_s:
+            # Fix 2: a zero-probability packet can never be delivered regardless
+            # of remaining window.  Defer it immediately without consuming budget.
+            if p_s <= 0.0:
                 deferred_ids.append(pkt.packet_id)
                 continue
 
-            # Packet can be started — count it as delivered (analytically).
+            cost = expected_transmission_cost(tx, p_s)
+
+            # Fix 3: a packet is analytically delivered only if its expected
+            # completion time fits entirely within the remaining window budget.
+            # "Expected completion" = cumulative budget consumed so far + this
+            # packet's expected cost (including retransmission factor).
+            expected_completion = cumulative_time_s + cost
+
+            if expected_completion > window_s:
+                # Packet would not complete within the window — defer it.
+                deferred_ids.append(pkt.packet_id)
+                continue
+
+            # Packet fits — count it as analytically delivered.
             delivered_ids.append(pkt.packet_id)
-            cumulative_time_s += cost if not math.isinf(cost) else tx
+            cumulative_time_s = expected_completion   # advance by full expected cost
 
             # Accumulate analytical metrics for delivered packets.
             mission_value += pkt.criticality * pkt.mission_relevance
             delivery_timestamps.append(expected_completion)
 
-            # Retransmission overhead: expected_extra_attempts * tx_time
-            # extra_attempts = (1/p_success) - 1  when p_success > 0
-            if p_s > 0.0 and not math.isinf(cost):
-                retransmission_overhead += (1.0 / p_s - 1.0) * tx
-            # If p_success == 0 (cost == inf) the packet is already deferred above or
-            # we add no overhead contribution (zero-probability delivery).
+            # Retransmission overhead: expected extra transmission time beyond
+            # the single-attempt baseline.
+            # extra = (1/p_success - 1) * tx_time  (always >= 0 here since p_s > 0)
+            retransmission_overhead += (1.0 / p_s - 1.0) * tx
 
             if pkt.deadline_s < expected_completion:
                 deadline_misses += 1
@@ -159,13 +164,6 @@ class PlanEvaluator:
         for pkt in plan.packets:
             if pkt.criticality >= self._criticality_threshold:
                 total_critical += 1
-
-        # --- Deferred pass: any remaining packets beyond window budget ---
-        # (Already done inside the loop above; collect any not yet deferred.)
-        # Packets that weren't put in delivered_ids or deferred_ids are those
-        # that started but had cost=inf AND were not yet window-exceeded.  Those
-        # are treated as window-budget-consuming (at raw tx_time) and delivered.
-        # This is already handled consistently in the loop above.
 
         # --- Scalar metrics ---
         avg_delay = (
@@ -197,9 +195,11 @@ class PlanEvaluator:
             if total_critical == 0
             else 1.0 - (critical_delivered / total_critical)
         )
-        window_pressure = 1.0 - min(
-            mission_state.comm_window_remaining_s / window_s if window_s > 0.0 else 0.0,
-            1.0,
+        # Fix 1: window_pressure = fraction of the initial window budget consumed
+        # by the plan's expected transmission cost.  When window_s = 0 there is no
+        # budget, so pressure is maximum (1.0).
+        window_pressure = (
+            min(cumulative_time_s / window_s, 1.0) if window_s > 0.0 else 1.0
         )
 
         risk_score_raw = (
