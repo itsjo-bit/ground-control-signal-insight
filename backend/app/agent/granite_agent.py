@@ -102,13 +102,37 @@ RULES (non-negotiable):
 4. Your recommendation must be one of the provided plan_id values.
 5. Respond ONLY with a valid JSON object matching the AIRecommendation schema.
 
+RISK SEMANTICS (critical — read carefully):
+There are three distinct risk concepts in the data you receive. Do NOT confuse them.
+
+A. mission_state.risk_score / mission_state.risk_level
+   Describes the CURRENT OVERALL MISSION CONDITION before any plan is chosen.
+   This is context only. Do NOT copy it into your recommendation's risk_score or risk_level.
+
+B. evaluation_result.risk_score / evaluation_result.risk_level  (one per candidate plan)
+   Describes the ANALYTICAL RISK of that individual transmission plan.
+   Your recommendation's risk_score and risk_level MUST be taken from the
+   evaluation_result of the plan you are recommending (recommended_plan_id).
+
+C. AIRecommendation.risk_score / risk_level  (your output)
+   MUST reflect the risk of the RECOMMENDED PLAN, not the mission condition.
+   Use the risk_score from that plan's evaluation_result.
+   Derive risk_level from risk_score using ONLY this mapping — no exceptions:
+     risk_score <  0.25  →  LOW
+     risk_score <  0.50  →  MEDIUM
+     risk_score <  0.75  →  HIGH
+     risk_score >= 0.75  →  CRITICAL
+   Example: if the recommended plan has evaluation_result.risk_score = 0.40,
+   you MUST output risk_score = 0.40 and risk_level = "MEDIUM".
+   Do NOT describe mission_state.risk_level as if it were the recommendation risk level.
+
 AIRecommendation JSON schema:
 {
   "recommended_plan_id": "<string — one of the provided plan_ids>",
   "reasoning": "<string — human-readable explanation>",
   "confidence": <float in [0.0, 1.0]>,
-  "risk_score": <float in [0.0, 1.0]>,
-  "risk_level": "<LOW|MEDIUM|HIGH|CRITICAL>",
+  "risk_score": <float from evaluation_result of the recommended plan>,
+  "risk_level": "<LOW|MEDIUM|HIGH|CRITICAL — derived from risk_score using the mapping above>",
   "evidence": [
     {
       "source": "<link_state|mission_state|evaluation_result>",
@@ -259,7 +283,7 @@ class GraniteAgent:
         """
         user_message = self._build_user_message(link_state, mission_state, plans, evaluations)
         raw_response = self._call_api(user_message)
-        return self._parse_response(raw_response, plans)
+        return self._parse_response(raw_response, plans, evaluations)
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -402,13 +426,14 @@ class GraniteAgent:
             raise GraniteAPIError(f"Unexpected Granite API response shape: {type(exc).__name__}") from exc
 
     def _parse_response(
-        self, raw: str, plans: list[CandidatePlan]
+        self, raw: str, plans: list[CandidatePlan], evaluations: list[EvaluationResult]
     ) -> AIRecommendation:
         """Parse and validate the raw Granite response into an AIRecommendation.
 
         Raises:
             GraniteResponseError:       If the JSON is malformed or required fields
-                                        are missing / invalid.
+                                        are missing / invalid, or if no EvaluationResult
+                                        exists for the recommended plan.
             EvidenceHallucinationError: If an EvidenceItem.field is not a known
                                         field name in the citeable models.
         """
@@ -443,13 +468,17 @@ class GraniteAgent:
                 f"Valid: {valid_plan_ids}"
             )
 
-        # Validate risk_level is a valid enum value.
-        try:
-            risk_level = RiskLevel(data["risk_level"])
-        except ValueError as exc:
+        # Bind risk_score and risk_level to the deterministic EvaluationResult for
+        # the recommended plan.  Granite's self-reported values are intentionally
+        # discarded: the evaluator is the sole authority for these metrics.
+        recommended_eval = next(
+            (e for e in evaluations if e.plan_id == data["recommended_plan_id"]), None
+        )
+        if recommended_eval is None:
             raise GraniteResponseError(
-                f"Granite returned invalid risk_level '{data['risk_level']}'"
-            ) from exc
+                f"No EvaluationResult found for recommended plan "
+                f"'{data['recommended_plan_id']}'. Cannot bind authoritative risk values."
+            )
 
         # Validate and construct EvidenceItems — check for hallucinated field names.
         evidence_items: list[EvidenceItem] = []
@@ -491,7 +520,9 @@ class GraniteAgent:
                 })
 
         # Construct and return AIRecommendation.
-        # Catch Pydantic ValidationError (e.g. out-of-range confidence/risk_score)
+        # risk_score and risk_level come from the authoritative EvaluationResult, not
+        # from Granite's response.  All other fields come from Granite.
+        # Catch Pydantic ValidationError (e.g. out-of-range confidence)
         # and re-raise as GraniteResponseError so callers receive a well-typed
         # error and the route maps it to HTTP 422 rather than an unhandled 500.
         try:
@@ -500,8 +531,8 @@ class GraniteAgent:
                 packet_actions=packet_actions,
                 reasoning=data["reasoning"],
                 confidence=float(data["confidence"]),
-                risk_score=float(data["risk_score"]),
-                risk_level=risk_level,
+                risk_score=recommended_eval.risk_score,
+                risk_level=recommended_eval.risk_level,
                 evidence=evidence_items,
                 alternative_plan_id=alt_plan_id,
             )
