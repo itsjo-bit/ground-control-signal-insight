@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "gcsi-backend"
@@ -21,14 +21,4 @@ dependencies = [
 dev = [
     "pytest>=8.2",
     "pytest-asyncio>=0.23",
-]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["."]
-asyncio_mode = "auto"
-# Exclude live API tests by default.  Run with: pytest -m granite
-addopts = "-m 'not granite'"
-markers = [
-    "granite: marks tests that require a live IBM Granite API key (select with -m granite)",
 ]
