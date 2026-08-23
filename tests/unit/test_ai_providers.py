@@ -132,14 +132,19 @@ def reset_state():
 class TestProviderFactory:
     def test_returns_local_provider_when_no_granite_key(self):
         """Without GCSI_GRANITE_API_KEY, factory must return LocalRuleBasedProvider."""
-        with patch.dict(os.environ, {"GCSI_GRANITE_API_KEY": "", "GCSI_OLLAMA_ENABLED": "false"}):
+        with patch.dict(os.environ, {
+            "GCSI_GRANITE_API_KEY": "", "GCSI_GEMINI_API_KEY": "",
+            "GCSI_OLLAMA_ENABLED": "false", "GCSI_AI_PROVIDER": "",
+        }):
             provider = get_provider()
         assert isinstance(provider, LocalRuleBasedProvider)
         assert provider.provider_name == "Local"
 
     def test_returns_granite_provider_when_api_key_set(self):
         """With GCSI_GRANITE_API_KEY set, factory must return GraniteProvider."""
-        with patch.dict(os.environ, {"GCSI_GRANITE_API_KEY": "fake-key-for-test"}):
+        with patch.dict(os.environ, {
+            "GCSI_GRANITE_API_KEY": "fake-key-for-test", "GCSI_AI_PROVIDER": "",
+        }):
             provider = get_provider()
         assert isinstance(provider, GraniteProvider)
         assert provider.provider_name == "Granite"
@@ -148,8 +153,8 @@ class TestProviderFactory:
         """GCSI_OLLAMA_ENABLED=true but server not reachable → LocalRuleBasedProvider."""
         from backend.app.agent import provider_factory
         with patch.dict(os.environ, {
-            "GCSI_GRANITE_API_KEY": "",
-            "GCSI_OLLAMA_ENABLED": "true",
+            "GCSI_GRANITE_API_KEY": "", "GCSI_GEMINI_API_KEY": "",
+            "GCSI_OLLAMA_ENABLED": "true", "GCSI_AI_PROVIDER": "",
         }):
             with patch.object(provider_factory, "_ollama_reachable", return_value=False):
                 provider = get_provider()
@@ -160,8 +165,8 @@ class TestProviderFactory:
         """GCSI_OLLAMA_ENABLED=true and Ollama reachable → OllamaProvider."""
         from backend.app.agent import provider_factory
         with patch.dict(os.environ, {
-            "GCSI_GRANITE_API_KEY": "",
-            "GCSI_OLLAMA_ENABLED": "true",
+            "GCSI_GRANITE_API_KEY": "", "GCSI_GEMINI_API_KEY": "",
+            "GCSI_OLLAMA_ENABLED": "true", "GCSI_AI_PROVIDER": "",
         }):
             with patch.object(provider_factory, "_ollama_reachable", return_value=True):
                 provider = get_provider()
@@ -171,7 +176,7 @@ class TestProviderFactory:
         """Granite key takes priority even when GCSI_OLLAMA_ENABLED=true."""
         with patch.dict(os.environ, {
             "GCSI_GRANITE_API_KEY": "fake-key",
-            "GCSI_OLLAMA_ENABLED": "true",
+            "GCSI_OLLAMA_ENABLED": "true", "GCSI_AI_PROVIDER": "",
         }):
             provider = get_provider()
         assert isinstance(provider, GraniteProvider)
@@ -184,7 +189,7 @@ class TestProviderFactory:
         """
         with patch.dict(os.environ, {
             "GCSI_GRANITE_API_KEY": "any-non-empty-key",
-            "GCSI_OLLAMA_ENABLED": "false",
+            "GCSI_OLLAMA_ENABLED": "false", "GCSI_AI_PROVIDER": "",
         }):
             provider = get_provider()
         assert not isinstance(provider, LocalRuleBasedProvider), (
@@ -200,7 +205,7 @@ class TestProviderFactory:
         with patch.dict(os.environ, {
             "GCSI_GRANITE_API_KEY": "test-key",
             "GCSI_GRANITE_PROJECT_ID": "",
-            "GCSI_OLLAMA_ENABLED": "false",
+            "GCSI_OLLAMA_ENABLED": "false", "GCSI_AI_PROVIDER": "",
         }):
             provider = get_provider()  # must not raise
         assert isinstance(provider, GraniteProvider)
@@ -208,8 +213,8 @@ class TestProviderFactory:
     def test_granite_api_key_whitespace_only_treated_as_missing(self):
         """A key that is only whitespace must be treated as absent (falls back to Local)."""
         with patch.dict(os.environ, {
-            "GCSI_GRANITE_API_KEY": "   ",
-            "GCSI_OLLAMA_ENABLED": "false",
+            "GCSI_GRANITE_API_KEY": "   ", "GCSI_GEMINI_API_KEY": "",
+            "GCSI_OLLAMA_ENABLED": "false", "GCSI_AI_PROVIDER": "",
         }):
             provider = get_provider()
         assert isinstance(provider, LocalRuleBasedProvider)
@@ -537,7 +542,10 @@ class TestOllamaProviderParsing:
 async def test_recommend_returns_200_without_granite_key():
     """POST /agent/recommend must succeed without GCSI_GRANITE_API_KEY."""
     app_state.load_scenario("data/scenarios/nominal_pass.json")
-    with patch.dict(os.environ, {"GCSI_GRANITE_API_KEY": "", "GCSI_OLLAMA_ENABLED": "false"}):
+    with patch.dict(os.environ, {
+        "GCSI_GRANITE_API_KEY": "", "GCSI_GEMINI_API_KEY": "",
+        "GCSI_OLLAMA_ENABLED": "false", "GCSI_AI_PROVIDER": "",
+    }):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.post("/agent/recommend")
     assert resp.status_code == 200
@@ -547,7 +555,10 @@ async def test_recommend_returns_200_without_granite_key():
 async def test_recommend_response_has_provider_field():
     """Response must include the 'provider' field."""
     app_state.load_scenario("data/scenarios/nominal_pass.json")
-    with patch.dict(os.environ, {"GCSI_GRANITE_API_KEY": "", "GCSI_OLLAMA_ENABLED": "false"}):
+    with patch.dict(os.environ, {
+        "GCSI_GRANITE_API_KEY": "", "GCSI_GEMINI_API_KEY": "",
+        "GCSI_OLLAMA_ENABLED": "false", "GCSI_AI_PROVIDER": "",
+    }):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.post("/agent/recommend")
     body = resp.json()
@@ -560,7 +571,10 @@ async def test_recommend_response_has_provider_field():
 async def test_recommend_response_has_recommendation_field():
     """Response must include the 'recommendation' field with full AIRecommendation."""
     app_state.load_scenario("data/scenarios/nominal_pass.json")
-    with patch.dict(os.environ, {"GCSI_GRANITE_API_KEY": "", "GCSI_OLLAMA_ENABLED": "false"}):
+    with patch.dict(os.environ, {
+        "GCSI_GRANITE_API_KEY": "", "GCSI_GEMINI_API_KEY": "",
+        "GCSI_OLLAMA_ENABLED": "false", "GCSI_AI_PROVIDER": "",
+    }):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.post("/agent/recommend")
     rec = resp.json()["recommendation"]
@@ -578,7 +592,10 @@ async def test_recommend_response_has_recommendation_field():
 async def test_recommend_provider_is_local_without_key():
     """Without an API key, the provider must be 'Local'."""
     app_state.load_scenario("data/scenarios/nominal_pass.json")
-    with patch.dict(os.environ, {"GCSI_GRANITE_API_KEY": "", "GCSI_OLLAMA_ENABLED": "false"}):
+    with patch.dict(os.environ, {
+        "GCSI_GRANITE_API_KEY": "", "GCSI_GEMINI_API_KEY": "",
+        "GCSI_OLLAMA_ENABLED": "false", "GCSI_AI_PROVIDER": "",
+    }):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.post("/agent/recommend")
     assert resp.json()["provider"] == "Local"
@@ -589,7 +606,10 @@ async def test_recommend_recommended_plan_id_is_valid():
     """recommended_plan_id must be one of the four generated plan IDs."""
     app_state.load_scenario("data/scenarios/nominal_pass.json")
     valid_ids = {"baseline", "deadline-first", "mission-critical-first", "value-per-cost"}
-    with patch.dict(os.environ, {"GCSI_GRANITE_API_KEY": "", "GCSI_OLLAMA_ENABLED": "false"}):
+    with patch.dict(os.environ, {
+        "GCSI_GRANITE_API_KEY": "", "GCSI_GEMINI_API_KEY": "",
+        "GCSI_OLLAMA_ENABLED": "false", "GCSI_AI_PROVIDER": "",
+    }):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             resp = await client.post("/agent/recommend")
     assert resp.json()["recommendation"]["recommended_plan_id"] in valid_ids
@@ -607,7 +627,10 @@ async def test_recommend_returns_503_before_scenario_load():
 async def test_approve_simulation_flow_without_granite():
     """Full flow: recommend → approve → simulation works without GCSI_GRANITE_API_KEY."""
     app_state.load_scenario("data/scenarios/nominal_pass.json")
-    with patch.dict(os.environ, {"GCSI_GRANITE_API_KEY": "", "GCSI_OLLAMA_ENABLED": "false"}):
+    with patch.dict(os.environ, {
+        "GCSI_GRANITE_API_KEY": "", "GCSI_GEMINI_API_KEY": "",
+        "GCSI_OLLAMA_ENABLED": "false", "GCSI_AI_PROVIDER": "",
+    }):
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             rec_resp = await client.post("/agent/recommend")
             assert rec_resp.status_code == 200

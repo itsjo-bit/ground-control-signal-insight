@@ -12,11 +12,22 @@ GCSI uses a **provider-agnostic AI layer** for plan recommendations.  No paid AP
 
 | Provider | When used | Requirements |
 |----------|-----------|--------------|
-| **Local** (default) | `GCSI_GRANITE_API_KEY` is not set | None — works offline, zero dependencies |
+| **Local** (default) | No API key is configured | None — works offline, zero dependencies |
 | **Ollama** (opt-in) | `GCSI_OLLAMA_ENABLED=true` and Ollama is reachable | [Ollama](https://ollama.com) running locally |
-| **IBM Granite** (optional) | `GCSI_GRANITE_API_KEY` is set | IBM watsonx.ai account |
+| **Google Gemini** (optional) | `GCSI_GEMINI_API_KEY` is set and Granite is not | Google AI API key |
+| **IBM Granite** (primary IBM provider) | `GCSI_GRANITE_API_KEY` is set | IBM watsonx.ai account |
+
+**IBM Granite is the primary IBM AI integration and takes priority when both `GCSI_GRANITE_API_KEY` and `GCSI_GEMINI_API_KEY` are present.**  Google Gemini is an optional alternative provider that does not replace IBM Granite.
+
+Automatic provider selection order:
+1. **IBM Granite** — `GCSI_GRANITE_API_KEY` is set and non-empty
+2. **Google Gemini** — `GCSI_GEMINI_API_KEY` is set and non-empty (Granite absent)
+3. **Ollama** — `GCSI_OLLAMA_ENABLED=true` and the server is reachable
+4. **Local** — deterministic rule-based fallback (always available)
 
 The **Local** provider is a deterministic rule-based reasoner that evaluates all four candidate plans using the same pre-computed `EvaluationResult` metrics and produces a valid, explainable `AIRecommendation` — no fabrication, no mocks, no network calls.
+
+### IBM Granite (primary IBM provider)
 
 To use IBM Granite, you need **two** credentials from IBM Cloud:
 
@@ -36,6 +47,38 @@ cp .env.example .env
 The `?version=2023-05-29` query parameter is added to the endpoint URL automatically; you do not need to include it in `GCSI_GRANITE_API_URL` unless you want to pin a different version.
 
 > **Security note**: keep `GCSI_GRANITE_API_KEY` and `GCSI_GRANITE_PROJECT_ID` secret. Never paste them into chat, logs, or source code.
+
+### Google Gemini (optional alternative provider)
+
+To use Google Gemini as an alternative when IBM Granite is not configured:
+
+| Variable | Where to find it | Required? |
+|---|---|---|
+| `GCSI_GEMINI_API_KEY` | [Google AI Studio → API keys](https://aistudio.google.com/apikeys) | Yes |
+| `GCSI_GEMINI_MODEL` | Override if you want a different Gemini model | No (default: `gemini-2.0-flash`) |
+
+```bash
+# In .env:
+GCSI_GEMINI_API_KEY=<your Google AI API key>
+# GCSI_GEMINI_MODEL=gemini-2.0-flash   # optional — default is gemini-2.0-flash
+```
+
+> **Note**: Gemini is an optional, additive provider.  IBM Granite remains the primary IBM AI integration and takes priority whenever `GCSI_GRANITE_API_KEY` is also set.
+
+### Explicit provider selection (optional)
+
+You can force a specific provider by setting `GCSI_AI_PROVIDER`:
+
+```bash
+GCSI_AI_PROVIDER=granite   # force IBM Granite
+GCSI_AI_PROVIDER=gemini    # force Google Gemini
+GCSI_AI_PROVIDER=ollama    # force Ollama
+GCSI_AI_PROVIDER=local     # force local rule-based
+```
+
+If `GCSI_AI_PROVIDER` is not set, automatic selection applies (Granite → Gemini → Ollama → Local).
+
+### Ollama
 
 To use Ollama:
 ```bash
@@ -121,7 +164,7 @@ CandidateGenerator  →  4 CandidatePlans  +  telecom_decisions metadata
        ↓
 PlanEvaluator  →  4 EvaluationResults  (deterministic, no RNG)
        ↓
-AI Provider  (Local | Ollama | Granite)
+AI Provider  (Local | Ollama | Gemini | Granite)
        ↓
 AIRecommendation  (validated — plan_id, evidence fields, confidence/risk bounds)
        ↓

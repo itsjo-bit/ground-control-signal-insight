@@ -2,9 +2,19 @@
 
 Provider selection logic
 ------------------------
-1. If ``GCSI_GRANITE_API_KEY`` is set → use IBM Granite (GraniteProvider wrapper).
-2. Else if ``GCSI_OLLAMA_ENABLED=true`` and Ollama is reachable → use Ollama.
-3. Else → use LocalRuleBasedProvider (deterministic, zero dependencies).
+Explicit override (``GCSI_AI_PROVIDER``)
+  If set to one of ``granite``, ``gemini``, ``ollama``, or ``local``, that
+  provider is used unconditionally (subject to its own startup checks).
+  An invalid value logs a warning and falls through to automatic selection.
+
+Automatic selection order (first match wins):
+1. If ``GCSI_GRANITE_API_KEY`` is set → use IBM Granite (GraniteProvider).
+2. Else if ``GCSI_GEMINI_API_KEY`` is set → use Google Gemini (GeminiProvider).
+3. Else if ``GCSI_OLLAMA_ENABLED=true`` and Ollama is reachable → use Ollama.
+4. Else → use LocalRuleBasedProvider (deterministic, zero dependencies).
+
+IBM Granite is checked before Gemini so that existing Granite configurations
+continue to work exactly as before — Granite remains the primary IBM provider.
 
 The factory never raises; it always returns a valid provider.  If Ollama is
 requested but unreachable, the factory falls back to LocalRuleBasedProvider
@@ -31,21 +41,44 @@ logger = logging.getLogger(__name__)
 def get_provider() -> BaseAIProvider:
     """Return the best available AI provider for the current environment.
 
-    Selection order (first match wins):
+    Checks ``GCSI_AI_PROVIDER`` first for an explicit override, then falls
+    through to automatic selection.
+
+    Automatic selection order (first match wins):
     1. IBM Granite  — ``GCSI_GRANITE_API_KEY`` is set and non-empty.
-    2. Ollama       — ``GCSI_OLLAMA_ENABLED=true`` (opt-in; default off).
-    3. Local        — deterministic rule-based fallback (always available).
+    2. Google Gemini — ``GCSI_GEMINI_API_KEY`` is set and non-empty.
+    3. Ollama       — ``GCSI_OLLAMA_ENABLED=true`` (opt-in; default off).
+    4. Local        — deterministic rule-based fallback (always available).
 
     Returns:
         A :class:`BaseAIProvider` instance ready to call ``recommend()``.
     """
+    # ── Explicit provider override ────────────────────────────────────────────
+    explicit = os.getenv("GCSI_AI_PROVIDER", "").strip().lower()
+    if explicit:
+        provider = _provider_from_name(explicit)
+        if provider is not None:
+            return provider
+        logger.warning(
+            "GCSI_AI_PROVIDER='%s' is not a recognised provider name "
+            "(valid: granite, gemini, ollama, local). "
+            "Falling back to automatic selection.",
+            explicit,
+        )
+
     # ── 1. IBM Granite ────────────────────────────────────────────────────────
     if os.getenv("GCSI_GRANITE_API_KEY", "").strip():
         from .granite_provider import GraniteProvider
         logger.info("AI provider: IBM Granite (GCSI_GRANITE_API_KEY is set)")
         return GraniteProvider()
 
-    # ── 2. Ollama (opt-in) ───────────────────────────────────────────────────
+    # ── 2. Google Gemini ──────────────────────────────────────────────────────
+    if os.getenv("GCSI_GEMINI_API_KEY", "").strip():
+        from .gemini_provider import GeminiProvider
+        logger.info("AI provider: Google Gemini (GCSI_GEMINI_API_KEY is set)")
+        return GeminiProvider()
+
+    # ── 3. Ollama (opt-in) ───────────────────────────────────────────────────
     if os.getenv("GCSI_OLLAMA_ENABLED", "false").lower() in ("true", "1", "yes"):
         from .ollama_provider import OllamaProvider
         provider = OllamaProvider()
@@ -61,10 +94,39 @@ def get_provider() -> BaseAIProvider:
             "falling back to LocalRuleBasedProvider."
         )
 
-    # ── 3. Local rule-based (always available) ───────────────────────────────
+    # ── 4. Local rule-based (always available) ───────────────────────────────
     from .local_provider import LocalRuleBasedProvider
     logger.info("AI provider: Local rule-based (no API key required)")
     return LocalRuleBasedProvider()
+
+
+def _provider_from_name(name: str) -> "BaseAIProvider | None":
+    """Return a provider instance for *name*, or None if the name is invalid.
+
+    Args:
+        name: Lower-cased provider name: one of 'granite', 'gemini', 'ollama',
+              or 'local'.
+
+    Returns:
+        A :class:`BaseAIProvider` instance, or ``None`` for unknown names.
+    """
+    if name == "granite":
+        from .granite_provider import GraniteProvider
+        logger.info("AI provider: IBM Granite (GCSI_AI_PROVIDER=granite)")
+        return GraniteProvider()
+    if name == "gemini":
+        from .gemini_provider import GeminiProvider
+        logger.info("AI provider: Google Gemini (GCSI_AI_PROVIDER=gemini)")
+        return GeminiProvider()
+    if name == "ollama":
+        from .ollama_provider import OllamaProvider
+        logger.info("AI provider: Ollama (GCSI_AI_PROVIDER=ollama)")
+        return OllamaProvider()
+    if name == "local":
+        from .local_provider import LocalRuleBasedProvider
+        logger.info("AI provider: Local rule-based (GCSI_AI_PROVIDER=local)")
+        return LocalRuleBasedProvider()
+    return None
 
 
 def _ollama_reachable(provider: "OllamaProvider") -> bool:  # type: ignore[name-defined]
