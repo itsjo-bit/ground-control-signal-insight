@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException
 
 from .. import state
+from ..models.candidate_plan import CandidatePlan
 from ..models.simulation_result import SimulationResult
 from .routes_simulate import _run_simulation
 
@@ -12,6 +13,11 @@ router = APIRouter()
 
 class ApproveRequest(BaseModel):
     plan_id: str
+    operator_notes: str = ""
+
+
+class ApproveCustomRequest(BaseModel):
+    plan: CandidatePlan
     operator_notes: str = ""
 
 
@@ -54,6 +60,27 @@ def approve_plan(req: ApproveRequest) -> ApproveResponse:
     result = _run_simulation(plan, seed=None)
 
     # Mutate server state with realized outcomes.
+    state.active_link_state = result.link_state
+    state.active_scenario = state.active_scenario.model_copy(
+        update={"mission_state": result.mission_state}
+    )
+
+    return ApproveResponse(status="approved", simulation_result=result)
+
+
+@router.post("/approve/custom", response_model=ApproveResponse)
+def approve_custom_plan(req: ApproveCustomRequest) -> ApproveResponse:
+    """Approve and simulate an operator-supplied custom plan.
+
+    Accepts a full CandidatePlan in the request body — used when the operator
+    has manually reordered packets (drag-to-reorder).  Does NOT look up by
+    plan_id; runs the plan as-is.  Updates server state with realized outcomes.
+    """
+    if state.active_scenario is None or state.active_link_state is None:
+        raise HTTPException(status_code=503, detail="No active scenario loaded")
+
+    result = _run_simulation(req.plan, seed=None)
+
     state.active_link_state = result.link_state
     state.active_scenario = state.active_scenario.model_copy(
         update={"mission_state": result.mission_state}

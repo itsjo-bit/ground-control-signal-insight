@@ -24,6 +24,10 @@ active_scenario: Scenario | None = None
 #: The LinkState derived from the active scenario's telecom inputs.
 active_link_state: LinkState | None = None
 
+#: The file path that was last passed to load_scenario(), retained so the
+#: scenario can be reloaded (reset) without restarting the server process.
+active_scenario_path: str | None = None
+
 
 def load_scenario(path: str, config: GCSIConfig | None = None) -> None:
     """Load a scenario from a JSON file and populate module state.
@@ -40,13 +44,14 @@ def load_scenario(path: str, config: GCSIConfig | None = None) -> None:
         FileNotFoundError: if the file does not exist.
         ValueError:        if the JSON is invalid or ``simulated != true``.
     """
-    global active_scenario, active_link_state  # noqa: PLW0603
+    global active_scenario, active_link_state, active_scenario_path  # noqa: PLW0603
 
     cfg = config or GCSIConfig()
     scenario = ScenarioLoader.load(path)
     engine = TelecomEngine(cfg)
     link_state = engine.compute(scenario.link_inputs)
 
-    # Assign both together so they are always in sync.
+    # Assign all three together so they are always in sync.
+    active_scenario_path = path
     active_scenario = scenario
     active_link_state = link_state

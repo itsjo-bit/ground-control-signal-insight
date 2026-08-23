@@ -1,10 +1,37 @@
 import type { MissionState, RiskLevel } from '../types/domain';
 
-const RISK_COLOURS: Record<RiskLevel, string> = {
-  LOW: '#22c55e',
-  MEDIUM: '#eab308',
-  HIGH: '#f97316',
-  CRITICAL: '#ef4444',
+interface BadgeTokens {
+  background: string;
+  color: string;
+  border: string;
+  boxShadow: string;
+}
+
+const RISK_BADGE: Record<RiskLevel, BadgeTokens> = {
+  LOW: {
+    background: 'var(--risk-low-bg)',
+    color:      'var(--risk-low-color)',
+    border:     `1px solid var(--risk-low-border)`,
+    boxShadow:  'var(--risk-low-glow)',
+  },
+  MEDIUM: {
+    background: 'var(--risk-medium-bg)',
+    color:      'var(--risk-medium-color)',
+    border:     `1px solid var(--risk-medium-border)`,
+    boxShadow:  'var(--risk-medium-glow)',
+  },
+  HIGH: {
+    background: 'var(--risk-high-bg)',
+    color:      'var(--risk-high-color)',
+    border:     `1px solid var(--risk-high-border)`,
+    boxShadow:  'var(--risk-high-glow)',
+  },
+  CRITICAL: {
+    background: 'var(--risk-critical-bg)',
+    color:      'var(--risk-critical-color)',
+    border:     `1px solid var(--risk-critical-border)`,
+    boxShadow:  'var(--risk-critical-glow)',
+  },
 };
 
 interface Props {
@@ -12,12 +39,14 @@ interface Props {
 }
 
 export function MissionStatePanel({ missionState: ms }: Props) {
+  const tokens = RISK_BADGE[ms.risk_level];
   const badgeStyle = {
-    background: RISK_COLOURS[ms.risk_level],
-    color: '#fff',
+    ...tokens,
     borderRadius: '4px',
-    padding: '2px 8px',
-    fontWeight: 700,
+    padding: '2px 9px',
+    fontWeight: 700 as const,
+    fontFamily: 'var(--font-mono)',
+    fontSize: 12,
   };
 
   return (

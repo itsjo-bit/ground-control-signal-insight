@@ -1,8 +1,6 @@
 /**
  * Typed API client — one function per backend endpoint.
- *
  * All requests go through the Vite proxy `/api → http://localhost:8000`.
- * No mock data; all functions hit real endpoints.
  */
 
 import type {
@@ -13,6 +11,7 @@ import type {
   MissionState,
   RecommendResponse,
   SimulationResult,
+  WhatIfEvalResponse,
 } from '../types/domain';
 
 const BASE = '/api';
@@ -29,26 +28,22 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-// ---------------------------------------------------------------------------
 // State
-// ---------------------------------------------------------------------------
-
 export async function getState(): Promise<{ link_state: LinkState; mission_state: MissionState }> {
   return fetchJson(`${BASE}/state`);
 }
 
-// ---------------------------------------------------------------------------
-// Queue
-// ---------------------------------------------------------------------------
+// Reset scenario — reloads original scenario from disk, discarding simulation mutations
+export async function resetScenario(): Promise<{ status: string; scenario_path: string; comm_window_remaining_s: number }> {
+  return fetchJson(`${BASE}/state/reset`, { method: 'POST' });
+}
 
+// Queue
 export async function getQueue(): Promise<CandidatePlan> {
   return fetchJson(`${BASE}/queue`);
 }
 
-// ---------------------------------------------------------------------------
 // Plans
-// ---------------------------------------------------------------------------
-
 export async function generatePlans(): Promise<CandidatePlan[]> {
   return fetchJson(`${BASE}/plans/generate`, { method: 'POST' });
 }
@@ -60,10 +55,18 @@ export async function evaluatePlan(plan: CandidatePlan): Promise<EvaluationResul
   });
 }
 
-// ---------------------------------------------------------------------------
-// Simulate
-// ---------------------------------------------------------------------------
+// What-if evaluation (Feature 5) — pure read-only, never mutates state
+export async function whatIfEvaluate(
+  snr_db?: number,
+  ber?: number,
+): Promise<WhatIfEvalResponse> {
+  return fetchJson(`${BASE}/plans/what-if`, {
+    method: 'POST',
+    body: JSON.stringify({ snr_db: snr_db ?? null, ber: ber ?? null }),
+  });
+}
 
+// Simulate
 export async function simulate(
   plan_id: string,
   seed?: number,
@@ -84,10 +87,7 @@ export async function simulateWhatIf(
   });
 }
 
-// ---------------------------------------------------------------------------
 // Approve
-// ---------------------------------------------------------------------------
-
 export async function approvePlan(
   plan_id: string,
   operator_notes: string = '',
@@ -98,10 +98,18 @@ export async function approvePlan(
   });
 }
 
-// ---------------------------------------------------------------------------
-// Agent
-// ---------------------------------------------------------------------------
+// Approve a custom (operator-reordered) plan (Feature 3)
+export async function approveCustomPlan(
+  plan: CandidatePlan,
+  operator_notes: string = '',
+): Promise<ApproveResponse> {
+  return fetchJson(`${BASE}/approve/custom`, {
+    method: 'POST',
+    body: JSON.stringify({ plan, operator_notes }),
+  });
+}
 
+// Agent
 export async function getRecommendation(): Promise<RecommendResponse> {
   return fetchJson(`${BASE}/agent/recommend`, { method: 'POST' });
 }

@@ -1,18 +1,51 @@
-import type { AIRecommendation, RiskLevel } from '../types/domain';
+import { useState } from 'react';
+import type { AIRecommendation, EvaluationResult, RiskLevel } from '../types/domain';
+import { RiskBreakdown } from './RiskBreakdown';
 
-const RISK_COLOURS: Record<RiskLevel, string> = {
-  LOW: 'var(--signal)',
-  MEDIUM: 'var(--warn)',
-  HIGH: '#ff8a3d',
-  CRITICAL: 'var(--critical)',
+// Badge tokens reference theme.css CSS variables — no hardcoded hex.
+const RISK_BADGE_BG: Record<RiskLevel, string> = {
+  LOW:      'var(--risk-low-bg)',
+  MEDIUM:   'var(--risk-medium-bg)',
+  HIGH:     'var(--risk-high-bg)',
+  CRITICAL: 'var(--risk-critical-bg)',
 };
+const RISK_BADGE_COLOR: Record<RiskLevel, string> = {
+  LOW:      'var(--risk-low-color)',
+  MEDIUM:   'var(--risk-medium-color)',
+  HIGH:     'var(--risk-high-color)',
+  CRITICAL: 'var(--risk-critical-color)',
+};
+const RISK_BADGE_BORDER: Record<RiskLevel, string> = {
+  LOW:      'var(--risk-low-border)',
+  MEDIUM:   'var(--risk-medium-border)',
+  HIGH:     'var(--risk-high-border)',
+  CRITICAL: 'var(--risk-critical-border)',
+};
+const RISK_BADGE_GLOW: Record<RiskLevel, string> = {
+  LOW:      'var(--risk-low-glow)',
+  MEDIUM:   'var(--risk-medium-glow)',
+  HIGH:     'var(--risk-high-glow)',
+  CRITICAL: 'var(--risk-critical-glow)',
+};
+
+interface RiskWeights {
+  w_deadline_miss: number;
+  w_critical_deficit: number;
+  w_window_pressure: number;
+}
 
 interface Props {
   recommendation: AIRecommendation | null;
   providerName: string | null;
+  /** EvaluationResult for the recommended plan — used for risk breakdown (Feature 2). */
+  evaluation: EvaluationResult | null;
+  /** Risk weights from the backend config — used for risk breakdown (Feature 2). */
+  riskWeights: RiskWeights | null;
 }
 
-export function RecommendationPanel({ recommendation: rec, providerName }: Props) {
+export function RecommendationPanel({ recommendation: rec, providerName, evaluation, riskWeights }: Props) {
+  const [showBreakdown, setShowBreakdown] = useState(false);
+
   // ── Unavailable state ────────────────────────────────────────────────────
   if (rec === null) {
     return (
@@ -32,11 +65,17 @@ export function RecommendationPanel({ recommendation: rec, providerName }: Props
 
   // ── Populated state ──────────────────────────────────────────────────────
   const badgeStyle = {
-    background: RISK_COLOURS[rec.risk_level],
-    color: '#fff',
+    background:  RISK_BADGE_BG[rec.risk_level],
+    color:       RISK_BADGE_COLOR[rec.risk_level],
+    border:      `1px solid ${RISK_BADGE_BORDER[rec.risk_level]}`,
+    boxShadow:   RISK_BADGE_GLOW[rec.risk_level],
     borderRadius: '4px',
-    padding: '2px 8px',
-    fontWeight: 700,
+    padding: '2px 9px',
+    fontWeight: 700 as const,
+    cursor: evaluation && riskWeights ? 'pointer' : 'default',
+    outline: 'none',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 12,
   };
 
   const heading = providerName
@@ -57,8 +96,31 @@ export function RecommendationPanel({ recommendation: rec, providerName }: Props
 <p>
 <strong>Confidence:</strong> {(rec.confidence * 100).toFixed(0)}%
         &nbsp;
-        <strong>Risk:</strong> {rec.risk_score.toFixed(3)} <span style={badgeStyle}>{rec.risk_level}</span>
+        <strong>Risk:</strong>{' '}
+        {rec.risk_score.toFixed(3)}{' '}
+        <button
+          style={badgeStyle}
+          title={evaluation && riskWeights ? 'Click to see risk breakdown' : undefined}
+          onClick={() => evaluation && riskWeights && setShowBreakdown((s) => !s)}
+        >
+          {rec.risk_level}
+          {evaluation && riskWeights && (
+            <span style={{ marginLeft: 5, opacity: 0.7, fontSize: 10 }}>
+              {showBreakdown ? '▲' : '▼'}
+            </span>
+          )}
+        </button>
 </p>
+
+      {/* Feature 2: risk breakdown popover */}
+      {showBreakdown && evaluation && riskWeights && (
+        <RiskBreakdown
+          evaluation={evaluation}
+          weights={riskWeights}
+          onClose={() => setShowBreakdown(false)}
+        />
+      )}
+
 <p>
 <strong>Reasoning:</strong> {rec.reasoning}</p>
 

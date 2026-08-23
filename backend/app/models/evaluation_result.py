@@ -27,3 +27,16 @@ class EvaluationResult(BaseModel):
         default_factory=list,
         description="packet_id values of packets deferred due to window exhaustion",
     )
+    # Risk score breakdown components (Feature 2)
+    deadline_miss_rate: float = Field(
+        default=0.0, ge=0.0, le=1.0,
+        description="Fraction of packets that missed their deadline [0, 1]",
+    )
+    critical_deficit: float = Field(
+        default=0.0, ge=0.0, le=1.0,
+        description="Fraction of critical packets not delivered [0, 1]",
+    )
+    window_pressure: float = Field(
+        default=0.0, ge=0.0, le=1.0,
+        description="Fraction of communication window budget consumed [0, 1]",
+    )

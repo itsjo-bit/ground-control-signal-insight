@@ -222,4 +222,7 @@ class PlanEvaluator:
             risk_score=risk_score,
             risk_level=risk_level,
             deferred_packets=deferred_ids,
+            deadline_miss_rate=deadline_miss_rate,
+            critical_deficit=critical_deficit,
+            window_pressure=window_pressure,
         )
