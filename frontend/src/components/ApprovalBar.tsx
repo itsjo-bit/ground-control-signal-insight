@@ -3,7 +3,8 @@ import { approvePlan } from '../api/client';
 import type { ApproveResponse } from '../types/domain';
 
 interface Props {
-  recommendedPlanId: string;
+  /** plan_id of the AI-recommended plan, or null when no recommendation is available. */
+  recommendedPlanId: string | null;
   onApproved: (result: ApproveResponse) => void;
 }
 
@@ -13,6 +14,24 @@ export function ApprovalBar({ recommendedPlanId, onApproved }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [overridePlanId, setOverridePlanId] = useState('');
 
+  // ── Unavailable state ────────────────────────────────────────────────────
+  if (recommendedPlanId === null) {
+    return (
+      <section className="approval-bar" style={{ opacity: 0.6 }}>
+        <h2>Approval</h2>
+        <p style={{ color: '#8b949e' }}>
+          <strong>Approval unavailable.</strong>
+          &nbsp;Waiting for a valid AI recommendation.
+        </p>
+        <p style={{ color: '#57606a', fontSize: 12, marginTop: 6 }}>
+          No plan can be approved until the AI provider returns a valid recommendation.
+          Ensure the backend has a scenario loaded and refresh to enable approval.
+        </p>
+      </section>
+    );
+  }
+
+  // ── Active state ─────────────────────────────────────────────────────────
   async function handleApprove(planId: string) {
     setLoading(true);
     setError(null);

@@ -13,8 +13,17 @@ import os
 import warnings
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+# Load .env before any module reads os.getenv().  This is a no-op when the
+# variables are already present in the environment (e.g. in CI or when the
+# caller exports them in the shell), so it is safe to call unconditionally.
+load_dotenv()
 
 from .api.routes_agent import router as agent_router
 from .api.routes_approve import router as approve_router

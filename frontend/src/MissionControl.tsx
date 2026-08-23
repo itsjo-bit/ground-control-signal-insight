@@ -17,6 +17,7 @@ import { TransmissionQueuePanel } from './components/TransmissionQueuePanel';
 import { PlanComparisonPanel } from './components/PlanComparisonPanel';
 import { RecommendationPanel } from './components/RecommendationPanel';
 import { ApprovalBar } from './components/ApprovalBar';
+import { SimulationPanel } from './components/SimulationPanel';
 
 // ---------------------------------------------------------------------------
 // Styles (inline — single-file CSS-in-JS for MVP)
@@ -75,8 +76,14 @@ const styles = `
   /* ---- state indicators ---- */
   .spinner { color: #8b949e; padding: 24px; text-align: center; }
   .error-banner { color: #ef4444; padding: 8px 16px; background: #2d1117; border-bottom: 1px solid #ef4444; }
-  .ai-unavailable-panel { grid-column: 1 / -1; }
-  .approve-banner { padding: 8px 16px; background: #0f2d0f; color: #22c55e; border-bottom: 1px solid #22c55e; }
+
+  /* ---- provider badge ---- */
+  .provider-badge {
+    display: inline-block; padding: 2px 8px;
+    background: #1a2332; color: #58a6ff;
+    border: 1px solid #1f6feb; border-radius: 4px;
+    font-size: 11px; font-weight: 600;
+  }
 `;
 
 // ---------------------------------------------------------------------------
@@ -88,6 +95,7 @@ export default function MissionControl() {
   const [missionState, setMissionState] = useState<MissionState | null>(null);
   const [queue, setQueue] = useState<CandidatePlan | null>(null);
   const [recommendation, setRecommendation] = useState<AIRecommendation | null>(null);
+  const [aiProvider, setAiProvider] = useState<string | null>(null);
   const [recommendationError, setRecommendationError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -103,14 +111,15 @@ export default function MissionControl() {
       setMissionState(stateData.mission_state);
       setQueue(queueData);
 
-      // Recommendation is optional — Granite may not be configured.
-      // Show an informational panel rather than silently hiding the area.
+      // Recommendation: always attempt; components handle the null case.
       try {
-        const rec = await getRecommendation();
-        setRecommendation(rec);
+        const resp = await getRecommendation();
+        setRecommendation(resp.recommendation);
+        setAiProvider(resp.provider);
         setRecommendationError(null);
       } catch (recErr) {
         setRecommendation(null);
+        setAiProvider(null);
         setRecommendationError(String(recErr));
       }
     } catch (err) {
@@ -126,7 +135,7 @@ export default function MissionControl() {
 
   function handleApproved(result: ApproveResponse) {
     setApproveResult(result);
-    // Reflect post-simulation state in all panels immediately.
+    // Reflect post-simulation state in the link/mission panels immediately.
     setLinkState(result.simulation_result.link_state);
     setMissionState(result.simulation_result.mission_state);
   }
@@ -146,71 +155,63 @@ export default function MissionControl() {
           <small>Mission Control</small>
         </h1>
         <span className="sim-badge">⚠ SIMULATED SCENARIO</span>
+        {aiProvider && (
+          <span className="provider-badge">AI: {aiProvider}</span>
+        )}
         <button className="refresh-btn" onClick={refresh} disabled={loading}>
           ⟳ Refresh
         </button>
       </header>
 
-      {/* ── Post-approval simulation result banner ── */}
-      {approveResult && (
-        <div className="approve-banner">
-          ✓ Plan approved and simulated. Elapsed: {approveResult.simulation_result.elapsed_time_s.toFixed(1)} s
-          &nbsp;|&nbsp; Delivered: {approveResult.simulation_result.delivered_packets.length}
-          &nbsp;|&nbsp; Deferred: {approveResult.simulation_result.deferred_packets.length}
-          &nbsp;|&nbsp; Failed: {approveResult.simulation_result.failed_packets.length}
-        </div>
-      )}
-
       {/*
-        ── Story-driven panel order ──
-        1. Mission state (risk + context)
-        2. Link health
-        3. Baseline transmission plan
-        4. AI recommended order / baseline comparison  (or unavailable notice)
-        5. AI reasoning + evidence
-        6. Approve / Override
+        ── Complete story — all 7 sections always rendered ──
+        1. Mission State
+        2. Link Health
+        3. Baseline Plan
+        4. AI Recommended Order   (unavailable state only if backend fails entirely)
+        5. AI Reasoning + Evidence (unavailable state only if backend fails entirely)
+        6. Approval / Override    (disabled state if no recommendation)
+        7. Simulation             (placeholder until approval; real data after)
       */}
       <div className="mission-control">
 
-        {/* Row 1: Mission context + link health */}
+        {/* 1 + 2: Mission context + link health */}
         <MissionStatePanel missionState={missionState} />
         <LinkHealthPanel linkState={linkState} />
 
-        {/* Row 2: Baseline plan */}
+        {/* 3: Baseline plan */}
         <TransmissionQueuePanel plan={queue} />
 
-        {/* Row 3: AI comparison (full width) or unavailable notice */}
+        {/* 4: AI comparison (full width) */}
         {recommendation ? (
           <PlanComparisonPanel baseline={queue} recommendation={recommendation} />
         ) : (
-          <section className="panel ai-unavailable-panel">
+          <section className="panel panel-full">
             <h2>AI Recommended Order</h2>
             <p style={{ color: '#8b949e' }}>
               <strong style={{ color: '#f97316' }}>AI Recommendation unavailable.</strong>
               &nbsp;
               {recommendationError
-                ? `Granite API is not configured or unavailable. (${recommendationError})`
-                : 'Granite API is not configured or unavailable.'}
+                ? `The backend returned an error. (${recommendationError})`
+                : 'The AI provider could not be reached.'}
             </p>
             <p style={{ color: '#57606a', fontSize: 12, marginTop: 6 }}>
-              Set <code>GCSI_GRANITE_API_KEY</code> in your <code>.env</code> file and restart the backend
-              to enable AI-powered transmission plan recommendations.
+              Ensure the backend has a scenario loaded and restart it to enable AI recommendations.
             </p>
           </section>
         )}
 
-        {/* Row 4: AI reasoning + evidence (full width) */}
-        {recommendation && (
-          <RecommendationPanel recommendation={recommendation} />
-        )}
+        {/* 5: AI reasoning + evidence (full width) — null-safe, renders unavailable state */}
+        <RecommendationPanel recommendation={recommendation} providerName={aiProvider} />
 
-        {/* Row 5: Approve / Override (full width) */}
-        {recommendation && (
-          <ApprovalBar
-            recommendedPlanId={recommendation.recommended_plan_id}
-            onApproved={handleApproved}
-          />
-        )}
+        {/* 6: Approve / Override (full width) — null-safe, renders disabled state */}
+        <ApprovalBar
+          recommendedPlanId={recommendation ? recommendation.recommended_plan_id : null}
+          onApproved={handleApproved}
+        />
+
+        {/* 7: Simulation results (full width) — placeholder until approval */}
+        <SimulationPanel approveResult={approveResult} />
 
       </div>
     </>

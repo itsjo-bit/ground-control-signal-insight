@@ -39,6 +39,7 @@ from ..telecom.formulas import (
     packet_success_probability,
     transmission_time,
 )
+from ..telecom.scheduler import rank_packets
 
 
 def _calc_expected_cost(packet: Packet, link_state: LinkState) -> float:
@@ -82,12 +83,35 @@ class CandidateGenerator:
         Returns:
             A list of four :class:`CandidatePlan` objects in the order:
             [baseline, deadline_first, mission_critical_first, value_per_cost].
+
+        Each plan's ``metadata`` includes a ``telecom_decisions`` key containing
+        a list of per-packet telecom scheduling decisions (TRANSMIT / DEFER / SPLIT)
+        ranked by mission efficiency for the current link state.
         """
-        return [
+        # Compute telecom decisions once — they depend only on link state, not
+        # on ordering strategy.
+        telecom_decisions = [
+            {
+                "packet_id": d.packet_id,
+                "decision": d.decision,
+                "reason": d.reason,
+                "p_success": d.p_success,
+                "efficiency": d.efficiency,
+            }
+            for d in rank_packets(packets, link_state.ber, link_state.link_goodput_bps)
+        ]
+
+        plans = [
             CandidateGenerator._baseline(packets, link_state, mission_state, weights),
             CandidateGenerator._deadline_first(packets),
             CandidateGenerator._mission_critical_first(packets),
             CandidateGenerator._value_per_cost(packets, link_state),
+        ]
+
+        # Attach the same telecom_decisions to every plan's metadata.
+        return [
+            plan.model_copy(update={"metadata": {**plan.metadata, "telecom_decisions": telecom_decisions}})
+            for plan in plans
         ]
 
     # ------------------------------------------------------------------

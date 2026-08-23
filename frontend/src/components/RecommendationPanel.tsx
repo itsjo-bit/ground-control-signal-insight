@@ -8,10 +8,29 @@ const RISK_COLOURS: Record<RiskLevel, string> = {
 };
 
 interface Props {
-  recommendation: AIRecommendation;
+  recommendation: AIRecommendation | null;
+  providerName: string | null;
 }
 
-export function RecommendationPanel({ recommendation: rec }: Props) {
+export function RecommendationPanel({ recommendation: rec, providerName }: Props) {
+  // ── Unavailable state ────────────────────────────────────────────────────
+  if (rec === null) {
+    return (
+      <section className="panel panel-full">
+        <h2>AI Reasoning</h2>
+        <p style={{ color: '#57606a' }}>
+          <strong style={{ color: '#8b949e' }}>AI reasoning unavailable.</strong>
+          &nbsp;The AI provider has not returned a recommendation.
+        </p>
+        <p style={{ color: '#57606a', fontSize: 12, marginTop: 6 }}>
+          No reasoning, evidence, confidence score, or risk assessment is available.
+          Ensure the backend has a scenario loaded and refresh to enable AI analysis.
+        </p>
+      </section>
+    );
+  }
+
+  // ── Populated state ──────────────────────────────────────────────────────
   const badgeStyle = {
     background: RISK_COLOURS[rec.risk_level],
     color: '#fff',
@@ -20,9 +39,13 @@ export function RecommendationPanel({ recommendation: rec }: Props) {
     fontWeight: 700,
   };
 
+  const heading = providerName
+    ? `AI Reasoning — ${providerName}`
+    : 'AI Reasoning';
+
   return (
-    <section className="panel">
-      <h2>AI Recommendation</h2>
+    <section className="panel panel-full">
+      <h2>{heading}</h2>
 
       <p>
         <strong>Recommended plan:</strong> <code>{rec.recommended_plan_id}</code>

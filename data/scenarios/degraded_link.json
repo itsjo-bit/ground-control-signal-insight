@@ -3,7 +3,7 @@
   "simulated": true,
   "link_inputs": {
     "timestamp": "2024-06-01T10:15:00+00:00",
-    "snr_db": 3.0,
+    "snr_db": -5.7,
     "rssi_dbm": -105.0,
     "nominal_data_rate_bps": 50000.0,
     "latency_s": 1.8,

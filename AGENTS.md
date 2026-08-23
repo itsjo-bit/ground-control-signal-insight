@@ -2,9 +2,76 @@
 
 This file provides guidance to agents working with code in this repository.
 
-## Granite AI Agent — architecture (Phase 6)
+## AI Provider Layer — architecture (Phase 6 + provider abstraction)
 
-### How the agent works (current implementation)
+### Provider selection
+
+The `/agent/recommend` endpoint is provider-agnostic.  The provider is selected
+at request time by `backend/app/agent/provider_factory.py`:
+
+```
+if GCSI_GRANITE_API_KEY is set  →  GraniteProvider  (wraps GraniteAgent)
+elif GCSI_OLLAMA_ENABLED=true and Ollama reachable  →  OllamaProvider
+else  →  LocalRuleBasedProvider  (default, always available)
+```
+
+**No API key is required for the default demo path.**
+
+### Common interface — BaseAIProvider
+
+All providers implement `backend/app/agent/base_provider.py::BaseAIProvider`:
+
+```python
+class BaseAIProvider(ABC):
+    @property
+    @abstractmethod
+    def provider_name(self) -> str: ...
+
+    @abstractmethod
+    def recommend(link_state, mission_state, plans, evaluations) -> AIRecommendation: ...
+```
+
+All providers raise the **same canonical exceptions**:
+- `AIProviderError` — provider unavailable / network error
+- `AIResponseError` — malformed or invalid response
+- `AIHallucinationError` — evidence cites a non-existent field
+
+`routes_agent.py` catches only these canonical types; it never imports
+provider-specific exceptions.
+
+### LocalRuleBasedProvider (default)
+
+`backend/app/agent/local_provider.py` — works offline, no dependencies beyond
+the existing `EvaluationResult` models.
+
+Algorithm:
+1. Rank all candidate plans by `(risk_score ASC, -mission_value ASC, plan_id)`.
+2. Recommend the best; set runner-up as `alternative_plan_id`.
+3. Derive `confidence` from the risk-score gap between best and runner-up.
+4. Build `EvidenceItem` objects citing only real fields from `LinkState`,
+   `MissionState`, and `EvaluationResult`.
+5. Return a fully validated `AIRecommendation`.
+
+This is **not a mock**.  The recommendation changes when inputs change.
+It is deterministic given identical inputs (testable and reproducible).
+
+### OllamaProvider (opt-in)
+
+`backend/app/agent/ollama_provider.py` — calls a locally-running Ollama server
+via its HTTP REST API (`POST /api/generate`).  Uses the same system prompt and
+response validation as `GraniteAgent`.  Enabled with `GCSI_OLLAMA_ENABLED=true`.
+Falls back to `LocalRuleBasedProvider` if the server is not reachable.
+
+Configuration:
+- `GCSI_OLLAMA_URL` (default: `http://localhost:11434`)
+- `GCSI_OLLAMA_MODEL` (default: `llama3.2`)
+- `GCSI_OLLAMA_TIMEOUT` (default: `60.0` seconds)
+
+### GraniteProvider / GraniteAgent (optional, IBM Granite)
+
+`backend/app/agent/granite_provider.py` wraps `GraniteAgent` and maps its
+exception types to the canonical `AIProviderError` / `AIResponseError` /
+`AIHallucinationError` hierarchy.
 
 `GraniteAgent.recommend()` operates as a **context-injection** (prompt-based) agent:
 
@@ -12,17 +79,16 @@ This file provides guidance to agents working with code in this repository.
    - `TelecomEngine` computes `LinkState` from raw scenario inputs.
    - `CandidateGenerator` produces four `CandidatePlan` variants.
    - `PlanEvaluator` evaluates all four plans analytically (no RNG).
-2. All four objects — `LinkState`, `MissionState`, `list[CandidatePlan]`,
-   `list[EvaluationResult]` — are serialized to JSON and passed to Granite
-   as a structured user message.
+2. All four objects are serialized to JSON and passed to Granite as a structured
+   user message.
 3. Granite reasons over these pre-computed facts and returns a structured
    `AIRecommendation` JSON object.
 4. The response is parsed and validated server-side before being returned.
 
-### What Granite does and does not do
+### What the AI layer does and does not do
 
-| Responsibility | Python (deterministic) | Granite (LLM) |
-|----------------|----------------------|---------------|
+| Responsibility | Python (deterministic) | AI Layer |
+|----------------|----------------------|----------|
 | RF calculations (Eb/N0, BER, goodput) | ✓ | ✗ never |
 | Packet scheduling / scoring | ✓ | ✗ never |
 | Plan evaluation metrics | ✓ | ✗ never |
@@ -34,38 +100,37 @@ This file provides guidance to agents working with code in this repository.
 ### TOOL_SCHEMAS — deferred / future capability
 
 `backend/app/agent/tools.py` defines `TOOL_SCHEMAS`: a list of
-OpenAI-compatible function-calling schemas for six domain tools
-(`get_link_state`, `get_mission_state`, `get_transmission_queue`,
-`generate_candidate_plans`, `evaluate_plan`, `simulate_what_if`).
+OpenAI-compatible function-calling schemas for six domain tools.
 
-**These schemas are NOT currently passed to the Granite API.**
-The current implementation does not use Granite's function-calling
-interface. `TOOL_SCHEMAS` exists as a clearly-labelled draft for a
-future iterative tool-calling loop.
+**These schemas are NOT currently passed to any API.**
+The current implementation uses prompt-based context injection, not
+function-calling.  `TOOL_SCHEMAS` exists as a draft for a future
+iterative tool-calling loop.
 
-Do not describe the current implementation as "tool-calling" or
-"function-calling" — it is prompt-based context injection.
+### Validation invariants (enforced in code — all providers)
 
-### Validation invariants (enforced in code)
-
-- `recommended_plan_id` **must** be one of the provided `plan_id` values →
-  `GraniteResponseError` if violated.
-- `alternative_plan_id` **must** be `None` or one of the provided `plan_id`
-  values → `GraniteResponseError` if violated.
+- `recommended_plan_id` **must** be one of the provided `plan_id` values.
+- `alternative_plan_id` **must** be `None` or one of the provided `plan_id` values.
 - `EvidenceItem.field` **must** be a real field name in `LinkState`,
-  `MissionState`, or `EvaluationResult` → `EvidenceHallucinationError`.
-- `risk_level` **must** be a valid `RiskLevel` enum value →
-  `GraniteResponseError`.
-- `confidence` and `risk_score` **must** be in `[0.0, 1.0]`; Pydantic
-  `ValidationError` is caught and re-raised as `GraniteResponseError` so
-  the route returns HTTP 422, not an unhandled 500.
+  `MissionState`, or `EvaluationResult` → `AIHallucinationError`.
+- `risk_level` **must** be a valid `RiskLevel` enum value.
+- `confidence` and `risk_score` **must** be in `[0.0, 1.0]`.
+- Invalid output always fails loudly with a typed exception; fabricated
+  recommendations are never silently returned.
 
-### Granite unavailability
+### Response contract — `RecommendResponse`
 
-When `GCSI_GRANITE_API_KEY` is empty or the API call fails, `GraniteAPIError`
-is raised. `routes_agent.py` maps this to HTTP 502. No fabricated fallback
-recommendation is ever returned. The frontend gracefully hides the
-`RecommendationPanel` when the endpoint returns an error.
+`POST /agent/recommend` now returns a `RecommendResponse` wrapper:
+
+```json
+{
+  "provider": "Local",
+  "recommendation": { ...AIRecommendation fields... }
+}
+```
+
+The `provider` field is displayed in the frontend header badge so the operator
+always knows which AI backend produced the recommendation.
 
 ---
 
@@ -113,8 +178,11 @@ RiskWeights(w_deadline_miss=1e-9, w_critical_deficit=1e-9, w_window_pressure=1.0
 ### `pytest.ini_options` lives in `backend/pyproject.toml` but `testpaths = ["tests"]` resolves relative to the repo root
 Always run pytest from `ground-control-signal-insight/`, not from `backend/`.
 
-### `asyncio_mode = "auto"` is set in `pyproject.toml`
-All async tests automatically get an event loop — no `@pytest.mark.asyncio` decorator needed.
+### `asyncio_mode = "auto"` is set in `pyproject.toml` but `@pytest.mark.asyncio` is still required
+
+The installed `pytest-asyncio` version (1.4.0) does not honour `asyncio_mode = "auto"` at the
+ini level.  All async test functions **must** carry `@pytest.mark.asyncio`.
+This applies to both module-level and class-method async tests.
 
 ### `packet_success_probability` uses log-space to avoid float underflow
 Never implement as `(1 - BER) ** N`. Large packets at moderate BER will silently underflow to 0.0 with the naive form.

@@ -123,6 +123,15 @@ export interface AIRecommendation {
 }
 
 // ---------------------------------------------------------------------------
+// Recommend response (wraps AIRecommendation with provider metadata)
+// ---------------------------------------------------------------------------
+
+export interface RecommendResponse {
+  provider: string;
+  recommendation: AIRecommendation;
+}
+
+// ---------------------------------------------------------------------------
 // Approve response
 // ---------------------------------------------------------------------------
 

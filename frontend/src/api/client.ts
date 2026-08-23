@@ -6,12 +6,12 @@
  */
 
 import type {
-  AIRecommendation,
   ApproveResponse,
   CandidatePlan,
   EvaluationResult,
   LinkState,
   MissionState,
+  RecommendResponse,
   SimulationResult,
 } from '../types/domain';
 
@@ -102,6 +102,6 @@ export async function approvePlan(
 // Agent
 // ---------------------------------------------------------------------------
 
-export async function getRecommendation(): Promise<AIRecommendation> {
+export async function getRecommendation(): Promise<RecommendResponse> {
   return fetchJson(`${BASE}/agent/recommend`, { method: 'POST' });
 }
