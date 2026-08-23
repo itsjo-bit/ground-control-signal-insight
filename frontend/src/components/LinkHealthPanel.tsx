@@ -133,9 +133,6 @@ export function LinkHealthPanel({ linkState: ls, onWhatIfResult }: Props) {
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ color: 'var(--text-dim)', fontSize: 11, fontFamily: 'var(--font-mono)', minWidth: 28 }}>
-            {SNR_MIN}
-          </span>
           <input
             type="range"
             min={SNR_MIN}
@@ -146,9 +143,6 @@ export function LinkHealthPanel({ linkState: ls, onWhatIfResult }: Props) {
             className="whatif-slider"
             aria-label={`What-if SNR: ${sliderSnr.toFixed(1)} dB`}
           />
-          <span style={{ color: 'var(--text-dim)', fontSize: 11, fontFamily: 'var(--font-mono)', minWidth: 28, textAlign: 'right' }}>
-            {SNR_MAX}
-          </span>
           <span style={{
             color: isPreview ? 'var(--warn)' : 'var(--text)',
             fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 600, minWidth: 60,

@@ -60,7 +60,7 @@ export function MissionStatePanel({ missionState: ms }: Props) {
           <tr><td>Event remaining</td><td>{ms.event_time_remaining_s.toFixed(1)} s</td></tr>
           <tr><td>Comm window</td><td>{ms.comm_window_remaining_s.toFixed(1)} s</td></tr>
           <tr>
-            <td>Risk score</td>
+            <td>Mission risk</td>
             <td>{ms.risk_score.toFixed(3)} <span style={badgeStyle}>{ms.risk_level}</span></td>
           </tr>
         </tbody>

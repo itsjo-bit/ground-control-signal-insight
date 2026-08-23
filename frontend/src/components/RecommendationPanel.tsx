@@ -96,7 +96,7 @@ export function RecommendationPanel({ recommendation: rec, providerName, evaluat
 <p>
 <strong>Confidence:</strong> {(rec.confidence * 100).toFixed(0)}%
         &nbsp;
-        <strong>Risk:</strong>{' '}
+        <strong>Plan risk:</strong>{' '}
         {rec.risk_score.toFixed(3)}{' '}
         <button
           style={badgeStyle}

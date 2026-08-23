@@ -47,7 +47,7 @@ export function PlanSwitcher({
                 className="plan-tab__risk"
                 style={{ color: riskColour(ev.risk_level) }}
               >
-                {ev.risk_score.toFixed(2)}
+                {ev.risk_score.toFixed(3)}
               </span>
             )}
           </button>
