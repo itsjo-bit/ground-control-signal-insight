@@ -25,7 +25,7 @@ POST https://generativelanguage.googleapis.com/v1beta/models/<model>:generateCon
 Configuration
 -------------
 GCSI_GEMINI_API_KEY   — Google AI API key (required to activate this provider)
-GCSI_GEMINI_MODEL     — Model name (default: gemini-2.0-flash)
+GCSI_GEMINI_MODEL     — Model name (default: gemini-3.5-flash-lite)
 GCSI_GEMINI_TIMEOUT   — HTTP timeout in seconds (default: 30.0)
 
 Error handling
@@ -60,7 +60,7 @@ from .granite_agent import (
 # Constants
 # ---------------------------------------------------------------------------
 
-_DEFAULT_MODEL = "gemini-2.0-flash"
+_DEFAULT_MODEL = "gemini-3.5-flash-lite"
 _DEFAULT_TIMEOUT = 30.0
 _GEMINI_BASE_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models"
@@ -80,7 +80,7 @@ class GeminiProvider(BaseAIProvider):
     Args:
         api_key:   Google AI API key.  Defaults to ``GCSI_GEMINI_API_KEY``.
         model:     Model identifier.  Defaults to ``GCSI_GEMINI_MODEL`` or
-                   ``gemini-2.0-flash``.
+                   ``gemini-3.5-flash-lite``.
         timeout_s: HTTP timeout in seconds.  Defaults to ``GCSI_GEMINI_TIMEOUT``
                    or ``30.0``.
     """
