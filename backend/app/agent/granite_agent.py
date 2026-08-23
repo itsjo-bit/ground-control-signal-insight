@@ -34,7 +34,7 @@ The Granite API endpoint and key are read from environment variables:
     GCSI_GRANITE_API_URL    (default: IBM watsonx.ai us-south endpoint with ?version=)
     GCSI_GRANITE_API_KEY    (required — IBM Cloud IAM API key)
     GCSI_GRANITE_PROJECT_ID (required — watsonx.ai project ID)
-    GCSI_GRANITE_MODEL_ID   (default: ibm/granite-3-3-8b-instruct)
+    GCSI_GRANITE_MODEL_ID   (default: ibm/granite-4-h-small)
     GCSI_GRANITE_IAM_URL    (default: https://iam.cloud.ibm.com/identity/token)
 
 The watsonx.ai /ml/v1/text/generation endpoint requires an IAM access token
@@ -200,7 +200,7 @@ class GraniteAgent:
                     ``GCSI_GRANITE_PROJECT_ID``.  Required by the
                     /ml/v1/text/generation endpoint.
         model_id:   Model identifier.  Defaults to env var
-                    ``GCSI_GRANITE_MODEL_ID`` or ``"ibm/granite-3-3-8b-instruct"``.
+                    ``GCSI_GRANITE_MODEL_ID`` or ``"ibm/granite-4-h-small"``.
         iam_url:    IBM Cloud IAM token endpoint.  Defaults to env var
                     ``GCSI_GRANITE_IAM_URL`` or the standard IBM Cloud IAM URL.
                     Most users should not need to change this.

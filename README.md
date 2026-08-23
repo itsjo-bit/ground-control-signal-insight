@@ -25,7 +25,7 @@ To use IBM Granite, you need **two** credentials from IBM Cloud:
 | `GCSI_GRANITE_API_KEY` | [IBM Cloud → IAM → API keys](https://cloud.ibm.com/iam/apikeys) | Yes |
 | `GCSI_GRANITE_PROJECT_ID` | watsonx.ai → your project → Manage → General → Project ID | Yes |
 | `GCSI_GRANITE_API_URL` | Change region prefix if your project is not in `us-south` | No (default: us-south) |
-| `GCSI_GRANITE_MODEL_ID` | Override only if you have a different Granite model | No (default: `ibm/granite-3-3-8b-instruct`) |
+| `GCSI_GRANITE_MODEL_ID` | Override only if you have a different Granite model | No (default: `ibm/granite-4-h-small`) |
 
 ```bash
 cp .env.example .env
