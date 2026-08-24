@@ -28,65 +28,37 @@ import { OrbitBackground } from './components/OrbitBackground';
 import { usePanelLayout } from './hooks/usePanelLayout';
 import type { PanelId, LayoutPreset } from './hooks/usePanelLayout';
 
-// ---------------------------------------------------------------------------
-// Inline styles — single source of truth for all CSS
-// ---------------------------------------------------------------------------
+const RESIZABLE_PANEL_IDS = new Set<PanelId>([
+  'mission-state',
+  'link-health',
+  'baseline-plan',
+  'plan-comparison',
+  'ai-reasoning',
+  'simulation',
+]);
 
 const styles = `
-  /* ------------------------------------------------------------------
-   * Local token aliases — keep panel-alt / panel for components that
-   * reference them directly; theme.css owns the canonical values.
-   * ------------------------------------------------------------------ */
-  :root {
-    --panel: #0b1220;
-    --panel-alt: #0e1729;
-  }
-
+  :root { --panel: #0b1220; --panel-alt: #0e1729; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-
   body {
     font-family: var(--font-sans);
-    background:
-      var(--glow-tl),
-      var(--glow-br),
-      var(--bg);
-    color: var(--text);
-    font-size: 14px;
-    -webkit-font-smoothing: antialiased;
+    background: var(--glow-tl), var(--glow-br), var(--bg);
+    color: var(--text); font-size: 14px; -webkit-font-smoothing: antialiased;
   }
   #root { display: flex; flex-direction: column; min-height: 100vh; position: relative; }
-
-  /* ---- orbit background ---- */
-  .orbit-bg-wrap {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    z-index: 0; pointer-events: none; overflow: hidden;
-  }
+  .orbit-bg-wrap { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; overflow: hidden; }
   .orbit-bg { width: 100%; height: 100%; opacity: 0.22; }
-  .orbit-path {
-    fill: none; stroke: rgba(124,158,255,0.35); stroke-width: 1;
-    stroke-dasharray: 4 6;
-  }
+  .orbit-path { fill: none; stroke: rgba(124,158,255,0.35); stroke-width: 1; stroke-dasharray: 4 6; }
   .orbit-arc-travelled { fill: none; stroke: rgba(53,231,183,0.5); stroke-width: 1.5; }
   .orbit-dot { fill: rgba(53,231,183,0.9); }
-  .orbit-dot--los {
-    fill: rgba(255,77,94,0.7);
-    animation: los-pulse 1.4s ease-out forwards;
-  }
-  @keyframes los-pulse {
-    0% { opacity: 1; r: 5; }
-    60% { opacity: 0.6; r: 9; }
-    100% { opacity: 0.3; r: 5; }
-  }
+  .orbit-dot--los { fill: rgba(255,77,94,0.7); animation: los-pulse 1.4s ease-out forwards; }
+  @keyframes los-pulse { 0% { opacity: 1; r: 5; } 60% { opacity: 0.6; r: 9; } 100% { opacity: 0.3; r: 5; } }
   .orbit-earth { fill: rgba(30,50,100,0.7); stroke: rgba(124,158,255,0.4); stroke-width: 1; }
   .orbit-earth-glow { fill: none; stroke: rgba(124,158,255,0.12); stroke-width: 1; }
-
-  /* ---- header ---- */
   .mc-header {
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     padding: 12px 20px; border-bottom: 1px solid var(--border);
-    background: rgba(5,7,13,0.9);
-    position: sticky; top: 0; z-index: 200;
-    backdrop-filter: blur(4px);
+    background: rgba(5,7,13,0.9); position: sticky; top: 0; z-index: 200; backdrop-filter: blur(4px);
   }
   .mc-header h1 {
     font-size: 16px; font-weight: 600; flex: 1; min-width: 0;
@@ -95,187 +67,56 @@ const styles = `
   }
   .mc-title-gradient {
     background: linear-gradient(90deg, #38bdf8 0%, #818cf8 60%, #c084fc 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
   }
   .mc-header h1 small {
     font-weight: 500; color: var(--text-muted); font-size: 11px; margin-left: 2px;
-    font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.1em;
-    flex-shrink: 0;
+    font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.1em; flex-shrink: 0;
   }
-  .live-dot {
-    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
-    background: var(--signal); flex-shrink: 0;
-    animation: pulse 2s infinite;
-  }
-  @keyframes pulse {
-    0% { box-shadow: 0 0 0 0 rgba(53,231,183,0.55); }
-    70% { box-shadow: 0 0 0 8px rgba(53,231,183,0); }
-    100% { box-shadow: 0 0 0 0 rgba(53,231,183,0); }
-  }
-  .sim-badge {
-    display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px;
-    background: rgba(255,182,72,0.08); color: var(--warn);
-    border: 1px solid rgba(255,182,72,0.35); border-radius: 3px;
-    font-family: var(--font-mono); font-size: 11px; font-weight: 600;
-    letter-spacing: 0.05em; white-space: nowrap;
-  }
-  .provider-badge {
-    display: inline-block; padding: 3px 10px;
-    background: rgba(124,158,255,0.08); color: var(--ai);
-    border: 1px solid rgba(124,158,255,0.35); border-radius: 3px;
-    font-family: var(--font-mono); font-size: 11px; font-weight: 600;
-    letter-spacing: 0.03em; white-space: nowrap;
-  }
-  .refresh-btn {
-    background: var(--panel-alt); color: var(--text); border: 1px solid var(--border);
-    border-radius: 3px; padding: 5px 14px; font-size: 12px; font-family: var(--font-mono);
-    cursor: pointer; transition: background 0.15s, border-color 0.15s; white-space: nowrap;
-  }
+  .live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--signal); flex-shrink: 0; animation: pulse 2s infinite; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(53,231,183,0.55); } 70% { box-shadow: 0 0 0 8px rgba(53,231,183,0); } 100% { box-shadow: 0 0 0 0 rgba(53,231,183,0); } }
+  .sim-badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; background: rgba(255,182,72,0.08); color: var(--warn); border: 1px solid rgba(255,182,72,0.35); border-radius: 3px; font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.05em; white-space: nowrap; }
+  .provider-badge { display: inline-block; padding: 3px 10px; background: rgba(124,158,255,0.08); color: var(--ai); border: 1px solid rgba(124,158,255,0.35); border-radius: 3px; font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.03em; white-space: nowrap; }
+  .refresh-btn { background: var(--panel-alt); color: var(--text); border: 1px solid var(--border); border-radius: 3px; padding: 5px 14px; font-size: 12px; font-family: var(--font-mono); cursor: pointer; transition: background 0.15s, border-color 0.15s; white-space: nowrap; }
   .refresh-btn:hover { background: var(--border); border-color: var(--border-strong); }
   .refresh-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-  /* ---- layout container ---- */
-  /*
-   * PART 1 FIX: max-width raised from 1360px → 1920px so wide screens use
-   * available space.  grid-template-columns uses repeat(2, minmax(0,1fr))
-   * which always gives exactly two equal columns at any width, then collapses
-   * to one column below 700px via a media query.
-   */
   .mission-control {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px;
-    padding: 18px;
-    flex: 1;
-    max-width: 1920px;
-    width: 100%;
-    margin: 0 auto;
-    position: relative;
-    z-index: 10;
-    align-items: start;
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px; padding: 18px; flex: 1; max-width: 1920px; width: 100%; margin: 0 auto;
+    position: relative; z-index: 10; align-items: start;
   }
-  @media (max-width: 700px) {
-    .mission-control { grid-template-columns: 1fr; padding: 10px; gap: 10px; }
-  }
-  @media (min-width: 1400px) {
-    .mission-control { padding: 20px 28px; gap: 16px; }
-  }
-  @media (min-width: 1800px) {
-    .mission-control { padding: 24px 36px; gap: 18px; }
-  }
-
-  .panel {
-    background: var(--panel-bg); border: 1px solid var(--panel-border);
-    border-radius: var(--panel-radius); padding: 16px;
-    min-width: 0; /* prevent overflow in grid */
-    overflow: hidden;
-  }
-  /* Resizable panels — constrained via min/max in CSS */
-  .panel--resizable {
-    resize: vertical;
-    overflow: auto;
-    min-height: 160px;
-    max-height: 800px;
-  }
+  @media (max-width: 700px) { .mission-control { grid-template-columns: 1fr; padding: 10px; gap: 10px; } }
+  @media (min-width: 1400px) { .mission-control { padding: 20px 28px; gap: 16px; } }
+  @media (min-width: 1800px) { .mission-control { padding: 24px 36px; gap: 18px; } }
+  .panel { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: var(--panel-radius); padding: 16px; min-width: 0; height: 100%; box-sizing: border-box; overflow-y: auto; overflow-x: hidden; }
+  .dnd-section { position: relative; min-height: 60px; }
   .panel-col-2 { grid-column: span 2; }
-  @media (max-width: 700px) {
-    .panel-col-2 { grid-column: span 1; }
-  }
-  .panel h2 {
-    font-family: var(--font-mono); font-size: 11px; font-weight: 600;
-    color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em;
-    margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border);
-    display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;
-  }
-  .panel h3 {
-    font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
-    text-transform: uppercase; letter-spacing: 0.08em; margin: 12px 0 6px;
-  }
+  @media (max-width: 700px) { .panel-col-2 { grid-column: span 1; } }
+  .panel h2 { font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; }
+  .panel h3 { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin: 12px 0 6px; }
   .panel p { margin-bottom: 8px; line-height: 1.6; }
-
-  .waveform-wrap {
-    background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
-    padding: 4px 8px; margin-bottom: 12px;
-  }
-
+  .waveform-wrap { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; margin-bottom: 12px; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.04); }
-  th {
-    color: var(--text-dim); font-weight: 500; font-size: 10px;
-    text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--font-mono);
-  }
+  th { color: var(--text-dim); font-weight: 500; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--font-mono); }
   td { font-family: var(--font-mono); font-size: 13px; }
   td:first-child { font-family: var(--font-sans); color: var(--text-muted); font-size: 13px; }
-  code {
-    background: rgba(124,158,255,0.08); color: var(--ai);
-    border-radius: 3px; padding: 2px 6px; font-size: 12px; font-family: var(--font-mono);
-  }
-
-  /* ---- AI hero panel ---- */
-  .ai-hero {
-    border-color: var(--ai-panel-border);
-    background: rgba(6,10,18,0.96);
-    box-shadow: var(--ai-panel-glow);
-  }
+  code { background: rgba(124,158,255,0.08); color: var(--ai); border-radius: 3px; padding: 2px 6px; font-size: 12px; font-family: var(--font-mono); }
+  .ai-hero { border-color: var(--ai-panel-border); background: rgba(6,10,18,0.96); box-shadow: var(--ai-panel-glow); }
   .ai-hero h2 { color: var(--ai); border-bottom-color: rgba(124,158,255,0.2); }
-
-  /* ---- approval bar ---- */
-  .approval-bar {
-    background: var(--panel-bg); border: 1px solid var(--panel-border);
-    border-radius: var(--panel-radius); padding: 16px;
-    min-width: 0;
-  }
-  .approval-bar h2 {
-    font-family: var(--font-mono); font-size: 11px; font-weight: 600;
-    color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em;
-    margin-bottom: 12px;
-  }
+  .approval-bar { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: var(--panel-radius); padding: 16px; min-width: 0; }
+  .approval-bar h2 { font-family: var(--font-mono); font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 12px; }
   button { cursor: pointer; border: none; border-radius: 4px; margin: 0 4px; font-family: var(--font-mono); }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
-  input[type=text] {
-    background: var(--bg); border: 1px solid var(--border); color: var(--text);
-    border-radius: 3px; padding: 6px 10px; font-size: 13px; font-family: var(--font-mono);
-  }
-
-  /* ---- approve / override buttons ---- */
-  .btn-approve {
-    background: var(--btn-primary-bg); color: var(--btn-primary-color);
-    border: none !important;
-    font-weight: 700; padding: 5px 16px; font-size: 12px;
-    box-shadow: var(--btn-primary-glow);
-    transition: opacity 0.15s, box-shadow 0.15s;
-  }
+  input[type=text] { background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 3px; padding: 6px 10px; font-size: 13px; font-family: var(--font-mono); }
+  .btn-approve { background: var(--btn-primary-bg); color: var(--btn-primary-color); border: none !important; font-weight: 700; padding: 5px 16px; font-size: 12px; box-shadow: var(--btn-primary-glow); transition: opacity 0.15s, box-shadow 0.15s; }
   .btn-approve:hover:not(:disabled) { opacity: 0.88; box-shadow: 0 0 26px rgba(99,102,241,0.55); }
-  .btn-override {
-    background: transparent; color: var(--warn);
-    border: 1px solid rgba(255,182,72,0.4) !important;
-    font-weight: 600; padding: 5px 16px; font-size: 12px;
-    transition: background 0.15s;
-  }
+  .btn-override { background: transparent; color: var(--warn); border: 1px solid rgba(255,182,72,0.4) !important; font-weight: 600; padding: 5px 16px; font-size: 12px; transition: background 0.15s; }
   .btn-override:hover:not(:disabled) { background: rgba(255,182,72,0.08); }
-  .btn-reset {
-    background: transparent; color: var(--text-muted);
-    border: 1px solid var(--border) !important;
-    padding: 5px 12px; font-size: 12px;
-    transition: background 0.15s;
-  }
+  .btn-reset { background: transparent; color: var(--text-muted); border: 1px solid var(--border) !important; padding: 5px 12px; font-size: 12px; transition: background 0.15s; }
   .btn-reset:hover:not(:disabled) { background: rgba(255,255,255,0.04); }
-
-  /* ---- drag-to-reorder (packet list inside ApprovalBar) ---- */
-  .drag-list {
-    display: flex; flex-direction: column; gap: 2px;
-    max-height: 280px; overflow-y: auto;
-  }
-  .drag-item {
-    display: flex; align-items: center; gap: 10px;
-    padding: 5px 8px; background: var(--panel-alt);
-    border: 1px solid var(--border); border-radius: 3px;
-    cursor: grab; user-select: none;
-    transition: background 0.12s;
-    font-family: var(--font-mono); font-size: 12px;
-  }
+  .drag-list { display: flex; flex-direction: column; gap: 2px; max-height: 280px; overflow-y: auto; }
+  .drag-item { display: flex; align-items: center; gap: 10px; padding: 5px 8px; background: var(--panel-alt); border: 1px solid var(--border); border-radius: 3px; cursor: grab; user-select: none; transition: background 0.12s; font-family: var(--font-mono); font-size: 12px; }
   .drag-item:hover { background: var(--border); }
   .drag-item:active { cursor: grabbing; }
   .drag-handle { color: var(--text-dim); font-size: 14px; flex-shrink: 0; }
@@ -284,278 +125,75 @@ const styles = `
   .drag-type { min-width: 80px; font-size: 11px; font-weight: 600; }
   .drag-crit { color: var(--text-muted); font-size: 11px; min-width: 65px; }
   .drag-size { color: var(--text-dim); font-size: 11px; }
-
-  /* ---- simulation playback ---- */
-  .sim-ctrl {
-    background: var(--panel-alt); color: var(--text);
-    border: 1px solid var(--border) !important;
-    padding: 4px 10px; font-size: 14px;
-    transition: background 0.12s;
-  }
+  .sim-ctrl { background: var(--panel-alt); color: var(--text); border: 1px solid var(--border) !important; padding: 4px 10px; font-size: 14px; transition: background 0.12s; }
   .sim-ctrl:hover { background: var(--border); }
-  .sim-timeline {
-    position: relative; height: 6px; background: var(--border);
-    border-radius: 3px; overflow: visible; margin: 0 0 6px;
-  }
-  .sim-timeline-fill {
-    height: 100%; background: rgba(53,231,183,0.25); border-radius: 3px;
-  }
-  .sim-marker {
-    position: absolute; top: 50%; width: 10px; height: 10px; border-radius: 50%;
-  }
-
-  /* ---- plan switcher tabs ---- */
-  .plan-switcher {
-    display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap;
-  }
-  .plan-tab {
-    display: flex; align-items: center; gap: 6px;
-    padding: 5px 12px; background: var(--panel-alt);
-    border: 1px solid var(--border) !important;
-    border-radius: 3px; color: var(--text-muted);
-    font-family: var(--font-mono); font-size: 11px; cursor: pointer;
-    transition: background 0.12s, border-color 0.12s, color 0.12s;
-  }
+  .sim-timeline { position: relative; height: 6px; background: var(--border); border-radius: 3px; overflow: visible; margin: 0 0 6px; }
+  .sim-timeline-fill { height: 100%; background: rgba(53,231,183,0.25); border-radius: 3px; }
+  .sim-marker { position: absolute; top: 50%; width: 10px; height: 10px; border-radius: 50%; }
+  .plan-switcher { display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
+  .plan-tab { display: flex; align-items: center; gap: 6px; padding: 5px 12px; background: var(--panel-alt); border: 1px solid var(--border) !important; border-radius: 3px; color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; cursor: pointer; transition: background 0.12s, border-color 0.12s, color 0.12s; }
   .plan-tab:hover { background: var(--border); color: var(--text); }
-  .plan-tab--active {
-    background: rgba(124,158,255,0.10); color: var(--text);
-    border-color: rgba(124,158,255,0.45) !important;
-    box-shadow: var(--tab-active-glow);
-  }
+  .plan-tab--active { background: rgba(124,158,255,0.10); color: var(--text); border-color: rgba(124,158,255,0.45) !important; box-shadow: var(--tab-active-glow); }
   .plan-tab__label { font-weight: 600; }
-  .plan-tab__ai-badge {
-    background: rgba(124,158,255,0.15); color: var(--ai);
-    border-radius: 2px; padding: 1px 5px;
-    font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
-    text-transform: uppercase;
-  }
+  .plan-tab__ai-badge { background: rgba(124,158,255,0.15); color: var(--ai); border-radius: 2px; padding: 1px 5px; font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
   .plan-tab__risk { font-size: 11px; font-weight: 600; }
-
-  /* ---- risk breakdown ---- */
-  .risk-breakdown {
-    background: var(--panel-alt); border: 1px solid var(--border-strong);
-    border-radius: 4px; padding: 12px; margin: 8px 0;
-    animation: fade-in 0.15s ease-out;
-  }
-  @keyframes fade-in {
-    from { opacity: 0; transform: translateY(-4px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-  .risk-breakdown__header {
-    display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 10px; font-family: var(--font-mono); font-size: 11px;
-    color: var(--text-muted);
-  }
-  .risk-breakdown__close {
-    background: none; border: none !important; color: var(--text-dim);
-    font-size: 13px; cursor: pointer; padding: 0 2px;
-  }
+  .risk-breakdown { background: var(--panel-alt); border: 1px solid var(--border-strong); border-radius: 4px; padding: 12px; margin: 8px 0; animation: fade-in 0.15s ease-out; }
+  @keyframes fade-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+  .risk-breakdown__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+  .risk-breakdown__close { background: none; border: none !important; color: var(--text-dim); font-size: 13px; cursor: pointer; padding: 0 2px; }
   .risk-breakdown__close:hover { color: var(--text); }
-  .risk-breakdown__total {
-    margin-top: 10px; font-family: var(--font-mono); font-size: 12px;
-    color: var(--text-muted); border-top: 1px solid var(--border);
-    padding-top: 8px;
-  }
+  .risk-breakdown__total { margin-top: 10px; font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); border-top: 1px solid var(--border); padding-top: 8px; }
   .risk-row { margin-bottom: 8px; }
-  .risk-row__header {
-    display: flex; justify-content: space-between;
-    font-family: var(--font-mono); font-size: 11px;
-    color: var(--text-muted); margin-bottom: 3px;
-  }
+  .risk-row__header { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); margin-bottom: 3px; }
   .risk-row__label { color: var(--text); }
   .risk-row__weight { color: var(--text-dim); margin: 0 2px; }
   .risk-row__contrib { color: var(--text); font-weight: 600; margin-left: 2px; }
   .risk-bar-track { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
   .risk-bar-fill { height: 100%; border-radius: 2px; }
-
-  /* ---- what-if slider ---- */
-  .whatif-section {
-    margin-top: 12px; padding-top: 10px;
-    border-top: 1px solid var(--border);
-  }
-  .whatif-header {
-    display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
-  }
-  .whatif-label {
-    font-family: var(--font-mono); font-size: 10px; font-weight: 600;
-    color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em;
-  }
-  .whatif-preview-badge {
-    background: rgba(255,182,72,0.12); color: var(--warn);
-    border: 1px solid rgba(255,182,72,0.4); border-radius: 2px;
-    padding: 1px 6px; font-family: var(--font-mono); font-size: 10px;
-    font-weight: 700; letter-spacing: 0.06em;
-  }
+  .whatif-section { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .whatif-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .whatif-label { font-family: var(--font-mono); font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; }
+  .whatif-preview-badge { background: rgba(255,182,72,0.12); color: var(--warn); border: 1px solid rgba(255,182,72,0.4); border-radius: 2px; padding: 1px 6px; font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.06em; }
   .whatif-slider { flex: 1; height: 3px; accent-color: var(--warn); cursor: pointer; }
-  .whatif-reset {
-    background: none; border: 1px solid var(--border) !important;
-    color: var(--text-dim); font-size: 11px; padding: 2px 6px;
-    border-radius: 3px; cursor: pointer; transition: color 0.12s;
-  }
+  .whatif-reset { background: none; border: 1px solid var(--border) !important; color: var(--text-dim); font-size: 11px; padding: 2px 6px; border-radius: 3px; cursor: pointer; transition: color 0.12s; }
   .whatif-reset:hover { color: var(--text); }
-
-  /* ---- plan comparison fade ---- */
   .plan-content-fade { animation: fade-in 0.2s ease-out; }
-
-  /* ---- reset buttons ---- */
-  .reset-btn {
-    background: transparent; color: var(--critical);
-    border: 1px solid rgba(255,77,94,0.35) !important;
-    border-radius: 3px; padding: 5px 14px; font-size: 12px; font-family: var(--font-mono);
-    cursor: pointer; transition: background 0.15s; white-space: nowrap;
-  }
+  .reset-btn { background: transparent; color: var(--critical); border: 1px solid rgba(255,77,94,0.35) !important; border-radius: 3px; padding: 5px 14px; font-size: 12px; font-family: var(--font-mono); cursor: pointer; transition: background 0.15s; white-space: nowrap; }
   .reset-btn:hover:not(:disabled) { background: rgba(255,77,94,0.08); }
   .reset-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-  /* ---- state indicators ---- */
-  .spinner {
-    color: var(--text-muted); padding: 48px; text-align: center;
-    font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em;
-    text-transform: uppercase; position: relative; z-index: 10;
-  }
-  .error-banner {
-    color: var(--critical); padding: 10px 20px; background: rgba(255,77,94,0.06);
-    border-bottom: 1px solid rgba(255,77,94,0.3); font-family: var(--font-mono);
-    font-size: 13px; position: relative; z-index: 10;
-  }
-
-  /* ================================================================
-   * PART 2 — Panel visibility / header controls
-   * ================================================================ */
-
-  /* Header controls group — right-aligned cluster */
-  .mc-header-controls {
-    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-    margin-left: auto;
-  }
-
-  /* Generic control button matching existing GCSI style */
-  .mc-ctrl-btn {
-    background: var(--panel-alt); color: var(--text-muted);
-    border: 1px solid var(--border); border-radius: 3px;
-    padding: 5px 12px; font-size: 11px; font-family: var(--font-mono);
-    cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s;
-    white-space: nowrap; letter-spacing: 0.04em;
-  }
+  .spinner { color: var(--text-muted); padding: 48px; text-align: center; font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; position: relative; z-index: 10; }
+  .error-banner { color: var(--critical); padding: 10px 20px; background: rgba(255,77,94,0.06); border-bottom: 1px solid rgba(255,77,94,0.3); font-family: var(--font-mono); font-size: 13px; position: relative; z-index: 10; }
+  .mc-header-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+  .mc-ctrl-btn { background: var(--panel-alt); color: var(--text-muted); border: 1px solid var(--border); border-radius: 3px; padding: 5px 12px; font-size: 11px; font-family: var(--font-mono); cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; white-space: nowrap; letter-spacing: 0.04em; }
   .mc-ctrl-btn:hover { background: var(--border); color: var(--text); border-color: var(--border-strong); }
-  .mc-ctrl-btn--active {
-    background: rgba(124,158,255,0.10); color: var(--ai);
-    border-color: rgba(124,158,255,0.4);
-  }
-
-  /* Dropdown container (Panels menu + Preset menu) */
-  .mc-dropdown {
-    position: relative; display: inline-block;
-  }
-  .mc-dropdown-menu {
-    position: absolute; top: calc(100% + 6px); right: 0;
-    background: #0b1220; border: 1px solid var(--border-strong);
-    border-radius: 6px; padding: 6px 0; z-index: 300; min-width: 180px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.55);
-    animation: fade-in 0.12s ease-out;
-  }
+  .mc-ctrl-btn--active { background: rgba(124,158,255,0.10); color: var(--ai); border-color: rgba(124,158,255,0.4); }
+  .mc-dropdown { position: relative; display: inline-block; }
+  .mc-dropdown-menu { position: absolute; top: calc(100% + 6px); right: 0; background: #0b1220; border: 1px solid var(--border-strong); border-radius: 6px; padding: 6px 0; z-index: 300; min-width: 180px; box-shadow: 0 8px 32px rgba(0,0,0,0.55); animation: fade-in 0.12s ease-out; }
   .mc-dropdown-menu--left { right: auto; left: 0; }
-  .mc-dropdown-title {
-    padding: 4px 14px 6px;
-    font-family: var(--font-mono); font-size: 10px; font-weight: 600;
-    color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em;
-    border-bottom: 1px solid var(--border); margin-bottom: 4px;
-  }
-  .mc-dropdown-item {
-    display: flex; align-items: center; gap: 8px;
-    padding: 6px 14px; font-family: var(--font-mono); font-size: 12px;
-    color: var(--text-muted); cursor: pointer; user-select: none;
-    transition: background 0.1s, color 0.1s;
-    white-space: nowrap;
-  }
+  .mc-dropdown-title { padding: 4px 14px 6px; font-family: var(--font-mono); font-size: 10px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+  .mc-dropdown-item { display: flex; align-items: center; gap: 8px; padding: 6px 14px; font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); cursor: pointer; user-select: none; transition: background 0.1s, color 0.1s; white-space: nowrap; }
   .mc-dropdown-item:hover { background: rgba(255,255,255,0.05); color: var(--text); }
   .mc-dropdown-item--active { color: var(--ai); }
-  .mc-dropdown-check {
-    width: 14px; height: 14px; border: 1px solid var(--border-strong);
-    border-radius: 3px; flex-shrink: 0; display: flex; align-items: center;
-    justify-content: center; font-size: 9px;
-    background: var(--bg);
-  }
-  .mc-dropdown-check--on {
-    background: rgba(124,158,255,0.15); border-color: rgba(124,158,255,0.5);
-    color: var(--ai);
-  }
-  .mc-dropdown-divider {
-    height: 1px; background: var(--border); margin: 6px 0;
-  }
-
-  /* ================================================================
-   * PART 4 — Panel drag-to-reorder (dashboard level)
-   * ================================================================ */
-
-  /* Wrapper around each rendered panel section — receives DnD events */
-  .panel-slot {
-    display: contents; /* let the inner element take the grid slot naturally */
-  }
-  .panel-drag-handle {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 18px; height: 18px; margin-right: 4px;
-    color: var(--text-dim); font-size: 13px;
-    cursor: grab; opacity: 0.5;
-    transition: opacity 0.12s;
-    flex-shrink: 0;
-    vertical-align: middle;
-  }
+  .mc-dropdown-check { width: 14px; height: 14px; border: 1px solid var(--border-strong); border-radius: 3px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 9px; background: var(--bg); }
+  .mc-dropdown-check--on { background: rgba(124,158,255,0.15); border-color: rgba(124,158,255,0.5); color: var(--ai); }
+  .mc-dropdown-divider { height: 1px; background: var(--border); margin: 6px 0; }
+  .panel-slot { display: contents; }
+  .panel-drag-handle { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin-right: 4px; color: var(--text-dim); font-size: 13px; cursor: grab; opacity: 0.5; transition: opacity 0.12s; flex-shrink: 0; vertical-align: middle; }
   .panel-drag-handle:hover { opacity: 1; }
-  .panel--dragging {
-    opacity: 0.4;
-    outline: 2px dashed rgba(124,158,255,0.5);
-    outline-offset: 2px;
-  }
-  .panel--drag-over {
-    outline: 2px solid rgba(53,231,183,0.5);
-    outline-offset: 2px;
-  }
-
-  /* ================================================================
-   * PART 3 — Panel resize handle indicator
-   * ================================================================ */
-  .panel--resizable::after {
-    content: '⠿';
-    position: absolute;
-    bottom: 4px; right: 6px;
-    font-size: 10px; color: var(--text-dim);
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.15s;
-  }
-  .panel--resizable:hover::after { opacity: 0.6; }
-  /* We use position:relative on resizable panels to anchor the ::after */
-  .panel--resizable { position: relative; overflow: auto; }
-
-  /* ================================================================
-   * Responsive tweaks
-   * ================================================================ */
-  @media (max-width: 900px) {
-    .mc-header h1 small { display: none; }
-    .sim-badge { display: none; }
-  }
-  @media (max-width: 600px) {
-    .mc-header { padding: 10px 12px; gap: 6px; }
-    .mc-header h1 { font-size: 14px; }
-    .mc-ctrl-btn { padding: 4px 8px; font-size: 10px; }
-    .panel { padding: 12px; }
-  }
+  .panel--dragging { opacity: 0.4; outline: 2px dashed rgba(124,158,255,0.5); outline-offset: 2px; }
+  .panel--drag-over { outline: 2px solid rgba(53,231,183,0.5); outline-offset: 2px; }
+  .resize-handle { position: absolute; right: 0; bottom: 0; width: 18px; height: 18px; cursor: ns-resize; touch-action: none; z-index: 6; }
+  .resize-handle::after { content: ''; position: absolute; right: 4px; bottom: 4px; width: 8px; height: 8px; border-right: 2px solid var(--text-dim); border-bottom: 2px solid var(--text-dim); opacity: 0.5; transition: opacity 0.15s, border-color 0.15s; }
+  .resize-handle:hover::after, .resize-handle--active::after { opacity: 1; border-color: var(--ai); }
+  @media (max-width: 900px) { .mc-header h1 small { display: none; } .sim-badge { display: none; } }
+  @media (max-width: 600px) { .mc-header { padding: 10px 12px; gap: 6px; } .mc-header h1 { font-size: 14px; } .mc-ctrl-btn { padding: 4px 8px; font-size: 10px; } .panel { padding: 12px; } }
 `;
 
-// ---------------------------------------------------------------------------
-// Preset labels
-// ---------------------------------------------------------------------------
-
 const PRESET_LABELS: Record<LayoutPreset, string> = {
-  'mission-control': '🛰  Mission Control',
-  'ai-analysis':     '🤖  AI Analysis',
-  'minimal':         '📡  Minimal',
+  'mission-control': 'Mission Control',
+  'ai-analysis': 'AI Analysis',
+  'minimal': 'Minimal',
 };
-
-// ---------------------------------------------------------------------------
-// PanelsMenu — visibility dropdown
-// ---------------------------------------------------------------------------
 
 function PanelsMenu({
   panels,
@@ -567,13 +205,10 @@ function PanelsMenu({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
     function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     }
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -586,19 +221,15 @@ function PanelsMenu({
         onClick={() => setOpen((o) => !o)}
         title="Show / hide dashboard panels"
       >
-        Panels {open ? '▲' : '▾'}
+        Panels {open ? '\u25b2' : '\u25be'}
       </button>
       {open && (
         <div className="mc-dropdown-menu">
           <div className="mc-dropdown-title">Visible Panels</div>
           {panels.map((p) => (
-            <div
-              key={p.id}
-              className="mc-dropdown-item"
-              onClick={() => onToggle(p.id)}
-            >
+            <div key={p.id} className="mc-dropdown-item" onClick={() => onToggle(p.id)}>
               <span className={`mc-dropdown-check${p.visible ? ' mc-dropdown-check--on' : ''}`}>
-                {p.visible ? '✓' : ''}
+                {p.visible ? '\u2713' : ''}
               </span>
               {p.label}
             </div>
@@ -608,10 +239,6 @@ function PanelsMenu({
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// PresetsMenu — layout preset selector
-// ---------------------------------------------------------------------------
 
 function PresetsMenu({
   current,
@@ -641,7 +268,7 @@ function PresetsMenu({
         onClick={() => setOpen((o) => !o)}
         title="Switch layout preset"
       >
-        Layout {open ? '▲' : '▾'}
+        Layout {open ? '\u25b2' : '\u25be'}
       </button>
       {open && (
         <div className="mc-dropdown-menu mc-dropdown-menu--left">
@@ -652,7 +279,7 @@ function PresetsMenu({
               className={`mc-dropdown-item${p === current ? ' mc-dropdown-item--active' : ''}`}
               onClick={() => { onApply(p); setOpen(false); }}
             >
-              {p === current ? '● ' : '○ '}
+              {p === current ? '\u25cf ' : '\u25cb '}
               {PRESET_LABELS[p]}
             </div>
           ))}
@@ -662,40 +289,76 @@ function PresetsMenu({
   );
 }
 
-// ---------------------------------------------------------------------------
-// DraggableSection — wraps a panel section and applies grid-level DnD
-// ---------------------------------------------------------------------------
+const MIN_PANEL_HEIGHT = 140;
+const MAX_PANEL_HEIGHT = 720;
+
+function ResizeHandle({ onResizeDelta }: { onResizeDelta: (deltaY: number) => void }) {
+  const dragging = useRef(false);
+  const lastY = useRef(0);
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    e.preventDefault();
+    dragging.current = true;
+    lastY.current = e.clientY;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragging.current) return;
+    e.stopPropagation();
+    const delta = e.clientY - lastY.current;
+    lastY.current = e.clientY;
+    if (delta !== 0) onResizeDelta(delta);
+  };
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    dragging.current = false;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
+  return (
+    <div
+      className="resize-handle"
+      draggable={false}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      title="Drag to resize panel height"
+      role="separator"
+      aria-orientation="horizontal"
+    />
+  );
+}
 
 function DraggableSection({
-  id,
-  colSpan,
-  heightPx,
-  onDragStart,
-  onDragOver,
-  onDrop,
-  children,
+  id, colSpan, heightPx, resizable,
+  onDragStart, onDragOver, onDrop, onResize, children,
 }: {
-  id: PanelId;
-  colSpan: 1 | 2;
-  heightPx: number | null;
-  onDragStart: (id: PanelId) => void;
-  onDragOver: (id: PanelId) => void;
-  onDrop: (id: PanelId) => void;
+  id: PanelId; colSpan: 1 | 2; heightPx: number | null; resizable?: boolean;
+  onDragStart: (id: PanelId) => void; onDragOver: (id: PanelId) => void;
+  onDrop: (id: PanelId) => void; onResize?: (id: PanelId, heightPx: number) => void;
   children: React.ReactNode;
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const sectionRef = useRef<HTMLDivElement>(null);
 
   const colClass = colSpan === 2 ? 'panel-col-2' : '';
   const dragClass = isDragging ? 'panel--dragging' : '';
   const overClass = isDragOver ? 'panel--drag-over' : '';
-
   const style: React.CSSProperties = {};
   if (heightPx !== null) style.height = heightPx;
 
+  const handleResizeDelta = (deltaY: number) => {
+    if (!onResize) return;
+    const current = sectionRef.current?.getBoundingClientRect().height ?? heightPx ?? MIN_PANEL_HEIGHT;
+    const next = Math.max(MIN_PANEL_HEIGHT, Math.min(MAX_PANEL_HEIGHT, current + deltaY));
+    onResize(id, next);
+  };
+
   return (
     <div
-      className={`${colClass} ${dragClass} ${overClass}`.trim()}
+      ref={sectionRef}
+      className={`dnd-section ${colClass} ${dragClass} ${overClass}`.trim()}
       style={style}
       draggable
       onDragStart={(e) => {
@@ -710,13 +373,10 @@ function DraggableSection({
       onDrop={(e) => { e.preventDefault(); setIsDragOver(false); onDrop(id); }}
     >
       {children}
+      {resizable && <ResizeHandle onResizeDelta={handleResizeDelta} />}
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// MissionControl component
-// ---------------------------------------------------------------------------
 
 export default function MissionControl() {
   const [linkState, setLinkState] = useState<LinkState | null>(null);
@@ -729,37 +389,18 @@ export default function MissionControl() {
   const [resetting, setResetting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [approveResult, setApproveResult] = useState<ApproveResponse | null>(null);
-
-  // Plans + evaluations
   const [allPlans, setAllPlans] = useState<CandidatePlan[]>([]);
   const [allEvaluations, setAllEvaluations] = useState<EvaluationResult[]>([]);
   const [activePlanId, setActivePlanId] = useState<string>('baseline');
-
-  // What-if overrides
   const [whatIfEvals, setWhatIfEvals] = useState<EvaluationResult[] | null>(null);
   const [whatIfSnr, setWhatIfSnr] = useState<number | null>(null);
-
-  // Orbit background
   const totalWindowRef = useRef<number | null>(null);
 
-  // Layout preferences (Parts 2–7)
-  const {
-    prefs,
-    togglePanel,
-    applyPreset,
-    reorderPanels,
-    resetLayout,
-  } = usePanelLayout();
-
-  // DnD state for panel reorder
+  const { prefs, togglePanel, applyPreset, reorderPanels, setPanelHeight, resetLayout } = usePanelLayout();
   const dragSourceId = useRef<PanelId | null>(null);
 
-  function handlePanelDragStart(id: PanelId) {
-    dragSourceId.current = id;
-  }
-  function handlePanelDragOver(_id: PanelId) {
-    // nothing — we handle on drop
-  }
+  function handlePanelDragStart(id: PanelId) { dragSourceId.current = id; }
+  function handlePanelDragOver(_id: PanelId) {}
   function handlePanelDrop(targetId: PanelId) {
     if (dragSourceId.current && dragSourceId.current !== targetId) {
       reorderPanels(dragSourceId.current, targetId);
@@ -768,66 +409,36 @@ export default function MissionControl() {
   }
 
   const refresh = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    setApproveResult(null);
-    setWhatIfEvals(null);
-    setWhatIfSnr(null);
+    setLoading(true); setError(null); setApproveResult(null); setWhatIfEvals(null); setWhatIfSnr(null);
     try {
       const [stateData, queueData] = await Promise.all([getState(), getQueue()]);
       setLinkState(stateData.link_state);
       setMissionState(stateData.mission_state);
       setQueue(queueData);
-
-      if (totalWindowRef.current === null) {
-        totalWindowRef.current = stateData.mission_state.comm_window_remaining_s;
-      }
-
+      if (totalWindowRef.current === null) totalWindowRef.current = stateData.mission_state.comm_window_remaining_s;
       try {
         const plans = await generatePlans();
         setAllPlans(plans);
         const evals = await Promise.all(plans.map((p) => evaluatePlan(p)));
         setAllEvaluations(evals);
         setActivePlanId(plans[0]?.plan_id ?? 'baseline');
-      } catch {
-        setAllPlans([]);
-        setAllEvaluations([]);
-      }
-
+      } catch { setAllPlans([]); setAllEvaluations([]); }
       try {
         const resp = await getRecommendation();
-        setRecommendation(resp.recommendation);
-        setAiProvider(resp.provider);
-        setRecommendationError(null);
-      } catch (recErr) {
-        setRecommendation(null);
-        setAiProvider(null);
-        setRecommendationError(String(recErr));
-      }
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setLoading(false);
-    }
+        setRecommendation(resp.recommendation); setAiProvider(resp.provider); setRecommendationError(null);
+      } catch (recErr) { setRecommendation(null); setAiProvider(null); setRecommendationError(String(recErr)); }
+    } catch (err) { setError(String(err)); }
+    finally { setLoading(false); }
   }, []);
 
   const handleReset = useCallback(async () => {
-    setResetting(true);
-    setError(null);
-    try {
-      await resetScenario();
-      totalWindowRef.current = null;
-    } catch {
-      // 503 = no scenario; non-fatal
-    } finally {
-      setResetting(false);
-    }
+    setResetting(true); setError(null);
+    try { await resetScenario(); totalWindowRef.current = null; } catch {}
+    finally { setResetting(false); }
     await refresh();
   }, [refresh]);
 
-  useEffect(() => {
-    handleReset();
-  }, [handleReset]);
+  useEffect(() => { handleReset(); }, [handleReset]);
 
   function handleApproved(result: ApproveResponse) {
     setApproveResult(result);
@@ -836,212 +447,92 @@ export default function MissionControl() {
   }
 
   function handleWhatIfResult(result: WhatIfEvalResponse, snrDb: number) {
-    if (result.evaluations.length === 0) {
-      setWhatIfEvals(null);
-      setWhatIfSnr(null);
-    } else {
-      setWhatIfEvals(result.evaluations);
-      setWhatIfSnr(snrDb);
-    }
+    if (result.evaluations.length === 0) { setWhatIfEvals(null); setWhatIfSnr(null); }
+    else { setWhatIfEvals(result.evaluations); setWhatIfSnr(snrDb); }
   }
 
-  if (loading) return <div className="spinner">Loading mission data…</div>;
+  if (loading) return <div className="spinner">Loading mission data...</div>;
   if (error) return <div className="error-banner">Error: {error} <button onClick={refresh}>Retry</button></div>;
   if (!linkState || !missionState || !queue) return null;
 
   const displayEvals = whatIfEvals ?? allEvaluations;
   const isWhatIfPreview = whatIfEvals !== null;
-
   const activePlan = allPlans.find((p) => p.plan_id === activePlanId) ?? queue;
   const activeEval = displayEvals.find((e) => e.plan_id === activePlanId) ?? null;
+  const recEval = recommendation ? (displayEvals.find((e) => e.plan_id === recommendation.recommended_plan_id) ?? null) : null;
+  const riskWeights = { w_deadline_miss: 0.40, w_critical_deficit: 0.40, w_window_pressure: 0.20 };
 
-  const recEval = recommendation
-    ? (displayEvals.find((e) => e.plan_id === recommendation.recommended_plan_id) ?? null)
-    : null;
-
-  const riskWeights = {
-    w_deadline_miss: 0.40,
-    w_critical_deficit: 0.40,
-    w_window_pressure: 0.20,
-  };
-
-  // Helpers for rendering each named panel — keyed by PanelId
   const panelRenderers: Record<PanelId, React.ReactNode> = {
-    'mission-state': (
-      <MissionStatePanel missionState={missionState} />
-    ),
-    'link-health': (
-      <LinkHealthPanel
-        linkState={linkState}
-        onWhatIfResult={handleWhatIfResult}
-      />
-    ),
-    'baseline-plan': (
-      <TransmissionQueuePanel plan={queue} />
-    ),
+    'mission-state': <MissionStatePanel missionState={missionState} />,
+    'link-health': <LinkHealthPanel linkState={linkState} onWhatIfResult={handleWhatIfResult} />,
+    'baseline-plan': <TransmissionQueuePanel plan={queue} />,
     'plan-comparison': allPlans.length > 0 ? (
-      <section className="panel panel--resizable" style={{ paddingBottom: 0 }}>
+      <section className="panel">
         <h2>
           Plan Comparison
           {isWhatIfPreview && (
-            <span style={{
-              marginLeft: 8, color: 'var(--warn)', fontSize: 11,
-              textTransform: 'none', letterSpacing: 0, fontWeight: 600,
-            }}>
+            <span style={{ marginLeft: 8, color: 'var(--warn)', fontSize: 11, textTransform: 'none', letterSpacing: 0, fontWeight: 600 }}>
               — WHAT-IF PREVIEW (SNR {whatIfSnr?.toFixed(1)} dB)
             </span>
           )}
         </h2>
-        <PlanSwitcher
-          plans={allPlans}
-          evaluations={displayEvals}
-          activePlanId={activePlanId}
-          aiRecommendedPlanId={recommendation?.recommended_plan_id ?? null}
-          onSelect={setActivePlanId}
-        />
+        <PlanSwitcher plans={allPlans} evaluations={displayEvals} activePlanId={activePlanId} aiRecommendedPlanId={recommendation?.recommended_plan_id ?? null} onSelect={setActivePlanId} />
       </section>
     ) : null,
     'ai-order': recommendation ? (
       <div key={activePlanId} className="plan-content-fade">
-        <PlanComparisonPanel
-          activePlan={activePlan}
-          recommendation={recommendation}
-          evaluation={activeEval}
-        />
+        <PlanComparisonPanel activePlan={activePlan} recommendation={recommendation} evaluation={activeEval} />
       </div>
     ) : (
       <section className="panel">
         <h2>AI Recommended Order</h2>
         <p style={{ color: '#8b949e' }}>
           <strong style={{ color: '#f97316' }}>AI Recommendation unavailable.</strong>
-          &nbsp;
-          {recommendationError
-            ? `The backend returned an error. (${recommendationError})`
-            : 'The AI provider could not be reached.'}
+          &nbsp;{recommendationError ? `The backend returned an error. (${recommendationError})` : 'The AI provider could not be reached.'}
         </p>
-        <p style={{ color: '#57606a', fontSize: 12, marginTop: 6 }}>
-          Ensure the backend has a scenario loaded and restart it to enable AI recommendations.
-        </p>
+        <p style={{ color: '#57606a', fontSize: 12, marginTop: 6 }}>Ensure the backend has a scenario loaded and restart it to enable AI recommendations.</p>
       </section>
     ),
-    'ai-reasoning': (
-      <RecommendationPanel
-        recommendation={recommendation}
-        providerName={aiProvider}
-        evaluation={recEval}
-        riskWeights={riskWeights}
-      />
-    ),
-    'approval': (
-      <ApprovalBar
-        recommendedPlanId={recommendation ? recommendation.recommended_plan_id : null}
-        baselinePlan={queue}
-        onApproved={handleApproved}
-      />
-    ),
-    'simulation': (
-      <SimulationPanel approveResult={approveResult} />
-    ),
+    'ai-reasoning': <RecommendationPanel recommendation={recommendation} providerName={aiProvider} evaluation={recEval} riskWeights={riskWeights} />,
+    'approval': <ApprovalBar recommendedPlanId={recommendation ? recommendation.recommended_plan_id : null} baselinePlan={queue} onApproved={handleApproved} />,
+    'simulation': <SimulationPanel approveResult={approveResult} />,
   };
 
-  // Ordered, visible panels
   const visiblePanels = prefs.panels.filter((p) => p.visible);
 
   return (
     <>
       <style>{styles}</style>
-
-      {/* Orbit background */}
       <div className="orbit-bg-wrap">
-        <OrbitBackground
-          commWindowRemainingS={missionState.comm_window_remaining_s}
-          totalWindowS={totalWindowRef.current ?? missionState.comm_window_remaining_s}
-        />
+        <OrbitBackground commWindowRemainingS={missionState.comm_window_remaining_s} totalWindowS={totalWindowRef.current ?? missionState.comm_window_remaining_s} />
       </div>
-
-      {/* ── Header ── */}
       <header className="mc-header">
         <h1>
           <span className="live-dot" title="Live" />
-          <span className="mc-title-gradient">GCSI — Ground Control Signal Insight</span>
+          <span className="mc-title-gradient">GCSI \u2014 Ground Control Signal Insight</span>
           <small>Mission Control</small>
         </h1>
-
-        <span className="sim-badge">⚠ SIMULATED</span>
-
+        <span className="sim-badge">SIMULATED</span>
         {isWhatIfPreview && (
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px',
-            background: 'rgba(255,182,72,0.12)', color: 'var(--warn)',
-            border: '1px solid rgba(255,182,72,0.5)', borderRadius: 3,
-            fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700,
-            whiteSpace: 'nowrap',
-          }}>
-            WHAT-IF · SNR {whatIfSnr?.toFixed(1)} dB
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', background: 'rgba(255,182,72,0.12)', color: 'var(--warn)', border: '1px solid rgba(255,182,72,0.5)', borderRadius: 3, fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>
+            WHAT-IF \u00b7 SNR {whatIfSnr?.toFixed(1)} dB
           </span>
         )}
-
-        {aiProvider && (
-          <span className="provider-badge">AI: {aiProvider}</span>
-        )}
-
-        {/* ── Layout controls cluster (Parts 2, 5, 7) ── */}
+        {aiProvider && <span className="provider-badge">AI: {aiProvider}</span>}
         <div className="mc-header-controls">
-          <PanelsMenu
-            panels={prefs.panels.map((p) => ({
-              id: p.id, label: p.label, visible: p.visible,
-            }))}
-            onToggle={togglePanel}
-          />
-
-          <PresetsMenu
-            current={prefs.preset}
-            onApply={applyPreset}
-          />
-
-          {/* Part 7: Reset Layout — purely frontend, does NOT call /state/reset */}
-          <button
-            className="mc-ctrl-btn"
-            onClick={resetLayout}
-            title="Restore default panel visibility, order, and sizes (does not reset the scenario)"
-          >
-            ⊡ Reset Layout
-          </button>
-
-          <button
-            className="reset-btn"
-            onClick={handleReset}
-            disabled={loading || resetting}
-            title="Reload scenario from backend with randomized link conditions"
-          >
-            ↺ Reset Scenario
-          </button>
-
-          <button
-            className="refresh-btn"
-            onClick={refresh}
-            disabled={loading || resetting}
-          >
-            ⟳ Refresh
-          </button>
+          <PanelsMenu panels={prefs.panels.map((p) => ({ id: p.id, label: p.label, visible: p.visible }))} onToggle={togglePanel} />
+          <PresetsMenu current={prefs.preset} onApply={applyPreset} />
+          <button className="mc-ctrl-btn" onClick={resetLayout} title="Restore default panel visibility, order, and sizes (does not reset the scenario)">Reset Layout</button>
+          <button className="reset-btn" onClick={handleReset} disabled={loading || resetting} title="Reload scenario from backend with randomized link conditions">Reset Scenario</button>
+          <button className="refresh-btn" onClick={refresh} disabled={loading || resetting}>Refresh</button>
         </div>
       </header>
-
-      {/* ── Dashboard grid ── */}
       <div className="mission-control">
         {visiblePanels.map((panelCfg) => {
           const content = panelRenderers[panelCfg.id];
           if (content === null || content === undefined) return null;
           return (
-            <DraggableSection
-              key={panelCfg.id}
-              id={panelCfg.id}
-              colSpan={panelCfg.span}
-              heightPx={panelCfg.heightPx}
-              onDragStart={handlePanelDragStart}
-              onDragOver={handlePanelDragOver}
-              onDrop={handlePanelDrop}
-            >
+            <DraggableSection key={panelCfg.id} id={panelCfg.id} colSpan={panelCfg.span} heightPx={panelCfg.heightPx} resizable={RESIZABLE_PANEL_IDS.has(panelCfg.id)} onDragStart={handlePanelDragStart} onDragOver={handlePanelDragOver} onDrop={handlePanelDrop} onResize={setPanelHeight}>
               {content}
             </DraggableSection>
           );
