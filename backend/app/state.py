@@ -16,6 +16,7 @@ from .config import GCSIConfig
 from .models.link_state import LinkState
 from .models.scenario import Scenario
 from .simulation.scenario_loader import ScenarioLoader
+from .simulation.scenario_randomizer import randomize_scenario
 from .telecom.engine import TelecomEngine
 
 #: The currently active scenario, or None if none has been loaded.
@@ -29,7 +30,11 @@ active_link_state: LinkState | None = None
 active_scenario_path: str | None = None
 
 
-def load_scenario(path: str, config: GCSIConfig | None = None) -> None:
+def load_scenario(
+    path: str,
+    config: GCSIConfig | None = None,
+    randomize: bool = False,
+) -> None:
     """Load a scenario from a JSON file and populate module state.
 
     Calls :class:`ScenarioLoader` to validate the file, then runs
@@ -37,8 +42,13 @@ def load_scenario(path: str, config: GCSIConfig | None = None) -> None:
     ``active_scenario`` and ``active_link_state`` are updated atomically.
 
     Args:
-        path:   Path to the scenario JSON file (absolute or relative to CWD).
-        config: Optional :class:`GCSIConfig`; defaults to env-configured instance.
+        path:      Path to the scenario JSON file (absolute or relative to CWD).
+        config:    Optional :class:`GCSIConfig`; defaults to env-configured instance.
+        randomize: If True, apply bounded random jitter to link/mission values
+                   before computing the LinkState.  Used by ``POST /state/reset``
+                   so each reset produces a slightly different but realistic
+                   scenario.  All existing callers default to False (static
+                   behaviour preserved).
 
     Raises:
         FileNotFoundError: if the file does not exist.
@@ -48,6 +58,8 @@ def load_scenario(path: str, config: GCSIConfig | None = None) -> None:
 
     cfg = config or GCSIConfig()
     scenario = ScenarioLoader.load(path)
+    if randomize:
+        scenario = randomize_scenario(scenario)
     engine = TelecomEngine(cfg)
     link_state = engine.compute(scenario.link_inputs)
 

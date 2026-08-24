@@ -46,7 +46,7 @@ def reset_state() -> dict:
             detail="No scenario has been loaded yet — nothing to reset to.",
         )
     try:
-        state.load_scenario(state.active_scenario_path)
+        state.load_scenario(state.active_scenario_path, randomize=True)
     except Exception as exc:
         raise HTTPException(
             status_code=500,
