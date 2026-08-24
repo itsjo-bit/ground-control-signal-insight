@@ -21,7 +21,7 @@ export function PlanComparisonPanel({ activePlan, recommendation, evaluation }: 
   const aiActions = [...recommendation.packet_actions].sort((a, b) => a.rank - b.rank);
 
   return (
-    <section className="panel panel-full">
+    <section className="panel">
       <h2>
         Active Plan vs. AI Recommended Order
         <span style={{ marginLeft: 10, fontSize: 12, fontWeight: 400, color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>

@@ -49,7 +49,7 @@ export function RecommendationPanel({ recommendation: rec, providerName, evaluat
   // ── Unavailable state ────────────────────────────────────────────────────
   if (rec === null) {
     return (
-      <section className="panel panel-full">
+      <section className="panel">
 <h2>AI Reasoning</h2>
 <p style={{ color: '#57606a' }}>
 <strong style={{ color: '#8b949e' }}>AI reasoning unavailable.</strong>
@@ -83,7 +83,7 @@ export function RecommendationPanel({ recommendation: rec, providerName, evaluat
     : 'AI Reasoning';
 
   return (
-    <section className="panel panel-full ai-hero">
+    <section className="panel ai-hero">
 <h2>{heading}</h2>
 <p>
 <strong>Recommended plan:</strong>

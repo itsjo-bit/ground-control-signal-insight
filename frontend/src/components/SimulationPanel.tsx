@@ -40,7 +40,7 @@ export function SimulationPanel({ approveResult }: Props) {
   // ── Pre-approval placeholder ─────────────────────────────────────────────
   if (approveResult === null) {
     return (
-      <section className="panel panel-full">
+      <section className="panel">
         <h2>Simulation</h2>
         <p style={{ color: '#57606a' }}>
           <strong style={{ color: '#8b949e' }}>No simulation executed yet.</strong>
@@ -112,7 +112,7 @@ function SimulationPlayback({ approveResult }: { approveResult: ApproveResponse 
   const isDone = revealedCount >= total;
 
   return (
-    <section className="panel panel-full">
+    <section className="panel">
       <h2>
         Simulation
         {isDone && (
