@@ -2,6 +2,8 @@
  * GCSI Theme — centralized design tokens.
  * Import once in main.tsx. All components reference these variables.
  * Do NOT duplicate hex values inline — use the variables defined here.
+ *
+ * V3.3 — Gray + Blue palette.
  */
 
 :root {
@@ -10,62 +12,62 @@
   --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
 
   /* ── Base background ── */
-  --bg: #060a12;
+  --bg: #080B11;
 
   /* ── Surface / panel ── */
-  --panel-bg: rgba(255, 255, 255, 0.03);
-  --panel-border: rgba(56, 189, 248, 0.15);
-  --panel-radius: 11px;
+  --panel-bg: rgba(18, 24, 34, 0.70);
+  --panel-border: rgba(46, 58, 79, 0.80);
+  --panel-radius: 10px;
 
   /* ── Border shades ── */
-  --border: #1a2540;
-  --border-strong: #2a3a5c;
+  --border:       rgba(46, 58, 79, 0.80);
+  --border-strong: rgba(53, 67, 90, 0.90);
 
   /* ── Text ── */
-  --text: #dce6f5;
-  --text-muted: #6f83a3;
-  --text-dim: #3d4a63;
+  --text:       #E6EBF2;
+  --text-muted: #93A0B4;
+  --text-dim:   #4A5770;
 
   /* ── Semantic accent colours ── */
-  --signal: #35e7b7;   /* teal — good / delivered */
-  --warn:   #ffb648;   /* amber — caution */
-  --critical: #ff4d5e; /* red — danger */
-  --ai: #7c9eff;       /* indigo-blue — AI / provider */
+  --signal:   #34d399;  /* green — good / delivered */
+  --warn:     #f59e0b;  /* amber — caution */
+  --critical: #f87171;  /* red — danger */
+  --ai:       #6EA8FF;  /* blue — AI / provider */
 
-  /* ── Background radial glows (used on body) ── */
-  --glow-tl: radial-gradient(ellipse 900px 600px at -10% -5%,  rgba(56,189,248,0.10) 0%, transparent 70%);
-  --glow-br: radial-gradient(ellipse 700px 500px at 110% 110%, rgba(139,92,246,0.08) 0%, transparent 70%);
+  /* ── Background radial glows ── */
+  --glow-tl: radial-gradient(ellipse 900px 600px at -10% -5%,  rgba(76,141,255,0.05) 0%, transparent 70%);
+  --glow-br: radial-gradient(ellipse 700px 500px at 110% 110%, rgba(76,141,255,0.04) 0%, transparent 70%);
 
-  /* ── Risk badge gradients — pill fills ── */
-  --risk-low-bg:      linear-gradient(135deg, #1a4a38 0%, #0d3028 100%);
-  --risk-low-color:   #35e7b7;
-  --risk-low-border:  rgba(53,231,183,0.40);
-  --risk-low-glow:    0 0 10px rgba(53,231,183,0.25);
+  /* ── Risk badge — flat fills ── */
+  --risk-low-bg:      rgba(52, 211, 153, 0.10);
+  --risk-low-color:   #34d399;
+  --risk-low-border:  rgba(52, 211, 153, 0.28);
+  --risk-low-glow:    none;
 
-  --risk-medium-bg:    linear-gradient(135deg, #4a3010 0%, #3a200a 100%);
-  --risk-medium-color: #ffb648;
-  --risk-medium-border: rgba(255,182,72,0.45);
-  --risk-medium-glow:  0 0 12px rgba(255,182,72,0.28);
+  --risk-medium-bg:    rgba(245, 158, 11, 0.10);
+  --risk-medium-color: #f59e0b;
+  --risk-medium-border: rgba(245, 158, 11, 0.30);
+  --risk-medium-glow:  none;
 
-  --risk-high-bg:      linear-gradient(135deg, #4a2410 0%, #3a1408 100%);
-  --risk-high-color:   #ff8a3d;
-  --risk-high-border:  rgba(255,138,61,0.50);
-  --risk-high-glow:    0 0 16px rgba(255,138,61,0.35);
+  --risk-high-bg:      rgba(251, 146, 60, 0.10);
+  --risk-high-color:   #fb923c;
+  --risk-high-border:  rgba(251, 146, 60, 0.32);
+  --risk-high-glow:    none;
 
-  --risk-critical-bg:      linear-gradient(135deg, #4a1018 0%, #380810 100%);
-  --risk-critical-color:   #ff4d5e;
-  --risk-critical-border:  rgba(255,77,94,0.55);
-  --risk-critical-glow:    0 0 22px rgba(255,77,94,0.42);
+  --risk-critical-bg:      rgba(248, 113, 113, 0.10);
+  --risk-critical-color:   #f87171;
+  --risk-critical-border:  rgba(248, 113, 113, 0.35);
+  --risk-critical-glow:    none;
 
-  /* ── Primary action button (Approve) ── */
-  --btn-primary-bg:     linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
-  --btn-primary-color:  #ffffff;
-  --btn-primary-glow:   0 0 18px rgba(99,102,241,0.40);
+  /* ── Primary action button ── */
+  --btn-primary-bg:    #4C8DFF;
+  --btn-primary-color: #ffffff;
+  --btn-primary-glow:  none;
 
-  /* ── Active tab glow ── */
-  --tab-active-glow: 0 0 12px rgba(124,158,255,0.22);
+  /* ── Active tab ── */
+  --tab-active-glow: none;
 
   /* ── AI hero panel accent ── */
-  --ai-panel-border: rgba(56,189,248,0.20);
-  --ai-panel-glow:   0 0 24px rgba(124,158,255,0.12);
+  --ai-panel-border: rgba(76, 141, 255, 0.22);
+  --ai-panel-glow:   none;
 }
