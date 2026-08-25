@@ -100,9 +100,13 @@ interface CommonProps {
   queue: CandidatePlan | null;
   recommendation: AIRecommendation | null;
   aiProvider: string | null;
+  aiRequestedProvider: string | null;
+  aiActualProvider: string | null;
   aiPrioritization: CandidatePrioritization | null;
   aiCandidateCount: number | null;
   aiPrioritizationError: string | null;
+  aiPrioritizationFallbackReason: string | null;
+  aiRecommendationFallbackReason: string | null;
   allPlans: CandidatePlan[];
   allEvaluations: EvaluationResult[];
   activePlanId: string;
@@ -937,15 +941,19 @@ function AiSection(props: CommonProps) {
             {activeTab === 'prioritization' && (
               <AIDecisionPanel
                 prioritization={props.aiPrioritization}
-                providerName={props.aiProvider}
+                providerName={props.aiActualProvider ?? props.aiProvider}
+                requestedProviderName={props.aiRequestedProvider}
                 candidateCount={props.aiCandidateCount}
-                prioritizationError={props.aiPrioritizationError}
+                prioritizationFallbackReason={props.aiPrioritizationFallbackReason}
+                recommendationFallbackReason={props.aiRecommendationFallbackReason}
               />
             )}
             {activeTab === 'reasoning' && (
               <RecommendationPanel
                 recommendation={props.recommendation}
-                providerName={props.aiProvider}
+                providerName={props.aiActualProvider ?? props.aiProvider}
+                requestedProviderName={props.aiRequestedProvider}
+                recommendationFallbackReason={props.aiRecommendationFallbackReason}
                 evaluation={props.recEval}
                 riskWeights={props.riskWeights}
               />
@@ -957,7 +965,7 @@ function AiSection(props: CommonProps) {
                 allPlans={props.allPlans}
                 recEval={props.recEval}
                 linkState={props.linkState}
-                providerName={props.aiProvider}
+                providerName={props.aiActualProvider ?? props.aiProvider}
                 prioritizationError={props.aiPrioritizationError}
                 candidateCount={props.aiCandidateCount}
               />

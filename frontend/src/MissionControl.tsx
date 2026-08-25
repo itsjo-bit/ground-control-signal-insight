@@ -320,9 +320,13 @@ export default function MissionControl() {
   const [aiError, setAiError] = useState<string | null>(null);
   const [recommendation, setRecommendation] = useState<AIRecommendation | null>(null);
   const [aiProvider, setAiProvider] = useState<string | null>(null);
+  const [aiRequestedProvider, setAiRequestedProvider] = useState<string | null>(null);
+  const [aiActualProvider, setAiActualProvider] = useState<string | null>(null);
   const [aiPrioritization, setAiPrioritization] = useState<CandidatePrioritization | null>(null);
   const [aiCandidateCount, setAiCandidateCount] = useState<number | null>(null);
   const [aiPrioritizationError, setAiPrioritizationError] = useState<string | null>(null);
+  const [aiPrioritizationFallbackReason, setAiPrioritizationFallbackReason] = useState<string | null>(null);
+  const [aiRecommendationFallbackReason, setAiRecommendationFallbackReason] = useState<string | null>(null);
   const aiRequestInFlight = useRef(false);
 
   // ── V3.4: Manual mode state ────────────────────────────────────────────────
@@ -397,9 +401,13 @@ export default function MissionControl() {
     setAiError(null);
     setRecommendation(null);
     setAiProvider(null);
+    setAiRequestedProvider(null);
+    setAiActualProvider(null);
     setAiPrioritization(null);
     setAiCandidateCount(null);
     setAiPrioritizationError(null);
+    setAiPrioritizationFallbackReason(null);
+    setAiRecommendationFallbackReason(null);
     setManualSelectedIds(new Set());
     setManualOrder([]);
     aiRequestInFlight.current = false;
@@ -437,9 +445,13 @@ export default function MissionControl() {
     setAiError(null);
     setRecommendation(null);
     setAiProvider(null);
+    setAiRequestedProvider(null);
+    setAiActualProvider(null);
     setAiPrioritization(null);
     setAiCandidateCount(null);
     setAiPrioritizationError(null);
+    setAiPrioritizationFallbackReason(null);
+    setAiRecommendationFallbackReason(null);
     setManualSelectedIds(new Set());
     setManualOrder([]);
     aiRequestInFlight.current = false;
@@ -467,6 +479,8 @@ export default function MissionControl() {
     setAiPrioritization(null);
     setAiCandidateCount(null);
     setAiPrioritizationError(null);
+    setAiPrioritizationFallbackReason(null);
+    setAiRecommendationFallbackReason(null);
     if (allPlans.length === 0) {
       try {
         const plans = await generatePlans();
@@ -478,10 +492,15 @@ export default function MissionControl() {
     try {
       const resp = await getRecommendation();
       setRecommendation(resp.recommendation);
-      setAiProvider(resp.provider);
+      // Prefer actual_provider for display; fall back to provider for backwards compat.
+      setAiProvider(resp.actual_provider ?? resp.provider);
+      setAiRequestedProvider(resp.requested_provider ?? resp.provider);
+      setAiActualProvider(resp.actual_provider ?? resp.provider);
       setAiPrioritization(resp.prioritization ?? null);
       setAiCandidateCount(resp.candidate_count ?? null);
       setAiPrioritizationError(resp.prioritization_error ?? null);
+      setAiPrioritizationFallbackReason(resp.prioritization_fallback_reason ?? null);
+      setAiRecommendationFallbackReason(resp.recommendation_fallback_reason ?? null);
       setAiLifecycle('ready');
       setApprovalPhase('ready');
     } catch (err) {
@@ -927,9 +946,13 @@ export default function MissionControl() {
             queue={queue ?? {} as CandidatePlan}
             recommendation={recommendation}
             aiProvider={aiProvider}
+            aiRequestedProvider={aiRequestedProvider}
+            aiActualProvider={aiActualProvider}
             aiPrioritization={aiPrioritization}
             aiCandidateCount={aiCandidateCount}
             aiPrioritizationError={aiPrioritizationError}
+            aiPrioritizationFallbackReason={aiPrioritizationFallbackReason}
+            aiRecommendationFallbackReason={aiRecommendationFallbackReason}
             allPlans={allPlans}
             allEvaluations={displayEvals}
             activePlanId={activePlanId}

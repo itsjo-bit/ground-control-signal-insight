@@ -263,19 +263,34 @@ function DecisionChain() {
 
 interface Props {
   prioritization: CandidatePrioritization | null;
+  /** The actual provider that produced the result (use for badge). */
   providerName: string | null;
+  /** The provider originally requested by configuration (may differ on fallback). */
+  requestedProviderName?: string | null;
   candidateCount: number | null;
-  prioritizationError: string | null;
+  /** Fallback reason for Stage 1 (candidate prioritization). */
+  prioritizationFallbackReason?: string | null;
+  /** Fallback reason for Stage 2 (plan recommendation). */
+  recommendationFallbackReason?: string | null;
 }
 
 export function AIDecisionPanel({
   prioritization,
   providerName,
+  requestedProviderName,
   candidateCount,
-  prioritizationError,
+  prioritizationFallbackReason,
+  recommendationFallbackReason,
 }: Props) {
   const [showChain, setShowChain] = useState(false);
-  const isDeterministicFallback = !!prioritizationError;
+
+  const hasStage1Fallback = !!prioritizationFallbackReason;
+  const hasStage2Fallback = !!recommendationFallbackReason;
+  const hasFallback = hasStage1Fallback || hasStage2Fallback;
+  // Stage 1-only fallback: actual == requested (Granite recommendation still succeeded)
+  const stage1OnlyFallback = hasStage1Fallback && !hasStage2Fallback;
+  // Stage 2 or both-stage fallback — actual_provider is Local
+  const providerSwitchedToLocal = hasStage2Fallback;
 
   return (
     <section className="panel ai-hero">
@@ -285,22 +300,30 @@ export function AIDecisionPanel({
         {providerName && (
           <span style={{
             marginLeft: 8, fontSize: 9, fontWeight: 700,
-            background: isDeterministicFallback ? 'rgba(255,182,72,0.10)' : 'rgba(124,158,255,0.12)',
-            color: isDeterministicFallback ? WARN_COLOR : AI_COLOR,
-            border: `1px solid ${isDeterministicFallback ? 'rgba(255,182,72,0.35)' : 'rgba(124,158,255,0.3)'}`,
+            background: hasFallback ? 'rgba(255,182,72,0.10)' : 'rgba(124,158,255,0.12)',
+            color: hasFallback ? WARN_COLOR : AI_COLOR,
+            border: `1px solid ${hasFallback ? 'rgba(255,182,72,0.35)' : 'rgba(124,158,255,0.3)'}`,
             borderRadius: 2, padding: '1px 6px',
           }}>
             {providerName}
           </span>
         )}
+        {/* Show requested vs actual when they differ */}
+        {requestedProviderName && providerSwitchedToLocal && requestedProviderName.toLowerCase() !== (providerName ?? '').toLowerCase() && (
+          <span style={{
+            marginLeft: 4, fontSize: 9, color: DIM, fontFamily: 'var(--font-mono)',
+          }}>
+            ← {requestedProviderName}
+          </span>
+        )}
         <span style={{
           marginLeft: 6, fontSize: 9, fontWeight: 700,
-          color: isDeterministicFallback ? WARN_COLOR : DETERM_COLOR,
-          background: isDeterministicFallback ? 'rgba(255,182,72,0.07)' : 'rgba(53,231,183,0.07)',
-          border: `1px solid ${isDeterministicFallback ? 'rgba(255,182,72,0.3)' : 'rgba(53,231,183,0.25)'}`,
+          color: hasFallback ? WARN_COLOR : DETERM_COLOR,
+          background: hasFallback ? 'rgba(255,182,72,0.07)' : 'rgba(53,231,183,0.07)',
+          border: `1px solid ${hasFallback ? 'rgba(255,182,72,0.3)' : 'rgba(53,231,183,0.25)'}`,
           borderRadius: 2, padding: '1px 6px', fontFamily: 'var(--font-mono)',
         }}>
-          {isDeterministicFallback ? '⚠ FALLBACK' : '● ACTIVE'}
+          {hasFallback ? '⚠ FALLBACK' : '● ACTIVE'}
         </span>
         <button
           style={{
@@ -315,24 +338,47 @@ export function AIDecisionPanel({
         </button>
       </h2>
 
-      {/* AI failure banner */}
-      {prioritizationError && (
+      {/* Stage-aware fallback banners — rendered only when fallback occurred */}
+      {hasFallback && (
         <div style={{
           background: 'rgba(255,182,72,0.08)', border: '1px solid rgba(255,182,72,0.35)',
           borderRadius: 4, padding: '7px 10px', marginBottom: 10, fontSize: 12,
         }}>
+          {/* Title: distinguish stage 1-only from stage 2 / full fallback */}
           <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: WARN_COLOR, fontSize: 10, marginBottom: 3 }}>
-            ⚠ AI PRIORITIZATION UNAVAILABLE
+            {stage1OnlyFallback
+              ? '⚠ PRIORITIZATION FALLBACK'
+              : hasStage1Fallback && hasStage2Fallback
+                ? '⚠ AI PROVIDER FALLBACK'
+                : '⚠ PLAN RECOMMENDATION FALLBACK'}
           </div>
-          <div style={{ color: MUTED }}>{prioritizationError}</div>
-          <div style={{ color: DIM, fontSize: 11, marginTop: 4 }}>
-            Deterministic candidate ordering is active. Mission safety is unaffected.
+
+          {/* Stage 1 detail */}
+          {hasStage1Fallback && (
+            <div style={{ color: MUTED, marginBottom: hasStage2Fallback ? 6 : 0 }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: DIM }}>Stage 1 · </span>
+              {prioritizationFallbackReason}
+            </div>
+          )}
+
+          {/* Stage 2 detail */}
+          {hasStage2Fallback && (
+            <div style={{ color: MUTED }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: DIM }}>Stage 2 · </span>
+              {recommendationFallbackReason}
+            </div>
+          )}
+
+          <div style={{ color: DIM, fontSize: 11, marginTop: 5 }}>
+            {providerSwitchedToLocal
+              ? `Local rule-based reasoning completed the workflow. Requested: ${requestedProviderName ?? 'external AI'}.`
+              : 'Deterministic candidate ordering is active. Mission safety is unaffected.'}
           </div>
         </div>
       )}
 
       {/* No prioritization at all */}
-      {!prioritization && !prioritizationError && (
+      {!prioritization && !hasFallback && (
         <div style={{ color: DIM, fontSize: 12 }}>
           AI prioritization is not available for this scenario (legacy packet mode).
           Use a v2 scenario with data_products to enable AI decision transparency.

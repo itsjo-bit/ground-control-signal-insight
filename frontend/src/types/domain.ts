@@ -205,12 +205,21 @@ export interface CandidatePrioritization {
 }
 
 export interface RecommendResponse {
+  /** Backwards-compatible: equals actual_provider. */
   provider: string;
+  /** The provider originally selected by configuration. */
+  requested_provider: string;
+  /** The provider that produced the final recommendation (may be 'local' on fallback). */
+  actual_provider: string;
   recommendation: AIRecommendation;
   /** Phase 2C/2D: structured AI prioritization result (v2 scenarios only). */
   prioritization: CandidatePrioritization | null;
   candidate_count: number | null;
-  /** Phase 2D: error message if AI prioritization failed (deterministic fallback active). */
+  /** Set when Stage 1 (candidate prioritization) fell back to Local provider. */
+  prioritization_fallback_reason: string | null;
+  /** Set when Stage 2 (plan recommendation) fell back to Local provider. */
+  recommendation_fallback_reason: string | null;
+  /** Backwards-compatible alias for prioritization_fallback_reason. */
   prioritization_error: string | null;
 }
 

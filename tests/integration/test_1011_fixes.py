@@ -420,3 +420,43 @@ class TestSwitchScenarioBasenameContract:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             resp = await c.post("/scenarios/switch", json={"filename": "a/../mission_data_v3.json"})
         assert resp.status_code == 400
+
+
+# ── POST /scenarios/switch — cross-platform backslash rejection ───────────────
+
+class TestSwitchScenarioBackslashRejection:
+    """Verify that Windows-style backslash paths are rejected regardless of OS.
+
+    These tests must pass on both Windows (where Path parses backslashes as
+    separators) and POSIX (where Path does NOT parse backslashes as separators,
+    making the explicit character check essential for cross-platform safety).
+    """
+
+    @pytest.mark.asyncio
+    async def test_backslash_subdir_rejected(self, loaded_v3):
+        r"""subdir\file.json must be rejected on any OS."""
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.post("/scenarios/switch", json={"filename": "subdir\\mission_data_v3.json"})
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_windows_drive_path_rejected(self, loaded_v3):
+        r"""C:\folder\file.json must be rejected on any OS."""
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.post("/scenarios/switch", json={"filename": "C:\\scenarios\\mission_data_v3.json"})
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_forward_slash_subdir_rejected(self, loaded_v3):
+        """subdir/file.json must be rejected."""
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.post("/scenarios/switch", json={"filename": "subdir/mission_data_v3.json"})
+        assert resp.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_valid_plain_filename_still_works(self, loaded_legacy):
+        """Plain filenames with no separators must still succeed."""
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.post("/scenarios/switch", json={"filename": "mission_data_v3.json"})
+        assert resp.status_code == 200
+        assert resp.json()["data_products_count"] == 150

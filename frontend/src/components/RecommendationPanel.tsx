@@ -36,14 +36,26 @@ interface RiskWeights {
 
 interface Props {
   recommendation: AIRecommendation | null;
+  /** The actual provider that produced the recommendation (use for badge). */
   providerName: string | null;
+  /** The provider originally requested by configuration (shown when fallback occurred). */
+  requestedProviderName?: string | null;
+  /** Fallback reason for Stage 2; set when recommendation fell back to Local. */
+  recommendationFallbackReason?: string | null;
   /** EvaluationResult for the recommended plan — used for risk breakdown (Feature 2). */
   evaluation: EvaluationResult | null;
   /** Risk weights from the backend config — used for risk breakdown (Feature 2). */
   riskWeights: RiskWeights | null;
 }
 
-export function RecommendationPanel({ recommendation: rec, providerName, evaluation, riskWeights }: Props) {
+export function RecommendationPanel({
+  recommendation: rec,
+  providerName,
+  requestedProviderName,
+  recommendationFallbackReason,
+  evaluation,
+  riskWeights,
+}: Props) {
   const [showBreakdown, setShowBreakdown] = useState(false);
 
   // ── Unavailable state ────────────────────────────────────────────────────
@@ -78,13 +90,47 @@ export function RecommendationPanel({ recommendation: rec, providerName, evaluat
     fontSize: 12,
   };
 
+  const hasFallback = !!recommendationFallbackReason;
   const heading = providerName
     ? `AI Reasoning — ${providerName}`
     : 'AI Reasoning';
 
   return (
     <section className="panel ai-hero">
-<h2>{heading}</h2>
+      <h2>
+        {heading}
+        {hasFallback && (
+          <span style={{
+            marginLeft: 8, fontSize: 9, fontWeight: 700,
+            background: 'rgba(255,182,72,0.10)',
+            color: 'var(--warn, #f59e0b)',
+            border: '1px solid rgba(255,182,72,0.35)',
+            borderRadius: 2, padding: '1px 6px',
+            fontFamily: 'var(--font-mono)',
+          }}>
+            ⚠ FALLBACK
+          </span>
+        )}
+      </h2>
+      {hasFallback && (
+        <div style={{
+          background: 'rgba(255,182,72,0.08)', border: '1px solid rgba(255,182,72,0.35)',
+          borderRadius: 4, padding: '7px 10px', marginBottom: 10, fontSize: 12,
+        }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--warn, #f59e0b)', fontSize: 10, marginBottom: 3 }}>
+            ⚠ PLAN RECOMMENDATION FALLBACK
+          </div>
+          <div style={{ color: 'var(--text-muted, #8b949e)', marginBottom: 4 }}>
+            {recommendationFallbackReason}
+          </div>
+          {requestedProviderName && (
+            <div style={{ color: 'var(--text-dim, #57606a)', fontSize: 11 }}>
+              Requested: {requestedProviderName} · Actual: {providerName ?? 'Local'}.
+              Mission safety is unaffected.
+            </div>
+          )}
+        </div>
+      )}
 <p>
 <strong>Recommended plan:</strong>
 <code>{rec.recommended_plan_id}</code>

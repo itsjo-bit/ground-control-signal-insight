@@ -246,7 +246,21 @@ def switch_scenario(req: SwitchScenarioRequest) -> SwitchScenarioResponse:
     # Reject anything that contains path separators or is an absolute path.
     # The contract is: callers supply a bare filename such as
     # "mission_data_v3.json", not "subdir/test.json" or "../other.json".
-    # Path(filename).name == filename is true only for bare filenames.
+    #
+    # Two-step validation for cross-platform correctness:
+    #   1. Explicit character check for both / and \ — ensures Windows-style
+    #      backslash paths ("subdir\file.json", "C:\folder\file.json") are
+    #      rejected on POSIX systems where Path(...).name does NOT strip them.
+    #   2. Path(...).name == filename — catches remaining non-basename forms
+    #      such as absolute paths, ".." components, and drive letters.
+    if "/" in req.filename or "\\" in req.filename:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "filename must be a plain filename with no path separators "
+                "(e.g. 'mission_data_v3.json', not 'subdir/test.json' or 'subdir\\test.json')."
+            ),
+        )
     if Path(req.filename).name != req.filename:
         raise HTTPException(
             status_code=400,
