@@ -20,10 +20,28 @@ from ..simulation.scenario_loader import ScenarioLoader
 router = APIRouter()
 
 # ---------------------------------------------------------------------------
-# Scenario data directory (relative to process CWD, or absolute).
-# Mirrors the convention used by main.py lifespan for GCSI_SCENARIO_PATH.
+# Scenario data directory.
+#
+# Resolved in this order:
+#   1. GCSI_SCENARIOS_DIR env var — absolute or relative to cwd (explicit override).
+#   2. Project-relative default derived from this file's location:
+#      <project>/backend/app/api/routes_data_products.py
+#      → <project>/backend/app/api/../../.. → <project>/
+#      → <project>/data/scenarios/
+#
+# Using a project-relative absolute path makes the directory reachable whether
+# uvicorn is started from <project>/ or from <project>/backend/.
 # ---------------------------------------------------------------------------
-_SCENARIOS_DIR = os.getenv("GCSI_SCENARIOS_DIR", "data/scenarios")
+_env_scenarios_dir = os.getenv("GCSI_SCENARIOS_DIR")
+if _env_scenarios_dir:
+    _SCENARIOS_DIR_PATH: Path = Path(_env_scenarios_dir)
+else:
+    # __file__ is <project>/backend/app/api/routes_data_products.py
+    _THIS_FILE: Path = Path(__file__).resolve()
+    _PROJECT_ROOT: Path = _THIS_FILE.parent.parent.parent.parent  # → <project>/
+    _SCENARIOS_DIR_PATH = _PROJECT_ROOT / "data" / "scenarios"
+
+_SCENARIOS_DIR: str = str(_SCENARIOS_DIR_PATH)
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +121,7 @@ def list_scenarios() -> ScenariosResponse:
 
     Raises 503 if the scenarios directory cannot be read.
     """
-    scenarios_dir = Path(_SCENARIOS_DIR)
+    scenarios_dir = _SCENARIOS_DIR_PATH.resolve()
     if not scenarios_dir.exists():
         raise HTTPException(
             status_code=503,
@@ -202,19 +220,43 @@ def switch_scenario(req: SwitchScenarioRequest) -> SwitchScenarioResponse:
     """Switch the active scenario to a different scenario file.
 
     The file must exist inside the configured scenarios directory
-    (``data/scenarios`` by default).  This is a safety constraint — callers
-    cannot load arbitrary paths from the filesystem.
+    (``data/scenarios`` by default).  Path traversal is explicitly rejected:
+    the resolved target path must be a child of the resolved scenarios directory.
+    Only ``.json`` files are accepted.
 
     Switching a scenario invalidates:
     - The active scenario and link state.
     - Any previous AI recommendation (AI is reset to STANDBY on the frontend).
     - Any operator draft transmission plan.
 
-    Raises 404 if the requested filename is not found.
-    Raises 422 if the file exists but fails validation.
+    If loading the new scenario fails, the current state is fully preserved.
+
+    Raises 400 if the filename contains path separators or is not a .json file.
+    Raises 404 if the requested filename is not found inside the scenarios directory.
+    Raises 422 if the file exists but fails schema/validation.
     """
-    scenarios_dir = Path(_SCENARIOS_DIR)
-    target = scenarios_dir / req.filename
+    # ── Reject obvious non-JSON or path-separator injections early ──────────
+    if not req.filename.endswith(".json"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only .json scenario files are accepted.",
+        )
+
+    # ── Resolve both base and target to absolute paths ───────────────────────
+    # Resolving strips any ".." components and symlinks, making traversal
+    # attempts like "../../etc/passwd.json" visible before the file check.
+    base: Path = _SCENARIOS_DIR_PATH.resolve()
+    target: Path = (base / req.filename).resolve()
+
+    # ── Ensure target is strictly inside the scenarios directory ─────────────
+    try:
+        target.relative_to(base)
+    except ValueError:
+        # target resolved outside base — path traversal attempt
+        raise HTTPException(
+            status_code=404,
+            detail=f"Scenario file '{req.filename}' not found in scenarios directory.",
+        )
 
     if not target.exists():
         raise HTTPException(
@@ -222,9 +264,18 @@ def switch_scenario(req: SwitchScenarioRequest) -> SwitchScenarioResponse:
             detail=f"Scenario file '{req.filename}' not found in '{_SCENARIOS_DIR}'",
         )
 
+    # ── Snapshot current state in case the new scenario fails to load ────────
+    _prev_scenario = state.active_scenario
+    _prev_link_state = state.active_link_state
+    _prev_path = state.active_scenario_path
+
     try:
         state.load_scenario(str(target))
     except (ValueError, FileNotFoundError) as exc:
+        # Restore the previous state so the application is not left broken.
+        state.active_scenario = _prev_scenario
+        state.active_link_state = _prev_link_state
+        state.active_scenario_path = _prev_path
         raise HTTPException(
             status_code=422,
             detail=f"Failed to load scenario '{req.filename}': {exc}",

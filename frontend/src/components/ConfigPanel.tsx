@@ -399,6 +399,25 @@ export function ConfigPanel({
       }}>
         Settings are stored in your browser's local storage and persist across page refreshes.
       </div>
+
+      {/* ── About ── */}
+      <SectionHead>About</SectionHead>
+      <div style={{
+        padding: '8px 10px',
+        background: 'rgba(255,255,255,0.02)',
+        border: '1px solid rgba(46,58,79,0.6)',
+        borderRadius: 6,
+        fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
+        fontSize: 10,
+        lineHeight: 1.8,
+        color: 'rgba(147,160,180,0.7)',
+      }}>
+        <div><span style={{ color: 'rgba(76,141,255,0.65)' }}>GCSI</span> 1.0.0</div>
+        <div>Ground Control Signal Insight</div>
+        <div style={{ marginTop: 4, fontFamily: '"IBM Plex Sans"', fontSize: 10, color: 'rgba(120,135,155,0.45)' }}>
+          Earth imagery: NASA Blue Marble
+        </div>
+      </div>
     </div>
   );
 }

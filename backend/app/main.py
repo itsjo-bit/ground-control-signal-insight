@@ -4,15 +4,22 @@ Entrypoint for the backend server.  All route handlers contain no business
 logic — they delegate to domain modules (scheduler, evaluator, simulator,
 state).
 
-Run locally:
-    cd backend
+Run locally (from backend/ directory):
     uvicorn app.main:app --reload --port 8000
+
+Run locally (from project root):
+    uvicorn backend.app.main:app --reload --port 8000
+
+The default scenario (mission_data_v3.json) is resolved relative to this file's
+location, so the startup path is always correct regardless of the current
+working directory.  Set GCSI_SCENARIO_PATH to override.
 """
 
 import logging
 import os
 import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -35,10 +42,25 @@ from . import state as app_state
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Project-relative path resolution
+#
+# __file__ is  <project>/backend/app/main.py
+# _BACKEND_DIR is  <project>/backend/app/../  →  <project>/backend/
+# _PROJECT_ROOT is  <project>/backend/../     →  <project>/
+# _SCENARIOS_DIR is  <project>/data/scenarios/
+#
+# This ensures the default scenario and the scenarios directory are always
+# found correctly regardless of whether uvicorn is started from the project
+# root or from the backend/ sub-directory.
+# ---------------------------------------------------------------------------
+_BACKEND_APP_DIR: Path = Path(__file__).resolve().parent   # .../backend/app/
+_PROJECT_ROOT: Path = _BACKEND_APP_DIR.parent.parent       # .../ground-control-signal-insight/
+_SCENARIOS_DIR: Path = _PROJECT_ROOT / "data" / "scenarios"
+
 # Default to the high-volume v3 demo scenario when no explicit path is configured.
-# This ensures the interactive application starts with the full 150-product dataset.
-# Tests that need a specific scenario should set GCSI_SCENARIO_PATH explicitly.
-_DEFAULT_SCENARIO_PATH = "data/scenarios/mission_data_v3.json"
+# Resolved as an absolute path so it is independent of cwd.
+_DEFAULT_SCENARIO_PATH: str = str(_SCENARIOS_DIR / "mission_data_v3.json")
 
 
 def _log_active_scenario() -> None:
@@ -94,10 +116,12 @@ async def _lifespan(app: FastAPI):  # noqa: ARG001
 
     Priority:
     1. GCSI_SCENARIO_PATH env var (explicit override — used by tests and CI).
-    2. _DEFAULT_SCENARIO_PATH (the high-volume v3 demo scenario).
+       Relative paths in GCSI_SCENARIO_PATH are left as-is (resolved against
+       the process cwd, matching the documented behaviour in .env.example).
+    2. _DEFAULT_SCENARIO_PATH — the project-relative absolute path to
+       mission_data_v3.json.  This path is always correct regardless of which
+       directory uvicorn was started from.
 
-    If GCSI_SCENARIO_PATH is absent or empty, the application always starts
-    with the high-volume V3 demo scenario (mission_data_v3.json).
     A clear startup banner is printed so the active scenario is immediately
     visible in the terminal — no silent fallbacks.
     """
@@ -135,7 +159,7 @@ async def _lifespan(app: FastAPI):  # noqa: ARG001
 app = FastAPI(
     title="GCSI — Ground Control Signal Insight",
     description="AI-powered communication decision-support for spacecraft ground operations.",
-    version="0.1.0",
+    version="1.0.0",
     lifespan=_lifespan,
 )
 
@@ -177,7 +201,7 @@ def health() -> dict:
     scenario = app_state.active_scenario
     return {
         "status": "ok",
-        "version": "3.4.1",
+        "version": "1.0.0",
         "scenario_loaded": scenario is not None,
         "scenario_path": app_state.active_scenario_path,
         "has_data_products": len(scenario.data_products) > 0 if scenario else False,

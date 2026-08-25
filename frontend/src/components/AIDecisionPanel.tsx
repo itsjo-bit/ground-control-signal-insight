@@ -345,7 +345,7 @@ export function AIDecisionPanel({
           <div style={{ display: 'flex', gap: 16, marginBottom: 10, flexWrap: 'wrap' }}>
             <div>
               <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: DIM, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                Analyzed
+                AI Candidates
               </div>
               <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: MUTED }}>
                 {candidateCount ?? prioritization.candidate_count ?? prioritization.ranked_products.length}

@@ -71,7 +71,7 @@ class TestHealth:
             resp = await c.get("/health")
         assert resp.status_code == 200
         body = resp.json()
-        assert body["version"] == "3.4.1"
+        assert body["version"] == "1.0.0"
 
     @pytest.mark.asyncio
     async def test_health_v3_has_data_products(self, loaded_v3):
@@ -298,10 +298,14 @@ class TestSwitchScenario:
 
     @pytest.mark.asyncio
     async def test_switch_path_traversal_rejected(self, loaded_v3):
-        """Path traversal attempts must be rejected (file not found in scenarios dir)."""
+        """Path traversal attempts must be rejected.
+
+        ../../etc/passwd has no .json extension, so it is rejected with 400
+        (invalid extension check runs first).  Both 400 and 404 signal rejection.
+        """
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             resp = await c.post("/scenarios/switch", json={"filename": "../../etc/passwd"})
-        assert resp.status_code == 404
+        assert resp.status_code in (400, 404)
 
     @pytest.mark.asyncio
     async def test_reset_after_switch_reloads_new_scenario(self, loaded_legacy):

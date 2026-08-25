@@ -1,73 +1,252 @@
 # Ground Control Signal Insight (GCSI)
 
-AI-powered communication decision support for spacecraft missions.
+**Version 1.0.0**
 
-> When bandwidth becomes a mission constraint, GCSI decides what matters most.
+> When bandwidth becomes a mission constraint, GCSI helps operators determine what matters most.
+
+GCSI is an AI-assisted communication decision-support system for spacecraft ground operations.
+A spacecraft generates many mission data products, but communication windows are limited.
+GCSI combines deterministic telecom analysis with AI semantic reasoning to help operators prioritize
+what gets transmitted first — while keeping the human in control of every final decision.
 
 ---
 
-## AI Provider
+## The Problem
 
-GCSI uses a **provider-agnostic AI layer** for plan recommendations.  No paid API key is required for the default development/demo path.
+A spacecraft in deep space generates a continuous stream of mission data products:
+telemetry, science observations, engineering diagnostics, anomaly responses, and more.
+Each product has a size, a criticality, a deadline, a scientific value, and relationships
+to other products. The communication window is finite, the downlink capacity is limited,
+and link conditions may be degraded.
 
-| Provider | When used | Requirements |
-|----------|-----------|--------------|
-| **Local** (default) | No API key is configured | None — works offline, zero dependencies |
-| **Ollama** (opt-in) | `GCSI_OLLAMA_ENABLED=true` and Ollama is reachable | [Ollama](https://ollama.com) running locally |
-| **Google Gemini** (optional) | `GCSI_GEMINI_API_KEY` is set and Granite is not | Google AI API key |
-| **IBM Granite** (primary IBM provider) | `GCSI_GRANITE_API_KEY` is set | IBM watsonx.ai account |
+**Transmitting everything immediately is not always possible.**
 
-**IBM Granite is the primary IBM AI integration and takes priority when both `GCSI_GRANITE_API_KEY` and `GCSI_GEMINI_API_KEY` are present.**  Google Gemini is an optional alternative provider that does not replace IBM Granite.
+The high-volume demo scenario (`mission_data_v3.json`) illustrates this:
 
-Automatic provider selection order:
-1. **IBM Granite** — `GCSI_GRANITE_API_KEY` is set and non-empty
-2. **Google Gemini** — `GCSI_GEMINI_API_KEY` is set and non-empty (Granite absent)
-3. **Ollama** — `GCSI_OLLAMA_ENABLED=true` and the server is reachable
-4. **Local** — deterministic rule-based fallback (always available)
+| Constraint | Value |
+|---|---|
+| Data products queued | 150 |
+| Active anomalies | 3 |
+| Spacecraft distance | ~54,000,000 km |
+| Propagation delay | ~3 minutes one-way |
+| Communication window | Limited |
+| Link conditions | Variable / potentially degraded |
 
-The **Local** provider is a deterministic rule-based reasoner that evaluates all four candidate plans using the same pre-computed `EvaluationResult` metrics and produces a valid, explainable `AIRecommendation` — no fabrication, no mocks, no network calls.
+The operator must decide what to transmit first, what to defer, and what risk that creates.
+Without decision support, prioritizing 150 products manually under anomaly conditions is
+impractical at mission pace.
 
-### IBM Granite (primary IBM provider)
+---
 
-To use IBM Granite, you need **two** credentials from IBM Cloud:
+## Why AI is Needed — and Why Deterministic Logic Still Matters
 
-| Variable | Where to find it | Required? |
-|---|---|---|
-| `GCSI_GRANITE_API_KEY` | [IBM Cloud → IAM → API keys](https://cloud.ibm.com/iam/apikeys) | Yes |
-| `GCSI_GRANITE_PROJECT_ID` | watsonx.ai → your project → Manage → General → Project ID | Yes |
-| `GCSI_GRANITE_API_URL` | Change region prefix if your project is not in `us-south` | No (default: us-south) |
-| `GCSI_GRANITE_MODEL_ID` | Override only if you have a different Granite model | No (default: `ibm/granite-4-h-small`) |
+GCSI is **not** an LLM directly controlling spacecraft transmission.
 
-```bash
-cp .env.example .env
-# Edit .env — set GCSI_GRANITE_API_KEY and GCSI_GRANITE_PROJECT_ID.
-# Never commit .env to version control.
+The architecture separates three distinct responsibilities:
+
+```
+Mission Data (150+ products, anomalies, geometry)
+        ↓
+Deterministic Telecom Analysis
+(RF link, goodput, window capacity)
+        ↓
+Candidate Screening
+(bounded, reproducible pre-filter)
+        ↓
+AI Semantic Prioritization          ← AI operates here only
+(anomaly-aware, mission-contextual)
+        ↓
+Deterministic Plan Evaluation
+(feasibility, risk, capacity — authoritative)
+        ↓
+AI Recommendation + Explanation
+        ↓
+Human Review
+        ↓
+Human Approval                      ← operator has final authority
+        ↓
+Transmission Simulation
+(stochastic, seed-controlled)
 ```
 
-The `?version=2023-05-29` query parameter is added to the endpoint URL automatically; you do not need to include it in `GCSI_GRANITE_API_URL` unless you want to pin a different version.
+### Deterministic system — authoritative for
 
-> **Security note**: keep `GCSI_GRANITE_API_KEY` and `GCSI_GRANITE_PROJECT_ID` secret. Never paste them into chat, logs, or source code.
+- RF link calculations (Eb/N0, BER, goodput)
+- Communication window capacity
+- Plan feasibility evaluation
+- Risk scoring and deadline tracking
+- Transmission outcome
 
-### Google Gemini (optional alternative provider)
+### AI layer — used for
 
-To use Google Gemini as an alternative when IBM Granite is not configured:
+- Semantic mission reasoning
+- Anomaly-aware product prioritization
+- Contextual ranking across heterogeneous products
+- Tradeoff explanation
+- Recommendation with evidence citations
 
-| Variable | Where to find it | Required? |
-|---|---|---|
-| `GCSI_GEMINI_API_KEY` | [Google AI Studio → API keys](https://aistudio.google.com/apikeys) | Yes |
-| `GCSI_GEMINI_MODEL` | Override if you want a different Gemini model | No (default: `gemini-2.0-flash`) |
+### Human operator — maintains final authority
 
-```bash
-# In .env:
-GCSI_GEMINI_API_KEY=<your Google AI API key>
-# GCSI_GEMINI_MODEL=gemini-2.0-flash   # optional — default is gemini-2.0-flash
+The operator may accept the AI recommendation, modify it, or reject it entirely.
+No transmission occurs without explicit human approval.
+
+---
+
+## The 150 → Candidate Screening → AI Ranking Pipeline
+
+This is the core architectural innovation for high-volume scenarios.
+
+```
+150 mission data products (full queued set)
+        ↓
+Deterministic candidate screening
+  • anomaly-linked products (highest priority)
+  • critical products (criticality ≥ 0.7)
+  • near-deadline products
+  • high mission-relevance products
+  • high scientific-value products
+  • freshest data products
+  • related-product completion
+  • fill-up by composite urgency
+        ↓
+Bounded candidate set (default max 50, configurable via GCSI_AI_MAX_CANDIDATES)
+        ↓
+AI semantic prioritization
+(only the screened candidates are sent to the AI provider)
+        ↓
+Valid ranked products (typically 40–50)
+        ↓
+AI-ordered plan → deterministic evaluation → recommendation
 ```
 
-> **Note**: Gemini is an optional, additive provider.  IBM Granite remains the primary IBM AI integration and takes priority whenever `GCSI_GRANITE_API_KEY` is also set.
+**Why this matters:**
 
-### Explicit provider selection (optional)
+- The AI is NOT given all 150 raw products directly
+- Token and context efficiency: bounded input keeps AI behavior predictable
+- Deterministic pre-screening: anomaly-linked and critical products are always included
+- The AI focuses on semantic reasoning across the most relevant candidates
+- Reduced irrelevant information leads to safer, more focused AI output
 
-You can force a specific provider by setting `GCSI_AI_PROVIDER`:
+The UI reflects this pipeline accurately:
+
+| Label | Meaning |
+|---|---|
+| **Total Products** | All 150 raw data products in the queued set |
+| **AI Candidates** | The screened subset sent to the AI provider (≤50) |
+| **Ranked** | Products the AI successfully ranked |
+
+This is intentional architecture, not a limitation.
+
+---
+
+## Two Decision Workflows
+
+### Manual Decision
+
+The operator does not need AI. They can:
+
+```
+Browse all 150 raw mission products
+→ Search / filter / sort by criticality, deadline, subsystem, etc.
+→ Select individual products
+→ Build a manual priority list
+→ Review deterministic feasibility and risk
+→ Approve
+→ Simulate transmission
+```
+
+AI is never required in Manual mode.
+
+### AI Assisted
+
+```
+AI starts in STANDBY (does NOT run automatically at application open)
+→ Operator explicitly clicks "Analyze"
+→ Mission context is prepared
+→ Candidate screening (deterministic)
+→ AI semantic prioritization (provider call)
+→ Plan evaluation (deterministic — authoritative)
+→ AI recommendation + explanation rendered
+→ Operator: accept / modify / reject
+→ Human approval
+→ Transmission simulation
+```
+
+> **AI does not automatically run when the application opens.**
+> The operator must explicitly invoke analysis. This is intentional:
+> AI analysis costs resources and should reflect the operator's decision to engage it.
+
+---
+
+## Scenario System
+
+### Primary demo scenario: `mission_data_v3.json`
+
+The intended demo and primary hackathon scenario. Capabilities:
+
+- 150 data products with heterogeneous criticality, size, deadline, and scientific value
+- 3 active anomalies linked to specific data products
+- Real spacecraft-Earth geometry: ~54,000,000 km distance, ~3-minute propagation delay
+- Full AI product prioritization pipeline
+- Manual planning support
+- Communication window constraints
+- Mission state: `GCSI-MISSION-003 / high_volume_pass`
+
+### Legacy scenarios
+
+`nominal_pass.json` and `degraded_link.json` are legacy packet-mode scenarios retained for
+compatibility and unit testing. They use a small packet set and do not include:
+
+- Data product model
+- Anomaly model
+- Spacecraft geometry
+- AI product prioritization
+
+If you load a legacy scenario intentionally (e.g., for quick smoke tests), the application
+displays a clear warning that high-volume AI prioritization is unavailable. This is expected.
+Legacy scenarios are not the demo target.
+
+`mission_data_v2.json` is an intermediate data-product scenario, also retained for compatibility.
+
+---
+
+## UI Workspace
+
+```
+┌────────────────────────────────────────────────────────────┐
+│ Left: Navigation sidebar                                   │
+│ Center: 3D Mission Visualization (Earth + spacecraft)      │
+│ Right: Main Control (scrollable panels)                    │
+└────────────────────────────────────────────────────────────┘
+```
+
+**Workspace modes:**
+
+| Mode | Description |
+|---|---|
+| **Normal** | Default three-column layout |
+| **Expanded** | Right panel wider (~58vw); 3D still visible |
+| **Focus** | Right panel fills workspace; 3D hidden |
+
+Keyboard shortcuts: `Ctrl+Shift+F` toggles Focus mode; `Esc` exits Focus.
+
+---
+
+## AI Provider Support
+
+GCSI uses a provider-agnostic AI layer. No paid API key is required for the default
+development/demo path — the Local provider works offline with no dependencies.
+
+| Provider | Activated when | Requirements |
+|---|---|---|
+| **IBM Granite** (primary IBM) | `GCSI_GRANITE_API_KEY` is set | IBM watsonx.ai account |
+| **Google Gemini** (optional) | `GCSI_GEMINI_API_KEY` is set, Granite absent | Google AI API key |
+| **Ollama** (local LLM) | `GCSI_OLLAMA_ENABLED=true` and server reachable | [Ollama](https://ollama.com) running locally |
+| **Local** (default) | No API key configured | None — works offline |
+
+**Automatic provider selection order:** Granite → Gemini → Ollama → Local
+
+You can force a specific provider:
 
 ```bash
 GCSI_AI_PROVIDER=granite   # force IBM Granite
@@ -76,77 +255,124 @@ GCSI_AI_PROVIDER=ollama    # force Ollama
 GCSI_AI_PROVIDER=local     # force local rule-based
 ```
 
-If `GCSI_AI_PROVIDER` is not set, automatic selection applies (Granite → Gemini → Ollama → Local).
+The **Local provider** is a deterministic rule-based reasoner that produces a valid,
+explainable `AIRecommendation` with no network calls and no fabrication.
+
+### IBM Granite (primary IBM provider)
+
+IBM Granite is the primary IBM AI integration and takes priority when both
+`GCSI_GRANITE_API_KEY` and `GCSI_GEMINI_API_KEY` are present.
+
+| Variable | Where to find it | Required? |
+|---|---|---|
+| `GCSI_GRANITE_API_KEY` | [IBM Cloud → IAM → API keys](https://cloud.ibm.com/iam/apikeys) | Yes |
+| `GCSI_GRANITE_PROJECT_ID` | watsonx.ai → your project → Manage → General → Project ID | Yes |
+| `GCSI_GRANITE_API_URL` | Change region prefix if not `us-south` | No (default: us-south) |
+| `GCSI_GRANITE_MODEL_ID` | Override for a different Granite model | No (default: `ibm/granite-4-h-small`) |
+
+> **Security note**: keep credentials secret. Never paste them into logs, chat, or source code.
+
+### Google Gemini (optional alternative)
+
+| Variable | Where to find it | Required? |
+|---|---|---|
+| `GCSI_GEMINI_API_KEY` | [Google AI Studio → API keys](https://aistudio.google.com/apikeys) | Yes |
+| `GCSI_GEMINI_MODEL` | Override for a different model | No (default: `gemini-2.0-flash`) |
 
 ### Ollama
 
-To use Ollama:
 ```bash
-# Install and start Ollama (https://ollama.com), pull a model, then:
+# Install Ollama, pull a model, then:
 GCSI_OLLAMA_ENABLED=true GCSI_OLLAMA_MODEL=llama3.2 uvicorn app.main:app ...
 ```
 
 ---
 
-## Quick Start
+## Quick Start (Fresh Clone)
 
-### 1. Install backend dependencies
+### 1. Clone and navigate
+
+```bash
+git clone <repo-url> ground-control-signal-insight
+cd ground-control-signal-insight
+```
+
+### 2. Create and activate a Python environment
+
+```bash
+python -m venv .venv
+
+# Linux / macOS:
+source .venv/bin/activate
+
+# Windows PowerShell:
+.venv\Scripts\Activate.ps1
+```
+
+### 3. Install backend dependencies
 
 ```bash
 cd backend
 pip install -e ".[dev]"
+cd ..
 ```
 
-### 2. Configure credentials (IBM Granite)
+### 4. Configure AI credentials (optional)
 
-Create a `.env` file in the project root (one level above `backend/`).
-The server loads it automatically at startup — you do not need to export variables manually.
+Create a `.env` file in `ground-control-signal-insight/` (the project root, one level above `backend/`).
+The server loads it automatically. Skip this step to run with the **Local** provider (no credentials required).
 
 ```bash
-# From ground-control-signal-insight/
 cp .env.example .env
-# Open .env and set:
-#   GCSI_GRANITE_API_KEY=<your IBM Cloud API key>
-#   GCSI_GRANITE_PROJECT_ID=<your watsonx.ai project UUID>
-#   GCSI_GRANITE_MODEL_ID=ibm/granite-4-h-small   # or ibm/granite-3-3-8b-instruct if available
+# Edit .env — set GCSI_GRANITE_API_KEY and GCSI_GRANITE_PROJECT_ID for IBM Granite,
+# or GCSI_GEMINI_API_KEY for Google Gemini.
+# Leave all keys blank to use the offline Local provider.
 ```
 
-Skip this step to run with the **Local** rule-based provider (no credentials required).
+### 5. Start the backend
 
-### 3. Load a scenario and start the server
+The backend can be started from either the project root or the `backend/` directory.
+The default scenario (`mission_data_v3.json`) loads automatically — no environment variable required.
+
+**From the project root (recommended):**
 
 ```bash
-cd backend
-# .env is loaded automatically — no need to export variables in the shell.
-GCSI_SCENARIO_PATH=../data/scenarios/mission_data_v3.json uvicorn app.main:app --reload --port 8000
+# Linux / macOS:
+cd backend && uvicorn app.main:app --reload --port 8000
+
+# Windows PowerShell:
+cd backend; uvicorn app.main:app --reload --port 8000
 ```
 
-On Windows PowerShell:
+**From the project root without changing directory:**
 
-```powershell
-# From ground-control-signal-insight\backend\
+```bash
+uvicorn backend.app.main:app --reload --port 8000
+```
+
+To use an explicit scenario path (or a different scenario):
+
+```bash
+# Linux / macOS (from backend/):
+GCSI_SCENARIO_PATH=../data/scenarios/mission_data_v3.json uvicorn app.main:app --reload --port 8000
+
+# Windows PowerShell (from backend\):
 $env:GCSI_SCENARIO_PATH = "..\data\scenarios\mission_data_v3.json"
 uvicorn app.main:app --reload --port 8000
 ```
 
-> `mission_data_v3.json` is the current default demo scenario: 150 data
-> products, 3 active anomalies, and real spacecraft-Earth geometry
-> (distance, propagation delay). It exercises the full AI decision
-> transparency panel, signal geometry block, and animated transmission
-> beam. Legacy scenarios (`nominal_pass.json`, `degraded_link.json`)
-> still work but run in a reduced "legacy packet mode" without these
-> features — useful for quick smoke tests, not for the demo.
+The startup banner confirms the active scenario:
 
-### 4. Run tests
-
-```bash
-# From ground-control-signal-insight/
-python -m pytest                          # all tests (live Granite test skipped)
-python -m pytest -m "not granite"         # skip tests requiring API key
-python -m pytest tests/unit/test_agent.py # Phase 6 agent tests only
+```
+[GCSI] Active scenario : data/scenarios/mission_data_v3.json
+[GCSI] Mission         : GCSI-MISSION-003
+[GCSI] Data products   : 150
+[GCSI] Active anomalies: 3
+[GCSI] Geometry        : available (54000000 km)
+[GCSI] Mode            : High-volume data products (V3+ full experience)
 ```
 
-### 5. Start the frontend
+### 6. Start the frontend
 
 ```bash
 cd frontend
@@ -154,36 +380,155 @@ npm install
 npm run dev
 ```
 
+Open [http://localhost:5173](http://localhost:5173) in your browser.
+
+### 7. Run backend tests
+
+```bash
+# From ground-control-signal-insight/
+python -m pytest                          # all tests (live API tests skipped by default)
+python -m pytest -m "not granite"        # explicitly skip IBM Granite live tests
+python -m pytest tests/unit/             # unit tests only
+python -m pytest tests/integration/     # integration tests only
+```
+
+### 8. Frontend typecheck and build
+
+```bash
+cd frontend
+npm run typecheck     # TypeScript type check (no emit)
+npm run build         # production build
+```
+
 ---
 
-## Architecture summary
+## Demo Walkthrough
+
+This is the recommended flow for evaluating GCSI in a hackathon setting.
+
+1. **Start GCSI** using the default scenario (`mission_data_v3.json`).
+2. **Observe the startup banner** confirming 150 products, 3 anomalies, geometry available.
+3. **Open the browser** at `http://localhost:5173`.
+4. **Inspect the 3D visualization** — Earth, spacecraft, and communication link at ~54 million km.
+5. **Open Data Products** — browse all 150 raw products. Filter by criticality or anomaly.
+   Notice the complexity: different sizes, deadlines, subsystems, and 3 active anomalies.
+6. **Choose a workflow:**
+   - **Manual Decision**: Select products manually, build a priority list, review deterministic
+     feasibility, approve, and simulate transmission.
+   - **AI Assisted**: Click **Analyze**. Watch the AI lifecycle: STANDBY → ANALYZING → READY.
+     Review the AI Prioritization panel — see which 50 candidates were screened, how they
+     were ranked, and the anomaly-aware reasoning.
+7. **Accept or modify** the AI recommendation.
+8. **Simulate transmission** — observe delivered, deferred, and failed products.
+9. **Open Mission Report** — review the full outcome with timing, risk, and product-level detail.
+10. **Switch scenarios** — try a legacy scenario from Config to see the difference.
+
+---
+
+## Architecture Reference
 
 ```
-Raw inputs (scenario JSON)
-       ↓
-TelecomEngine  ←  formulas.py  (single source of truth for all RF math)
-       ↓
-LinkState
-       ↓
-CandidateGenerator  →  4 CandidatePlans  +  telecom_decisions metadata
-       ↓
-PlanEvaluator  →  4 EvaluationResults  (deterministic, no RNG)
-       ↓
+Raw scenario JSON (mission_data_v3.json)
+        ↓
+TelecomEngine  ←  formulas.py  (single source of truth for RF math)
+        ↓
+LinkState  (Eb/N0, BER, goodput, remaining window)
+        ↓
+CandidatePrioritizer  (deterministic screening → ≤50 CandidateSummary objects)
+        ↓
 AI Provider  (Local | Ollama | Gemini | Granite)
-       ↓
-AIRecommendation  (validated — plan_id, evidence fields, confidence/risk bounds)
-       ↓
+        ↓
+CandidatePrioritization  (AI-ranked product list with reasoning)
+        ↓
+CandidateGenerator  (4 CandidatePlans from AI-ordered packets)
+        ↓
+PlanEvaluator  (4 EvaluationResults — deterministic, no RNG)
+        ↓
+AIRecommendation  (validated — plan_id, evidence, confidence/risk bounds)
+        ↓
 Human approval
-       ↓
-TransmissionSimulator  →  SimulationResult  (stochastic, seed-controlled)
+        ↓
+TransmissionSimulator  (stochastic simulation, seed-controlled)
+        ↓
+SimulationResult  (delivered / deferred / failed products)
 ```
 
 | Layer | Responsibility |
-|-------|---------------|
-| **Deterministic Python** | RF link calculations (Eb/N0, BER, goodput), packet scheduling, plan evaluation, stochastic simulation |
-| **AI Layer (provider-agnostic)** | Structured reasoning over pre-computed facts; produces an `AIRecommendation` with evidence citations |
+|---|---|
+| **Deterministic Python** | RF link calculations, candidate screening, plan evaluation, transmission simulation |
+| **AI layer (provider-agnostic)** | Semantic reasoning over pre-computed facts; ranked product list + recommendation |
+| **Human operator** | Final approval authority; can modify or reject AI recommendation |
 
-The AI layer never performs RF or scheduling calculations.  All metrics are pre-computed
-by the deterministic pipeline before the AI provider is invoked.
+For the telecom model reference, see [`docs/telecom_model.md`](docs/telecom_model.md).
 
-See [`docs/telecom_model.md`](docs/telecom_model.md) for the telecom model reference.
+---
+
+## Environment Variables Reference
+
+| Variable | Default | Description |
+|---|---|---|
+| `GCSI_SCENARIO_PATH` | `data/scenarios/mission_data_v3.json` | Override the startup scenario |
+| `GCSI_SCENARIOS_DIR` | `data/scenarios` | Scenarios directory for runtime switching |
+| `GCSI_AI_PROVIDER` | (auto) | Force a specific AI provider: `granite` / `gemini` / `ollama` / `local` |
+| `GCSI_AI_MAX_CANDIDATES` | `50` | Maximum products sent to AI for prioritization |
+| `GCSI_GRANITE_API_KEY` | — | IBM Cloud IAM API key (activates Granite provider) |
+| `GCSI_GRANITE_PROJECT_ID` | — | watsonx.ai project UUID |
+| `GCSI_GRANITE_API_URL` | `https://us-south.ml.cloud.ibm.com/ml/v1/text/generation` | Inference endpoint |
+| `GCSI_GRANITE_MODEL_ID` | `ibm/granite-4-h-small` | Granite model identifier |
+| `GCSI_GEMINI_API_KEY` | — | Google AI API key (activates Gemini provider) |
+| `GCSI_GEMINI_MODEL` | `gemini-2.0-flash` | Gemini model identifier |
+| `GCSI_OLLAMA_ENABLED` | `false` | Enable Ollama provider |
+| `GCSI_OLLAMA_URL` | `http://localhost:11434` | Ollama server URL |
+| `GCSI_OLLAMA_MODEL` | `llama3.2` | Ollama model to use |
+
+---
+
+## Attribution
+
+**Earth imagery**: NASA Blue Marble — *Next Generation* imagery.
+Source: [NASA Visible Earth](https://visibleearth.nasa.gov/collection/1484/blue-marble).
+Used for the 3D Earth visualization in the mission viewport.
+
+---
+
+## Project Structure
+
+```
+ground-control-signal-insight/
+├── backend/
+│   ├── app/
+│   │   ├── main.py              # FastAPI application, startup, health endpoint
+│   │   ├── state.py             # Global scenario/link state
+│   │   ├── config.py            # Pydantic-settings configuration
+│   │   ├── agent/               # AI providers (Granite, Gemini, Ollama, Local)
+│   │   │   └── candidate_prioritizer.py  # Deterministic candidate screening
+│   │   ├── api/                 # Route handlers
+│   │   ├── candidate_generator/ # Four-plan candidate generation
+│   │   ├── evaluator/           # Deterministic plan evaluation
+│   │   ├── models/              # Pydantic domain models
+│   │   ├── simulation/          # Scenario loader + transmission simulator
+│   │   ├── scheduler/           # Baseline packet scheduler
+│   │   └── telecom/             # RF engine + formulas
+│   └── pyproject.toml
+├── data/
+│   └── scenarios/
+│       ├── mission_data_v3.json  # PRIMARY DEMO — 150 products, 3 anomalies
+│       ├── mission_data_v2.json  # Intermediate data-product scenario
+│       ├── nominal_pass.json     # Legacy packet scenario
+│       └── degraded_link.json    # Legacy packet scenario (degraded link)
+├── docs/
+│   └── telecom_model.md         # Telecom model reference
+├── frontend/
+│   └── src/
+│       ├── MissionControl.tsx   # Primary layout: normal/expanded/focus workspace
+│       ├── api/                 # Backend API client
+│       ├── components/          # UI panels (AIDecisionPanel, DataProducts, etc.)
+│       ├── hooks/               # React hooks
+│       └── types/               # TypeScript domain types
+├── tests/
+│   ├── unit/                    # Unit tests for all domain modules
+│   ├── integration/             # API integration tests
+│   └── scenarios/               # End-to-end scenario tests
+├── .env.example                 # Environment variable template
+└── README.md
+```
