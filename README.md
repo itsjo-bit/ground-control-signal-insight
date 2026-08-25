@@ -118,19 +118,24 @@ Skip this step to run with the **Local** rule-based provider (no credentials req
 ```bash
 cd backend
 # .env is loaded automatically — no need to export variables in the shell.
-GCSI_SCENARIO_PATH=../data/scenarios/nominal_pass.json uvicorn app.main:app --reload --port 8000
+GCSI_SCENARIO_PATH=../data/scenarios/mission_data_v3.json uvicorn app.main:app --reload --port 8000
 ```
 
 On Windows PowerShell:
 
 ```powershell
 # From ground-control-signal-insight\backend\
-$env:GCSI_SCENARIO_PATH = "..\data\scenarios\nominal_pass.json"
+$env:GCSI_SCENARIO_PATH = "..\data\scenarios\mission_data_v3.json"
 uvicorn app.main:app --reload --port 8000
 ```
 
-> Granite credentials in `.env` are loaded by the application at startup.
-> You do **not** need to set them in the shell.
+> `mission_data_v3.json` is the current default demo scenario: 150 data
+> products, 3 active anomalies, and real spacecraft-Earth geometry
+> (distance, propagation delay). It exercises the full AI decision
+> transparency panel, signal geometry block, and animated transmission
+> beam. Legacy scenarios (`nominal_pass.json`, `degraded_link.json`)
+> still work but run in a reduced "legacy packet mode" without these
+> features — useful for quick smoke tests, not for the demo.
 
 ### 4. Run tests
 

@@ -690,7 +690,7 @@ export default function MissionControl() {
       <header className="mc-header">
         <h1>
           <span className="live-dot" title="Live" />
-          <span className="mc-title-gradient">GCSI \u2014 Ground Control Signal Insight</span>
+          <span className="mc-title-gradient">GCSI — Ground Control Signal Insight</span>
           <small>Mission Control</small>
         </h1>
         <span className="sim-badge">SIMULATED</span>
