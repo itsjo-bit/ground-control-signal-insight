@@ -141,39 +141,46 @@ def list_scenarios() -> ScenariosResponse:
         else None
     )
 
+    import json as _json  # avoid re-importing inside the hot loop
+
     results: list[ScenarioInfo] = []
     for path in json_files:
         norm_path = str(path.resolve())
         is_active = active_path_norm is not None and norm_path == active_path_norm
 
-        # Try to peek at metadata without full validation.
+        # ── Reset per-file metadata before each iteration ────────────────────
+        # This prevents a failed parse from leaking state from the previous
+        # file into the current one.
+        raw: dict = {}
         scenario_id: str | None = None
         has_dp = False
         has_anom = False
         dp_count = 0
         anom_count = 0
+        has_packets = False
+
         try:
-            import json
             with open(path) as f:
-                raw = json.load(f)
+                raw = _json.load(f)
             scenario_id = raw.get("scenario_id")
             dp_list = raw.get("data_products", [])
             anom_list = raw.get("anomalies", [])
-            dp_count = len(dp_list)
-            anom_count = len(anom_list)
+            dp_count = len(dp_list) if isinstance(dp_list, list) else 0
+            anom_count = len(anom_list) if isinstance(anom_list, list) else 0
             has_dp = dp_count > 0
             has_anom = anom_count > 0
+            has_packets = bool(raw.get("packets"))
         except Exception:  # noqa: BLE001
-            pass  # unreadable file → minimal info
+            pass  # unreadable file → safe minimal metadata only
 
-        # Build human-readable label
+        # Build human-readable label (uses only per-file variables)
         if scenario_id:
             label = scenario_id.replace("_", " ").title()
         else:
             label = path.stem.replace("_", " ").title()
         if dp_count:
             label += f" ({dp_count} products)"
-        elif raw.get("packets") if "raw" in dir() else False:
+        elif has_packets:
             label += " (legacy packets)"
 
         results.append(
@@ -235,16 +242,31 @@ def switch_scenario(req: SwitchScenarioRequest) -> SwitchScenarioResponse:
     Raises 404 if the requested filename is not found inside the scenarios directory.
     Raises 422 if the file exists but fails schema/validation.
     """
-    # ── Reject obvious non-JSON or path-separator injections early ──────────
+    # ── Validate: filename must be a plain basename, not a path ─────────────
+    # Reject anything that contains path separators or is an absolute path.
+    # The contract is: callers supply a bare filename such as
+    # "mission_data_v3.json", not "subdir/test.json" or "../other.json".
+    # Path(filename).name == filename is true only for bare filenames.
+    if Path(req.filename).name != req.filename:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "filename must be a plain filename with no path separators "
+                "(e.g. 'mission_data_v3.json', not 'subdir/test.json')."
+            ),
+        )
+
+    # ── Reject non-.json files ───────────────────────────────────────────────
     if not req.filename.endswith(".json"):
         raise HTTPException(
             status_code=400,
             detail="Only .json scenario files are accepted.",
         )
 
-    # ── Resolve both base and target to absolute paths ───────────────────────
-    # Resolving strips any ".." components and symlinks, making traversal
-    # attempts like "../../etc/passwd.json" visible before the file check.
+    # ── Resolve both base and target to absolute paths (defense in depth) ────
+    # After the basename check above, ".." and path separators are already
+    # rejected.  Resolving here provides an additional layer of safety in case
+    # of platform-specific edge cases.
     base: Path = _SCENARIOS_DIR_PATH.resolve()
     target: Path = (base / req.filename).resolve()
 
@@ -252,7 +274,7 @@ def switch_scenario(req: SwitchScenarioRequest) -> SwitchScenarioResponse:
     try:
         target.relative_to(base)
     except ValueError:
-        # target resolved outside base — path traversal attempt
+        # target resolved outside base — should not reach here after basename check
         raise HTTPException(
             status_code=404,
             detail=f"Scenario file '{req.filename}' not found in scenarios directory.",

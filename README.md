@@ -53,21 +53,26 @@ Deterministic Telecom Analysis
 Candidate Screening
 (bounded, reproducible pre-filter)
         ↓
-AI Semantic Prioritization          ← AI operates here only
-(anomaly-aware, mission-contextual)
+AI Stage 1: Semantic Prioritization     ← advisory
+(anomaly-aware, contextual product ranking)
         ↓
-Deterministic Plan Evaluation
+Deterministic Plan Generation + Evaluation
 (feasibility, risk, capacity — authoritative)
         ↓
-AI Recommendation + Explanation
+AI Stage 2: Plan Recommendation         ← advisory
+(reviews evaluated plans, explains tradeoffs)
         ↓
 Human Review
         ↓
-Human Approval                      ← operator has final authority
+Human Approval                          ← operator has final authority
         ↓
 Transmission Simulation
 (stochastic, seed-controlled)
 ```
+
+AI operates in two advisory stages. Deterministic calculations remain
+authoritative throughout. Neither AI stage controls or overrides physical
+feasibility, risk scoring, or transmission outcomes.
 
 ### Deterministic system — authoritative for
 
@@ -77,13 +82,18 @@ Transmission Simulation
 - Risk scoring and deadline tracking
 - Transmission outcome
 
-### AI layer — used for
+### AI Stage 1 — Semantic Prioritization
 
-- Semantic mission reasoning
-- Anomaly-aware product prioritization
-- Contextual ranking across heterogeneous products
-- Tradeoff explanation
-- Recommendation with evidence citations
+AI receives the bounded candidate set (≤50 products) and performs anomaly-aware,
+mission-contextual ranking. The ranked order informs which products are scheduled
+first. AI does not determine feasibility or compute link metrics.
+
+### AI Stage 2 — Plan Recommendation
+
+After deterministic plan generation and evaluation, AI reviews the evaluated
+plans and provides an advisory recommendation with evidence citations. It
+explains the tradeoffs between plans using the pre-computed metrics. It does
+not override or recalculate any deterministic result.
 
 ### Human operator — maintains final authority
 
@@ -436,15 +446,15 @@ LinkState  (Eb/N0, BER, goodput, remaining window)
         ↓
 CandidatePrioritizer  (deterministic screening → ≤50 CandidateSummary objects)
         ↓
-AI Provider  (Local | Ollama | Gemini | Granite)
-        ↓
-CandidatePrioritization  (AI-ranked product list with reasoning)
+[AI Stage 1]  AI Provider  →  CandidatePrioritization
+(semantic product ranking — advisory)
         ↓
 CandidateGenerator  (4 CandidatePlans from AI-ordered packets)
         ↓
-PlanEvaluator  (4 EvaluationResults — deterministic, no RNG)
+PlanEvaluator  (4 EvaluationResults — deterministic, authoritative)
         ↓
-AIRecommendation  (validated — plan_id, evidence, confidence/risk bounds)
+[AI Stage 2]  AI Provider  →  AIRecommendation
+(plan recommendation + explanation — advisory)
         ↓
 Human approval
         ↓
@@ -456,7 +466,8 @@ SimulationResult  (delivered / deferred / failed products)
 | Layer | Responsibility |
 |---|---|
 | **Deterministic Python** | RF link calculations, candidate screening, plan evaluation, transmission simulation |
-| **AI layer (provider-agnostic)** | Semantic reasoning over pre-computed facts; ranked product list + recommendation |
+| **AI Stage 1** | Semantic product ranking over the bounded candidate set (advisory) |
+| **AI Stage 2** | Plan recommendation and explanation over evaluated plans (advisory) |
 | **Human operator** | Final approval authority; can modify or reject AI recommendation |
 
 For the telecom model reference, see [`docs/telecom_model.md`](docs/telecom_model.md).

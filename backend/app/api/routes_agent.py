@@ -1,25 +1,36 @@
 """GCSI Backend API — routes for /agent/recommend.
 
 The route is provider-agnostic: it delegates to whatever AI provider is
-currently configured (IBM Granite, Ollama, or local rule-based).
+currently configured (IBM Granite, Gemini, Ollama, or local rule-based).
 
 Provider selection is handled by :func:`~backend.app.agent.provider_factory.get_provider`.
-The response includes a ``provider`` field indicating which provider was used.
 
-Phase 2C (v2 path)
-------------------
-When the active scenario carries ``data_products``, the route activates the
-AI candidate prioritization path:
+Two AI advisory stages
+----------------------
+1. **AI Semantic Prioritization** (v2/v3 path only)
+   ``CandidatePrioritizer.select()`` deterministically reduces the product list
+   to at most ``GCSI_AI_MAX_CANDIDATES`` :class:`CandidateSummary` objects, then
+   ``provider.prioritize_candidates()`` semantically ranks them.  The ranking
+   reorders the bridged Packet list before plan generation.
 
-1. ``CandidatePrioritizer.select()`` deterministically reduces the product
-   list to at most ``GCSI_AI_MAX_CANDIDATES`` :class:`CandidateSummary` objects.
-2. ``provider.prioritize_candidates()`` asks the AI to rank those candidates.
-3. The AI ranking is used to reorder the bridged Packet list passed to
-   ``CandidateGenerator`` and ``PlanEvaluator``.
-4. The result includes the full ``CandidatePrioritization`` so the frontend
-   can later show AI reasoning per product.
+2. **AI Plan Recommendation**
+   After deterministic plan generation and evaluation, ``provider.recommend()``
+   reviews the evaluated plans and returns an advisory recommendation with
+   evidence citations.  Deterministic metrics remain authoritative.
 
-Legacy scenarios (``scenario.packets`` only) use the original four-plan path.
+Graceful fallback
+-----------------
+If the primary provider fails at **either** AI stage, the route falls back to
+``LocalRuleBasedProvider`` rather than returning HTTP 502.  The response
+includes ``requested_provider``, ``actual_provider``, and (if applicable)
+``prioritization_fallback_reason`` / ``recommendation_fallback_reason`` so the
+caller always knows which provider produced the result.
+
+A 502 is only returned if both the primary provider and the Local fallback fail,
+which cannot happen in normal operation (Local never raises on valid inputs).
+
+Legacy scenarios (``scenario.packets`` only) use the original four-plan path
+and skip AI candidate prioritization.
 """
 
 from __future__ import annotations
@@ -57,17 +68,38 @@ class RecommendRequest(BaseModel):
 class RecommendResponse(BaseModel):
     """Wraps AIRecommendation with provider metadata.
 
-    Phase 2C adds ``prioritization`` (non-None only for v2 scenarios) so the
-    frontend can display per-product AI reasoning without a separate API call.
+    ``provider`` is kept for backwards compatibility and always equals
+    ``actual_provider``.
 
-    Phase 2D adds ``prioritization_error`` to surface AI failures transparently
-    while keeping the deterministic recommendation intact.
+    ``requested_provider`` — the provider name that was configured/selected
+    before the request.  May differ from ``actual_provider`` when fallback
+    occurs.
+
+    ``actual_provider`` — the provider that produced the final recommendation.
+    Always set; equals ``requested_provider`` when no fallback occurred.
+
+    ``prioritization_fallback_reason`` — set when the primary provider failed
+    during candidate prioritization and Local fallback was used.
+
+    ``recommendation_fallback_reason`` — set when the primary provider failed
+    during plan recommendation and Local fallback was used.
+
+    The legacy ``prioritization_error`` field is retained and mirrors
+    ``prioritization_fallback_reason`` for backwards compatibility.
     """
     provider: str
+    """Backwards-compatible: equals actual_provider."""
+    requested_provider: str
+    """The provider originally selected by configuration."""
+    actual_provider: str
+    """The provider that produced the final result (may be 'local' on fallback)."""
     recommendation: AIRecommendation
     prioritization: CandidatePrioritization | None = None
     candidate_count: int | None = None
-    # Phase 2D: surface AI failures without breaking the deterministic path
+    # Fallback transparency fields
+    prioritization_fallback_reason: str | None = None
+    recommendation_fallback_reason: str | None = None
+    # Backwards-compatible alias: mirrors prioritization_fallback_reason
     prioritization_error: str | None = None
 
 
@@ -132,24 +164,24 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
     Generates four candidate plans, evaluates them deterministically, then
     asks the AI provider to recommend one of the four plans.
 
-    **v2 path** (``scenario.data_products`` non-empty):
-    1. Deterministically selects a bounded candidate set (≤ GCSI_AI_MAX_CANDIDATES).
-    2. Asks the AI to semantically rank those candidates.
-    3. Uses the AI ranking to reorder packets before plan generation.
-    4. Evaluates the reordered plan deterministically.
-    5. Returns the recommendation together with the full ``CandidatePrioritization``
-       so the frontend can display per-product AI reasoning.
+    **v2/v3 path** (``scenario.data_products`` non-empty):
+    1. AI Stage 1 — Deterministically selects a bounded candidate set
+       (≤ GCSI_AI_MAX_CANDIDATES), then asks the AI to semantically rank them.
+    2. Uses the AI ranking to reorder packets before plan generation.
+    3. Deterministic plan generation and evaluation (authoritative).
+    4. AI Stage 2 — AI reviews evaluated plans and returns an advisory
+       recommendation with evidence citations.
 
-    The provider is selected automatically:
-    - IBM Granite if ``GCSI_GRANITE_API_KEY`` is set.
-    - Google Gemini if ``GCSI_GEMINI_API_KEY`` is set.
-    - Ollama if ``GCSI_OLLAMA_ENABLED=true`` and the server is reachable.
-    - Local rule-based provider otherwise (default, no credentials required).
+    **Graceful fallback (both paths)**:
+    If the primary provider is unavailable or returns an invalid response at
+    either AI stage, the route automatically falls back to LocalRuleBasedProvider.
+    The response transparently reports which provider actually produced the result
+    via ``requested_provider`` and ``actual_provider``.  HTTP 502 is only raised
+    if both providers fail, which cannot occur in normal operation.
 
     Raises:
         503: No active scenario loaded.
-        502: AI provider is unavailable (Granite API down, etc.).
-        422: AI response is invalid or evidence is hallucinated.
+        502: Both primary and Local fallback failed (should not occur).
     """
     if state.active_scenario is None or state.active_link_state is None:
         raise HTTPException(status_code=503, detail="No active scenario loaded")
@@ -159,7 +191,17 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
     anomalies: list[AnomalyEvent] = scenario.anomalies
     provider = get_provider()
 
-    # Phase 2E-C3-E: extract spacecraft distance for geometry context
+    # Import fallback provider once — used at both AI stages if needed.
+    from ..agent.local_provider import LocalRuleBasedProvider
+    _fallback = LocalRuleBasedProvider()
+
+    requested_provider_name: str = provider.provider_name
+
+    # Track which provider actually produces each result.
+    # Starts as the requested provider; updated to 'local' on fallback.
+    actual_recommendation_provider: str = requested_provider_name
+
+    # ── Spacecraft geometry context ───────────────────────────────────────────
     distance_km: float | None = scenario.distance_km
 
     # ── Determine which path to take ─────────────────────────────────────────
@@ -167,10 +209,10 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
 
     prioritization: CandidatePrioritization | None = None
     candidate_count: int | None = None
-    prioritization_error: str | None = None
+    prioritization_fallback_reason: str | None = None
 
     if use_v2_path:
-        # ── Phase 2C: AI candidate prioritization path ────────────────────
+        # ── AI Stage 1: candidate prioritization ─────────────────────────
         # Step 1: deterministic candidate selection (token-safe)
         prioritizer = CandidatePrioritizer()
         candidates: list[CandidateSummary] = prioritizer.select(
@@ -184,19 +226,15 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
             candidate_count, len(scenario.data_products),
         )
 
-        # Step 2: AI semantic prioritization
-        # Phase 2D: graceful fallback — AI failure must NOT collapse the mission.
-        # If the primary provider fails, fall back to LocalRuleBasedProvider and
-        # surface the error transparently in the response.
-        from ..agent.local_provider import LocalRuleBasedProvider
-        _fallback = LocalRuleBasedProvider()
+        # Step 2: AI semantic prioritization with graceful fallback.
+        # Any provider failure falls back to LocalRuleBasedProvider so the
+        # mission workflow continues; fallback reason is surfaced in the response.
         try:
             prioritization = provider.prioritize_candidates(
                 candidates, link_state, scenario.mission_state, anomalies,
                 distance_km=distance_km,
             )
         except NotImplementedError:
-            # Provider doesn't implement Phase 2C — fall back to local deterministic
             logger.warning(
                 "Provider '%s' does not implement prioritize_candidates(); "
                 "using LocalRuleBasedProvider fallback.",
@@ -206,36 +244,36 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
                 candidates, link_state, scenario.mission_state, anomalies,
                 distance_km=distance_km,
             )
-            prioritization_error = (
+            prioritization_fallback_reason = (
                 f"Provider '{provider.provider_name}' does not implement AI candidate "
                 "prioritization. Using deterministic fallback ordering."
             )
         except AIProviderError as exc:
-            # Phase 2D: surface the failure gracefully — deterministic fallback keeps mission running
             logger.error(
-                "AI provider '%s' unavailable for prioritization: %s. Falling back to deterministic.",
+                "AI provider '%s' unavailable for prioritization: %s. "
+                "Falling back to LocalRuleBasedProvider.",
                 provider.provider_name, exc,
             )
             prioritization = _fallback.prioritize_candidates(
                 candidates, link_state, scenario.mission_state, anomalies,
                 distance_km=distance_km,
             )
-            prioritization_error = (
-                f"AI provider '{provider.provider_name}' unavailable: {exc}. "
+            prioritization_fallback_reason = (
+                f"AI provider '{provider.provider_name}' unavailable. "
                 "Deterministic candidate ordering is in use."
             )
         except AIPrioritizationError as exc:
-            # Phase 2D: invalid AI response — fall back to deterministic
             logger.error(
-                "Invalid AI prioritization from '%s': %s. Falling back to deterministic.",
+                "Invalid AI prioritization from '%s': %s. "
+                "Falling back to LocalRuleBasedProvider.",
                 provider.provider_name, exc,
             )
             prioritization = _fallback.prioritize_candidates(
                 candidates, link_state, scenario.mission_state, anomalies,
                 distance_km=distance_km,
             )
-            prioritization_error = (
-                f"Invalid AI prioritization from '{provider.provider_name}': {exc}. "
+            prioritization_fallback_reason = (
+                f"Invalid AI prioritization from '{provider.provider_name}'. "
                 "Deterministic candidate ordering is in use."
             )
 
@@ -271,7 +309,12 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
         for plan in plans
     ]
 
-    # ── AI recommendation: choose the best plan from evaluated candidates ────
+    # ── AI Stage 2: plan recommendation with graceful fallback ───────────────
+    # If the primary provider failed during prioritization, attempt its
+    # recommend() call anyway — it may still be capable of plan recommendation
+    # even when prioritization was unavailable.  If recommend() also fails,
+    # fall back to LocalRuleBasedProvider rather than returning HTTP 502.
+    recommendation_fallback_reason: str | None = None
     try:
         recommendation = provider.recommend(
             link_state,
@@ -280,21 +323,49 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
             evaluations,
             anomalies=anomalies,
         )
-    except AIProviderError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"AI provider '{provider.provider_name}' unavailable: {exc}",
-        ) from exc
-    except (AIResponseError, AIHallucinationError) as exc:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Invalid AI response from '{provider.provider_name}': {exc}",
-        ) from exc
+    except (AIProviderError, AIResponseError, AIHallucinationError) as exc:
+        logger.error(
+            "AI provider '%s' failed plan recommendation: %s. "
+            "Falling back to LocalRuleBasedProvider.",
+            provider.provider_name, exc,
+        )
+        try:
+            recommendation = _fallback.recommend(
+                link_state,
+                scenario.mission_state,
+                plans,
+                evaluations,
+                anomalies=anomalies,
+            )
+            actual_recommendation_provider = _fallback.provider_name
+            recommendation_fallback_reason = (
+                f"AI provider '{provider.provider_name}' unavailable for plan "
+                "recommendation. Local rule-based recommendation is in use."
+            )
+        except Exception as fallback_exc:  # noqa: BLE001
+            # Local fallback should never fail on valid inputs.
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"Both primary provider '{provider.provider_name}' and Local "
+                    f"fallback failed: {fallback_exc}"
+                ),
+            ) from fallback_exc
+
+    # ── Determine the reported actual_provider ────────────────────────────────
+    # The recommendation provider takes precedence since it is the final
+    # advisory result visible to the operator.
+    actual_provider_name = actual_recommendation_provider
 
     return RecommendResponse(
-        provider=provider.provider_name,
+        provider=actual_provider_name,           # backwards-compatible
+        requested_provider=requested_provider_name,
+        actual_provider=actual_provider_name,
         recommendation=recommendation,
         prioritization=prioritization,
         candidate_count=candidate_count,
-        prioritization_error=prioritization_error,
+        prioritization_fallback_reason=prioritization_fallback_reason,
+        recommendation_fallback_reason=recommendation_fallback_reason,
+        # Backwards-compatible alias
+        prioritization_error=prioritization_fallback_reason,
     )

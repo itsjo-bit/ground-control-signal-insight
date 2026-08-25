@@ -501,6 +501,8 @@ class TestRecommendResponsePhase2D:
         )
         resp = RecommendResponse(
             provider="Local",
+            requested_provider="Local",
+            actual_provider="Local",
             recommendation=rec,
             prioritization=None,
             candidate_count=None,
@@ -522,7 +524,12 @@ class TestRecommendResponsePhase2D:
             reasoning="Test.",
             evidence=[],
         )
-        resp = RecommendResponse(provider="Local", recommendation=rec)
+        resp = RecommendResponse(
+            provider="Local",
+            requested_provider="Local",
+            actual_provider="Local",
+            recommendation=rec,
+        )
         assert resp.prioritization_error is None
 
 

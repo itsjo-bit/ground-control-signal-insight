@@ -141,17 +141,25 @@ class TestSwitchScenarioSecurity:
 
     @pytest.mark.asyncio
     async def test_path_traversal_dotdot_rejected(self, loaded_v3):
-        """Path traversal with ../  must be rejected (404)."""
+        """Path traversal with ../ must be rejected.
+
+        ../../etc/passwd.json contains a path separator, so the basename check
+        returns 400 before any path resolution occurs.
+        """
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             resp = await c.post("/scenarios/switch", json={"filename": "../../etc/passwd.json"})
-        assert resp.status_code == 404
+        assert resp.status_code in (400, 404)
 
     @pytest.mark.asyncio
     async def test_path_traversal_single_dotdot_rejected(self, loaded_v3):
-        """Single ../ traversal must be rejected (404)."""
+        """Single ../ traversal must be rejected.
+
+        ../mission_data_v3.json contains a path separator, so the basename
+        check returns 400 before any path resolution occurs.
+        """
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             resp = await c.post("/scenarios/switch", json={"filename": "../mission_data_v3.json"})
-        assert resp.status_code == 404
+        assert resp.status_code in (400, 404)
 
     @pytest.mark.asyncio
     async def test_absolute_path_rejected(self, loaded_v3):
