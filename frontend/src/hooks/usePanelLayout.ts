@@ -18,10 +18,13 @@ export type PanelId =
   | 'link-health'
   | 'baseline-plan'
   | 'plan-comparison'
+  | 'ai-decision'
+  | 'mission-decision'
   | 'ai-order'
   | 'ai-reasoning'
   | 'approval'
-  | 'simulation';
+  | 'simulation'
+  | 'mission-report';
 
 export type LayoutPreset = 'mission-control' | 'ai-analysis' | 'minimal';
 
@@ -45,57 +48,72 @@ export interface LayoutPrefs {
 // ---------------------------------------------------------------------------
 
 export const PANEL_LABELS: Record<PanelId, string> = {
-  'mission-state':   'Mission State',
-  'link-health':     'Link Health',
-  'baseline-plan':   'Baseline Plan',
-  'plan-comparison': 'Plan Comparison',
-  'ai-order':        'AI Recommended Order',
-  'ai-reasoning':    'AI Reasoning',
-  'approval':        'Approval',
-  'simulation':      'Simulation',
+  'mission-state':    'Mission State',
+  'link-health':      'Link Health',
+  'baseline-plan':    'Baseline Plan',
+  'plan-comparison':  'Plan Comparison',
+  'ai-decision':      'AI Decision / Prioritization',
+  'mission-decision': 'Mission Decision',
+  'ai-order':         'AI Recommended Order',
+  'ai-reasoning':     'AI Reasoning',
+  'approval':         'Approval',
+  'simulation':       'Simulation',
+  'mission-report':   'Mission Report',
 };
 
 const DEFAULT_PANELS: PanelConfig[] = [
-  { id: 'mission-state',   label: 'Mission State',         visible: true,  span: 1, heightPx: null },
-  { id: 'link-health',     label: 'Link Health',           visible: true,  span: 1, heightPx: null },
-  { id: 'baseline-plan',   label: 'Baseline Plan',         visible: true,  span: 1, heightPx: null },
-  { id: 'plan-comparison', label: 'Plan Comparison',       visible: true,  span: 1, heightPx: null },
-  { id: 'ai-order',        label: 'AI Recommended Order',  visible: true,  span: 2, heightPx: null },
-  { id: 'ai-reasoning',    label: 'AI Reasoning',          visible: true,  span: 2, heightPx: null },
-  { id: 'approval',        label: 'Approval',              visible: true,  span: 2, heightPx: null },
-  { id: 'simulation',      label: 'Simulation',            visible: true,  span: 2, heightPx: null },
+  { id: 'mission-state',    label: 'Mission State',                visible: true,  span: 1, heightPx: null },
+  { id: 'link-health',      label: 'Link Health',                  visible: true,  span: 1, heightPx: null },
+  { id: 'baseline-plan',    label: 'Baseline Plan',                visible: true,  span: 1, heightPx: null },
+  { id: 'plan-comparison',  label: 'Plan Comparison',              visible: true,  span: 1, heightPx: null },
+  { id: 'ai-decision',      label: 'AI Decision / Prioritization', visible: true,  span: 2, heightPx: null },
+  { id: 'mission-decision', label: 'Mission Decision',             visible: true,  span: 2, heightPx: null },
+  { id: 'ai-order',         label: 'AI Recommended Order',         visible: false, span: 2, heightPx: null },
+  { id: 'ai-reasoning',     label: 'AI Reasoning',                 visible: true,  span: 2, heightPx: null },
+  { id: 'approval',         label: 'Approval',                     visible: true,  span: 2, heightPx: null },
+  { id: 'simulation',       label: 'Simulation',                   visible: true,  span: 2, heightPx: null },
+  { id: 'mission-report',   label: 'Mission Report',               visible: true,  span: 2, heightPx: null },
 ];
 
 const PRESET_CONFIGS: Record<LayoutPreset, Partial<Record<PanelId, { visible: boolean; span: 1 | 2 }>>> = {
   'mission-control': {
-    'mission-state':   { visible: true,  span: 1 },
-    'link-health':     { visible: true,  span: 1 },
-    'baseline-plan':   { visible: true,  span: 1 },
-    'plan-comparison': { visible: true,  span: 1 },
-    'ai-order':        { visible: true,  span: 2 },
-    'ai-reasoning':    { visible: true,  span: 2 },
-    'approval':        { visible: true,  span: 2 },
-    'simulation':      { visible: true,  span: 2 },
+    'mission-state':    { visible: true,  span: 1 },
+    'link-health':      { visible: true,  span: 1 },
+    'baseline-plan':    { visible: true,  span: 1 },
+    'plan-comparison':  { visible: true,  span: 1 },
+    'ai-decision':      { visible: true,  span: 2 },
+    'mission-decision': { visible: true,  span: 2 },
+    'ai-order':         { visible: false, span: 2 },
+    'ai-reasoning':     { visible: true,  span: 2 },
+    'approval':         { visible: true,  span: 2 },
+    'simulation':       { visible: true,  span: 2 },
+    'mission-report':   { visible: true,  span: 2 },
   },
   'ai-analysis': {
-    'mission-state':   { visible: true,  span: 1 },
-    'link-health':     { visible: true,  span: 1 },
-    'baseline-plan':   { visible: false, span: 1 },
-    'plan-comparison': { visible: true,  span: 2 },
-    'ai-order':        { visible: true,  span: 2 },
-    'ai-reasoning':    { visible: true,  span: 2 },
-    'approval':        { visible: true,  span: 2 },
-    'simulation':      { visible: false, span: 2 },
+    'mission-state':    { visible: true,  span: 1 },
+    'link-health':      { visible: true,  span: 1 },
+    'baseline-plan':    { visible: false, span: 1 },
+    'plan-comparison':  { visible: true,  span: 2 },
+    'ai-decision':      { visible: true,  span: 2 },
+    'mission-decision': { visible: true,  span: 2 },
+    'ai-order':         { visible: false, span: 2 },
+    'ai-reasoning':     { visible: true,  span: 2 },
+    'approval':         { visible: true,  span: 2 },
+    'simulation':       { visible: false, span: 2 },
+    'mission-report':   { visible: false, span: 2 },
   },
   'minimal': {
-    'mission-state':   { visible: true,  span: 1 },
-    'link-health':     { visible: true,  span: 1 },
-    'baseline-plan':   { visible: false, span: 1 },
-    'plan-comparison': { visible: false, span: 1 },
-    'ai-order':        { visible: false, span: 2 },
-    'ai-reasoning':    { visible: true,  span: 2 },
-    'approval':        { visible: true,  span: 2 },
-    'simulation':      { visible: false, span: 2 },
+    'mission-state':    { visible: true,  span: 1 },
+    'link-health':      { visible: true,  span: 1 },
+    'baseline-plan':    { visible: false, span: 1 },
+    'plan-comparison':  { visible: false, span: 1 },
+    'ai-decision':      { visible: false, span: 2 },
+    'mission-decision': { visible: true,  span: 2 },
+    'ai-order':         { visible: false, span: 2 },
+    'ai-reasoning':     { visible: false, span: 2 },
+    'approval':         { visible: true,  span: 2 },
+    'simulation':       { visible: false, span: 2 },
+    'mission-report':   { visible: false, span: 2 },
   },
 };
 
@@ -104,25 +122,33 @@ const PRESET_ORDER: Record<LayoutPreset, PanelId[]> = {
   'mission-control': [
     'mission-state', 'link-health',
     'baseline-plan', 'plan-comparison',
+    'ai-decision',
+    'mission-decision',
     'ai-order',
     'ai-reasoning',
     'approval',
     'simulation',
+    'mission-report',
   ],
   'ai-analysis': [
     'mission-state', 'link-health',
     'plan-comparison',
+    'ai-decision',
+    'mission-decision',
     'ai-order',
     'ai-reasoning',
     'approval',
     'baseline-plan',
     'simulation',
+    'mission-report',
   ],
   'minimal': [
     'mission-state', 'link-health',
-    'ai-reasoning',
+    'mission-decision',
     'approval',
+    'ai-decision', 'ai-reasoning',
     'baseline-plan', 'plan-comparison', 'ai-order', 'simulation',
+    'mission-report',
   ],
 };
 

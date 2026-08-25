@@ -7,15 +7,37 @@ from .. import state
 from ..config import RiskWeights, SchedulerWeights
 from ..candidate_generator.generator import CandidateGenerator
 from ..evaluator.plan_evaluator import PlanEvaluator
+from ..models.bridge import data_products_to_packets
 from ..models.candidate_plan import CandidatePlan
 from ..models.evaluation_result import EvaluationResult
+from ..models.packet import Packet
 
 router = APIRouter()
+
+
+def _effective_packets(scenario) -> list[Packet]:
+    """Return the packet list to use for scheduling.
+
+    Priority:
+    1. If ``scenario.packets`` is non-empty, use it directly (legacy path).
+    2. Otherwise bridge ``scenario.data_products`` to Packet objects (v2 path).
+
+    This means a v2 scenario that carries data_products but no legacy packets
+    will automatically flow through the full scheduling and evaluation pipeline
+    without any changes to the scheduler, evaluator, or candidate generator.
+    """
+    if scenario.packets:
+        return scenario.packets
+    return data_products_to_packets(scenario.data_products)
 
 
 @router.post("/plans/generate", response_model=list[CandidatePlan])
 def generate_plans() -> list[CandidatePlan]:
     """Generate all candidate transmission plans from the active scenario.
+
+    Supports both legacy (``packets``) and v2 (``data_products``) scenarios.
+    When ``packets`` is empty and ``data_products`` is non-empty, the data
+    products are bridged to Packet objects transparently.
 
     Returns four strategies: baseline, deadline-first, mission-critical-first,
     and value-per-cost.  Raises 503 if no scenario has been loaded.
@@ -26,7 +48,7 @@ def generate_plans() -> list[CandidatePlan]:
     weights = SchedulerWeights()
     gen = CandidateGenerator()
     return gen.generate(
-        state.active_scenario.packets,
+        _effective_packets(state.active_scenario),
         state.active_link_state,
         state.active_scenario.mission_state,
         weights,
@@ -98,7 +120,7 @@ def what_if_evaluate(req: WhatIfEvalRequest) -> WhatIfEvalResponse:
     weights = SchedulerWeights()
     gen = CandidateGenerator()
     plans = gen.generate(
-        state.active_scenario.packets,
+        _effective_packets(state.active_scenario),
         hypothetical_link,
         state.active_scenario.mission_state,
         weights,

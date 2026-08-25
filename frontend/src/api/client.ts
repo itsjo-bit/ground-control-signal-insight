@@ -7,10 +7,9 @@ import type {
   ApproveResponse,
   CandidatePlan,
   EvaluationResult,
-  LinkState,
-  MissionState,
   RecommendResponse,
   SimulationResult,
+  StateResponse,
   WhatIfEvalResponse,
 } from '../types/domain';
 
@@ -28,8 +27,8 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-// State
-export async function getState(): Promise<{ link_state: LinkState; mission_state: MissionState }> {
+// State — returns full StateResponse including Phase 2E-C1 communication budget fields
+export async function getState(): Promise<StateResponse> {
   return fetchJson(`${BASE}/state`);
 }
 
@@ -87,14 +86,17 @@ export async function simulateWhatIf(
   });
 }
 
-// Approve
+// Approve — Phase 2E-D3 (P0-1): send the full recommended CandidatePlan so the
+// backend uses it directly without regenerating from _effective_packets().
+// plan_id is still required for backend backward compat; plan is authoritative.
 export async function approvePlan(
   plan_id: string,
+  plan: CandidatePlan,
   operator_notes: string = '',
 ): Promise<ApproveResponse> {
   return fetchJson(`${BASE}/approve`, {
     method: 'POST',
-    body: JSON.stringify({ plan_id, operator_notes }),
+    body: JSON.stringify({ plan_id, plan, operator_notes }),
   });
 }
 

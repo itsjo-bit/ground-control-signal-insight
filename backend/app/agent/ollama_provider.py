@@ -31,21 +31,28 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any
+from typing import Any, Sequence
 
 import httpx
 
+from ..models.anomaly_event import AnomalyEvent
 from ..models.candidate_plan import CandidatePlan
+from ..models.candidate_prioritization import CandidatePrioritization
+from ..models.candidate_summary import CandidateSummary
 from ..models.evaluation_result import EvaluationResult
 from ..models.evidence_item import EvidenceItem
 from ..models.link_state import LinkState
 from ..models.mission_state import MissionState
 from ..models.recommendation import AIRecommendation
-from ..models.risk_level import RiskLevel
-from .base_provider import AIHallucinationError, AIProviderError, AIResponseError, BaseAIProvider
+from .base_provider import AIHallucinationError, AIPrioritizationError, AIProviderError, AIResponseError, BaseAIProvider
 from .granite_agent import (
     _ALL_CITEABLE_FIELDS,  # reuse the same field registry
+    _PRIORITIZATION_SYSTEM_PROMPT,
     _SYSTEM_PROMPT,  # reuse the same system prompt
+)
+from .prioritization_helpers import (
+    build_prioritization_message as _build_prioritization_message,
+    parse_prioritization_response as _parse_prioritization_response,
 )
 
 # ---------------------------------------------------------------------------
@@ -93,6 +100,8 @@ class OllamaProvider(BaseAIProvider):
         mission_state: MissionState,
         plans: list[CandidatePlan],
         evaluations: list[EvaluationResult],
+        *,
+        anomalies: list[AnomalyEvent] | None = None,
     ) -> AIRecommendation:
         """Generate a recommendation using Ollama.
 
@@ -108,11 +117,13 @@ class OllamaProvider(BaseAIProvider):
             "candidate_plans": [p.model_dump(mode="json") for p in plans],
             "evaluations": [e.model_dump(mode="json") for e in evaluations],
         }
+        if anomalies:
+            ctx["anomalies"] = [a.model_dump(mode="json") for a in anomalies]
         user_message = json.dumps(ctx, indent=2)
         full_prompt = f"<|system|>\n{_SYSTEM_PROMPT}\n<|user|>\n{user_message}\n<|assistant|>\n"
 
         raw = self._call_api(full_prompt)
-        return self._parse_response(raw, plans)
+        return self._parse_response(raw, plans, evaluations)
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -150,14 +161,33 @@ class OllamaProvider(BaseAIProvider):
                 f"Unexpected Ollama API response shape: {exc}"
             ) from exc
 
-    def _parse_response(self, raw: str, plans: list[CandidatePlan]) -> AIRecommendation:
+    def _parse_response(
+        self,
+        raw: str,
+        plans: list[CandidatePlan],
+        evaluations: list[EvaluationResult],
+    ) -> AIRecommendation:
         """Parse and validate the raw Ollama response into an AIRecommendation.
 
-        Reuses the same validation logic as GraniteAgent._parse_response.
+        ``risk_score`` and ``risk_level`` are bound to the deterministic
+        :class:`EvaluationResult` for the recommended plan — the LLM's
+        self-reported values are discarded.  This matches the behaviour of
+        :class:`~backend.app.agent.granite_agent.GraniteAgent` and
+        :class:`~backend.app.agent.gemini_provider.GeminiProvider`, ensuring
+        that the AI is never the authority for numerical risk metrics.
+
+        Args:
+            raw:         Raw text from the Ollama LLM.
+            plans:       All candidate plans (used to validate plan_id and
+                         build packet_actions).
+            evaluations: Deterministic evaluation results.  The result whose
+                         ``plan_id`` matches ``recommended_plan_id`` supplies
+                         the authoritative ``risk_score`` and ``risk_level``.
 
         Raises:
             AIResponseError:      If the JSON is malformed or required fields
-                                  are missing / invalid.
+                                  are missing / invalid, or if no EvaluationResult
+                                  exists for the recommended plan.
             AIHallucinationError: If an EvidenceItem.field is not a known
                                   field name in the citeable models.
         """
@@ -190,12 +220,19 @@ class OllamaProvider(BaseAIProvider):
                 f"Valid: {valid_plan_ids}"
             )
 
-        try:
-            risk_level = RiskLevel(data["risk_level"])
-        except ValueError as exc:
+        # Bind risk_score and risk_level to the deterministic EvaluationResult
+        # for the recommended plan.  The LLM's self-reported values are
+        # intentionally discarded: the evaluator is the sole authority for
+        # these metrics (matches GraniteAgent and GeminiProvider behaviour).
+        recommended_eval = next(
+            (e for e in evaluations if e.plan_id == data["recommended_plan_id"]),
+            None,
+        )
+        if recommended_eval is None:
             raise AIResponseError(
-                f"Ollama returned invalid risk_level '{data['risk_level']}'"
-            ) from exc
+                f"No EvaluationResult found for recommended plan "
+                f"'{data['recommended_plan_id']}'. Cannot bind authoritative risk values."
+            )
 
         evidence_items: list[EvidenceItem] = []
         for i, item in enumerate(data.get("evidence", [])):
@@ -239,8 +276,10 @@ class OllamaProvider(BaseAIProvider):
                 packet_actions=packet_actions,
                 reasoning=data["reasoning"],
                 confidence=float(data["confidence"]),
-                risk_score=float(data["risk_score"]),
-                risk_level=risk_level,
+                # risk_score and risk_level come from the authoritative
+                # EvaluationResult, not from the LLM response.
+                risk_score=recommended_eval.risk_score,
+                risk_level=recommended_eval.risk_level,
                 evidence=evidence_items,
                 alternative_plan_id=alt_plan_id,
             )
@@ -248,3 +287,39 @@ class OllamaProvider(BaseAIProvider):
             raise AIResponseError(
                 f"Ollama response failed AIRecommendation validation: {exc}"
             ) from exc
+
+    def prioritize_candidates(
+        self,
+        candidates: Sequence[CandidateSummary],
+        link_state: LinkState,
+        mission_state: MissionState,
+        anomalies: Sequence[AnomalyEvent] | None = None,
+        *,
+        distance_km: float | None = None,
+    ) -> CandidatePrioritization:
+        """Rank candidates using the Ollama LLM with the prioritization prompt.
+
+        Raises:
+            AIProviderError:       If the Ollama server is unreachable.
+            AIPrioritizationError: If the response fails validation.
+        """
+        user_message = _build_prioritization_message(
+            candidates, link_state, mission_state, anomalies,
+            distance_km=distance_km,
+        )
+        full_prompt = (
+            f"<|system|>\n{_PRIORITIZATION_SYSTEM_PROMPT}\n"
+            f"<|user|>\n{user_message}\n<|assistant|>\n"
+        )
+        try:
+            raw = self._call_api(full_prompt)
+        except AIProviderError:
+            raise
+        valid_ids = {cs.product_id for cs in candidates}
+        try:
+            return _parse_prioritization_response(raw, valid_ids, candidates)
+        except Exception as exc:  # noqa: BLE001
+            from .granite_agent import GraniteResponseError
+            if isinstance(exc, GraniteResponseError):
+                raise AIPrioritizationError(str(exc)) from exc
+            raise AIPrioritizationError(f"Ollama prioritization response validation failed: {exc}") from exc

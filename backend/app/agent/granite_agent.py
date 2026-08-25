@@ -51,13 +51,22 @@ from typing import Any
 
 import httpx
 
+from typing import Sequence
+
+from ..models.anomaly_event import AnomalyEvent
 from ..models.candidate_plan import CandidatePlan
+from ..models.candidate_prioritization import CandidatePrioritization
+from ..models.candidate_summary import CandidateSummary
 from ..models.evaluation_result import EvaluationResult
 from ..models.evidence_item import EvidenceItem
 from ..models.link_state import LinkState
 from ..models.mission_state import MissionState
 from ..models.recommendation import AIRecommendation
 from ..models.risk_level import RiskLevel
+from .prioritization_helpers import (
+    build_prioritization_message as _build_prioritization_message_fn,
+    parse_prioritization_response as _parse_prioritization_response_fn,
+)
 
 # ---------------------------------------------------------------------------
 # Typed exceptions
@@ -142,6 +151,89 @@ AIRecommendation JSON schema:
     }
   ],
   "alternative_plan_id": "<string or null>"
+}"""
+
+# ---------------------------------------------------------------------------
+# Phase 2C: Candidate prioritization system prompt
+# ---------------------------------------------------------------------------
+
+_PRIORITIZATION_SYSTEM_PROMPT = """You are a spacecraft ground-control AI prioritization agent.
+
+Your task: Given a bounded set of candidate spacecraft data products and the current mission context,
+determine which products should be transmitted first during the communication window.
+
+RULES (non-negotiable):
+1. You may ONLY rank product_id values that appear in the supplied "candidates" list.
+2. You must NEVER invent product_id values, telemetry, anomalies, or mission events.
+3. You must NOT perform calculations or claim transmission feasibility.
+   The deterministic scheduler will enforce communication constraints.
+4. Each ranked product must have a non-empty "reason" explaining the mission rationale.
+5. You may rank fewer products than supplied (e.g. irrelevant ones), but never more.
+6. Respond ONLY with a valid JSON object matching the CandidatePrioritization schema.
+
+SEMANTIC CONTEXT (Phase 2E-A):
+- Each candidate may include a 'description' field with a plain-language explanation of
+  what the data product contains (e.g. "Thruster-2 valve telemetry captured during anomaly").
+- Use description to understand the operational meaning of each product beyond numeric scores.
+- Combine description with subsystem, anomaly_id, criticality, mission_relevance,
+  scientific_value, age_s, and deadline_s to form a complete picture of each candidate.
+- Do NOT invent facts not present in the candidate context.
+- Do NOT claim a product will fit in the communication window based on its importance alone.
+- Deterministic backend evaluation is authoritative for feasibility, risk score, and
+  transmission duration. Your role is semantic prioritization, not feasibility analysis.
+
+COMMUNICATION GEOMETRY (Phase 2E-C3-E):
+- The context may include a "communication_geometry" object with three fields:
+    distance_km           — spacecraft distance from Earth in kilometres
+    propagation_delay_s   — one-way signal propagation time (distance_km × 1000 / speed_of_light)
+    round_trip_time_s     — round-trip time for a command/response exchange (2 × propagation_delay_s)
+- These are SIGNAL PROPAGATION VALUES, not transmission durations. They do NOT affect link goodput,
+  BER, or available communication window capacity. The RF pipeline already incorporates all link
+  physics; do NOT subtract propagation delay from the remaining window or capacity.
+- You MAY use distance/latency context to reason about operational implications. For example:
+    • Very long propagation delays (hundreds of seconds) mean ground cannot react quickly to anomalies
+      — this increases the urgency of transmitting diagnostic products during THIS window.
+    • A large RTT makes real-time commanding impractical and reinforces the value of getting
+      critical telemetry down now rather than waiting for a follow-up opportunity.
+- If "communication_geometry" is null, the scenario does not carry distance information.
+  Reason about the other context fields normally.
+- Do NOT invent distance values, propagation delays, or RTT values not supplied in this object.
+
+PRIORITIZATION GUIDANCE:
+- Products linked to active anomalies (anomaly_id != null) are operationally urgent.
+  Higher anomaly severity means higher urgency.
+- Products with high criticality represent operational necessity.
+- Products with high mission_relevance directly serve the current mission objective.
+- Products with high scientific_value contribute to the science goals.
+- Products with small deadline_s are time-sensitive; consider them carefully.
+- Products with low age_s contain fresh data; stale data (high age_s) is less valuable.
+- Related products (related_ids) provide diagnostic context for each other.
+- Use the description field to explain WHY a product is relevant (not just its numeric score).
+- Explain trade-offs between operational urgency and scientific value.
+- Do NOT claim that any product will or will not fit in the window.
+
+DECISION FACTOR LABELS (use only relevant ones from this list):
+"active anomaly", "high severity anomaly", "high criticality", "medium criticality",
+"deadline urgency", "mission relevance", "scientific value", "data freshness",
+"related products", "subsystem dependency", "operational necessity",
+"routine housekeeping", "low mission urgency", "long deadline"
+
+CandidatePrioritization JSON schema:
+{
+  "ranked_products": [
+    {
+      "product_id": "<string — must match a supplied candidate product_id>",
+      "priority": <integer starting at 1, no duplicates>,
+      "reason": "<non-empty string explaining mission rationale>",
+      "factors": ["<factor label>", ...],
+      "anomaly_ids": ["<anomaly_id>", ...],
+      "subsystem": "<subsystem name from candidate>",
+      "confidence": <float in [0.0, 1.0] or null>
+    }
+  ],
+  "overall_reasoning": "<string — high-level explanation of the prioritization strategy>",
+  "confidence": <float in [0.0, 1.0]>,
+  "decision_factors": ["<factor label>", ...]
 }"""
 
 
@@ -259,6 +351,8 @@ class GraniteAgent:
         mission_state: MissionState,
         plans: list[CandidatePlan],
         evaluations: list[EvaluationResult],
+        *,
+        anomalies: list[AnomalyEvent] | None = None,
     ) -> AIRecommendation:
         """Request a plan recommendation from IBM Granite.
 
@@ -267,10 +361,11 @@ class GraniteAgent:
         ``AIRecommendation``.
 
         Args:
-            link_state:   Current link snapshot.
+            link_state:    Current link snapshot.
             mission_state: Current mission snapshot.
-            plans:        All candidate plans (baseline + alternatives).
-            evaluations:  Deterministic evaluation results for each plan.
+            plans:         All candidate plans (baseline + alternatives).
+            evaluations:   Deterministic evaluation results for each plan.
+            anomalies:     Optional list of active anomaly events (Phase 2A).
 
         Returns:
             A validated :class:`AIRecommendation`.
@@ -281,7 +376,9 @@ class GraniteAgent:
                                         violates the expected schema.
             EvidenceHallucinationError: If an EvidenceItem cites an unknown field.
         """
-        user_message = self._build_user_message(link_state, mission_state, plans, evaluations)
+        user_message = self._build_user_message(
+            link_state, mission_state, plans, evaluations, anomalies=anomalies
+        )
         raw_response = self._call_api(user_message)
         return self._parse_response(raw_response, plans, evaluations)
 
@@ -295,14 +392,23 @@ class GraniteAgent:
         mission_state: MissionState,
         plans: list[CandidatePlan],
         evaluations: list[EvaluationResult],
+        *,
+        anomalies: list[AnomalyEvent] | None = None,
     ) -> str:
-        """Serialize all pre-computed context into a structured user message."""
+        """Serialize all pre-computed context into a structured user message.
+
+        When ``anomalies`` is non-empty (Phase 2A v2 scenarios), the serialized
+        anomaly events are included under an ``"anomalies"`` key so the model can
+        reason about active spacecraft faults when selecting a transmission plan.
+        """
         ctx: dict[str, Any] = {
             "link_state": link_state.model_dump(mode="json"),
             "mission_state": mission_state.model_dump(mode="json"),
             "candidate_plans": [p.model_dump(mode="json") for p in plans],
             "evaluations": [e.model_dump(mode="json") for e in evaluations],
         }
+        if anomalies:
+            ctx["anomalies"] = [a.model_dump(mode="json") for a in anomalies]
         return json.dumps(ctx, indent=2)
 
     # ------------------------------------------------------------------
@@ -540,3 +646,139 @@ class GraniteAgent:
             raise GraniteResponseError(
                 f"Granite response failed AIRecommendation validation: {exc}"
             ) from exc
+
+    # ------------------------------------------------------------------
+    # Phase 2C: Candidate prioritization
+    # ------------------------------------------------------------------
+
+    def prioritize_candidates(
+        self,
+        candidates: Sequence[CandidateSummary],
+        link_state: LinkState,
+        mission_state: MissionState,
+        anomalies: Sequence[AnomalyEvent] | None = None,
+        *,
+        distance_km: float | None = None,
+    ) -> CandidatePrioritization:
+        """Rank a bounded candidate set using IBM Granite.
+
+        Builds a compact user message containing the candidate summaries and
+        mission context, calls the Granite REST API with the prioritization
+        system prompt, and parses the response into a
+        :class:`~backend.app.models.candidate_prioritization.CandidatePrioritization`.
+
+        Args:
+            candidates:    Pre-filtered :class:`CandidateSummary` list.
+            link_state:    Current link snapshot.
+            mission_state: Current mission snapshot.
+            anomalies:     Active anomaly events.
+            distance_km:   Spacecraft distance from Earth in km (Phase 2E-C3-E).
+
+        Returns:
+            A validated :class:`CandidatePrioritization`.
+
+        Raises:
+            GraniteAPIError:      If the Granite API call fails.
+            GraniteResponseError: If the response fails schema validation.
+        """
+        user_message = self._build_prioritization_message(
+            candidates, link_state, mission_state, anomalies,
+            distance_km=distance_km,
+        )
+        raw_response = self._call_prioritization_api(user_message)
+        valid_ids = {cs.product_id for cs in candidates}
+        return self._parse_prioritization_response(raw_response, valid_ids, candidates)
+
+    def _build_prioritization_message(
+        self,
+        candidates: Sequence[CandidateSummary],
+        link_state: LinkState,
+        mission_state: MissionState,
+        anomalies: Sequence[AnomalyEvent] | None,
+        *,
+        distance_km: float | None = None,
+    ) -> str:
+        """Serialize prioritization context into a compact user message.
+
+        Delegates to the shared stateless helper
+        :func:`~backend.app.agent.prioritization_helpers.build_prioritization_message`
+        so that Gemini and Ollama can call the same logic without instantiating
+        a bare ``GraniteAgent``.
+
+        See :mod:`backend.app.agent.prioritization_helpers` for the geometry
+        precision policy (values rounded to 3 dp in AI context).
+        """
+        return _build_prioritization_message_fn(
+            candidates, link_state, mission_state, anomalies,
+            distance_km=distance_km,
+        )
+
+    def _call_prioritization_api(self, user_message: str) -> str:
+        """POST to Granite with the prioritization system prompt."""
+        if not self._api_key:
+            raise GraniteAPIError(
+                "GCSI_GRANITE_API_KEY is not set.  Granite API is unavailable."
+            )
+        if not self._project_id:
+            raise GraniteAPIError(
+                "GCSI_GRANITE_PROJECT_ID is not set. Required for watsonx.ai."
+            )
+
+        access_token = self._get_iam_token()
+        payload = {
+            "model_id": self._model_id,
+            "input": (
+                f"<|system|>\n{_PRIORITIZATION_SYSTEM_PROMPT}\n"
+                f"<|user|>\n{user_message}\n<|assistant|>\n"
+            ),
+            "parameters": {
+                "decoding_method": "greedy",
+                "max_new_tokens": 2048,
+                "stop_sequences": ["<|user|>"],
+            },
+            "project_id": self._project_id,
+        }
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        try:
+            with httpx.Client(timeout=self._timeout_s) as client:
+                resp = client.post(self._api_url, json=payload, headers=headers)
+        except httpx.RequestError as exc:
+            raise GraniteAPIError(f"Granite API request failed: {type(exc).__name__}") from exc
+
+        if resp.status_code == 401:
+            self._iam_cache.invalidate()
+            raise GraniteAPIError("Granite API returned HTTP 401: IAM authentication failed.")
+        if resp.status_code != 200:
+            raise GraniteAPIError(f"Granite API returned HTTP {resp.status_code}.")
+
+        try:
+            body = resp.json()
+            return body["results"][0]["generated_text"]
+        except (KeyError, IndexError, json.JSONDecodeError) as exc:
+            raise GraniteAPIError(f"Unexpected Granite API response shape: {type(exc).__name__}") from exc
+
+    def _parse_prioritization_response(
+        self,
+        raw: str,
+        valid_ids: set[str],
+        candidates: Sequence[CandidateSummary] | None = None,
+    ) -> CandidatePrioritization:
+        """Parse and validate the raw Granite prioritization response.
+
+        Delegates to the shared stateless helper
+        :func:`~backend.app.agent.prioritization_helpers.parse_prioritization_response`
+        so that all providers use identical validation logic.
+
+        Phase 2E-D3: ``candidates`` is passed through so descriptions are
+        forwarded from ``CandidateSummary`` into ``RankedProduct``.
+
+        Raises:
+            GraniteResponseError: If the JSON is malformed, required fields are
+                                  missing, product IDs are hallucinated, or
+                                  priorities are duplicated.
+        """
+        return _parse_prioritization_response_fn(raw, valid_ids, candidates)

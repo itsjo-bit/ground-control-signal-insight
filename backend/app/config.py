@@ -2,6 +2,30 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+class AICandidateConfig(BaseSettings):
+    """Configuration for the AI candidate prioritization layer (Phase 2C).
+
+    Controls how many data products are selected for AI context before the
+    LLM is invoked.  Keeping this bounded prevents LLM token overflow when
+    hundreds or thousands of data products are available.
+
+    Override via environment variable::
+
+        GCSI_AI_MAX_CANDIDATES=50
+    """
+
+    model_config = SettingsConfigDict(env_prefix="GCSI_AI_", extra="ignore")
+
+    max_candidates: int = Field(
+        default=50,
+        gt=0,
+        description=(
+            "Maximum number of CandidateSummary objects passed to the AI "
+            "prioritization call.  Must be > 0.  Default 50."
+        ),
+    )
+
+
 class SchedulerWeights(BaseSettings):
     """Configurable weights for the BaselineScheduler five-factor scoring.
 

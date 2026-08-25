@@ -108,8 +108,10 @@ export function LinkHealthPanel({ linkState: ls, onWhatIfResult }: Props) {
 <td>{ls.remaining_window_s.toFixed(1)} s</td>
 </tr>
 <tr>
-<td>Latency</td>
-<td>{ls.latency_s.toFixed(3)} s</td>
+  <td title="Link-layer / protocol-stack latency (headers, ACKs, framing). NOT free-space propagation delay — see Comm Geometry panel for spacecraft signal travel time.">
+    Link Latency
+  </td>
+  <td>{ls.latency_s.toFixed(3)} s</td>
 </tr>
 </tbody>
 </table>

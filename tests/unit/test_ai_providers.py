@@ -81,7 +81,12 @@ def make_plan(plan_id: str, pids: list[str] | None = None) -> CandidatePlan:
     )
 
 
-def make_evaluation(plan_id: str, risk_score: float = 0.1, mission_value: float = 1.2) -> EvaluationResult:
+def make_evaluation(
+    plan_id: str,
+    risk_score: float = 0.1,
+    mission_value: float = 1.2,
+    risk_level: RiskLevel = RiskLevel.LOW,
+) -> EvaluationResult:
     return EvaluationResult(
         plan_id=plan_id,
         mission_value=mission_value,
@@ -92,7 +97,7 @@ def make_evaluation(plan_id: str, risk_score: float = 0.1, mission_value: float 
         bandwidth_utilization=0.3,
         retransmission_overhead=0.0,
         risk_score=risk_score,
-        risk_level=RiskLevel.LOW,
+        risk_level=risk_level,
         deferred_packets=[],
     )
 
@@ -446,9 +451,17 @@ class TestOllamaProviderParsing:
     def _plans(self) -> list[CandidatePlan]:
         return [make_plan("baseline"), make_plan("deadline-first")]
 
+    def _evals(self) -> list[EvaluationResult]:
+        return [
+            make_evaluation("baseline", risk_score=0.12, risk_level=RiskLevel.LOW),
+            make_evaluation("deadline-first", risk_score=0.30, risk_level=RiskLevel.MEDIUM),
+        ]
+
     def test_valid_response_returns_ai_recommendation(self):
         provider = self._provider()
-        result = provider._parse_response(_valid_ollama_response("baseline"), self._plans())
+        result = provider._parse_response(
+            _valid_ollama_response("baseline"), self._plans(), self._evals()
+        )
         assert isinstance(result, AIRecommendation)
         assert result.recommended_plan_id == "baseline"
 
@@ -456,27 +469,30 @@ class TestOllamaProviderParsing:
         provider = self._provider()
         with pytest.raises(AIResponseError):
             provider._parse_response(
-                _valid_ollama_response("nonexistent-plan"), self._plans()
+                _valid_ollama_response("nonexistent-plan"), self._plans(), self._evals()
             )
 
     def test_invalid_json_raises_ai_response_error(self):
         provider = self._provider()
         with pytest.raises(AIResponseError):
-            provider._parse_response("not json", self._plans())
+            provider._parse_response("not json", self._plans(), self._evals())
 
     def test_missing_fields_raises_ai_response_error(self):
         provider = self._provider()
         with pytest.raises(AIResponseError):
             provider._parse_response(
-                json.dumps({"recommended_plan_id": "baseline"}), self._plans()
+                json.dumps({"recommended_plan_id": "baseline"}),
+                self._plans(), self._evals(),
             )
 
-    def test_invalid_risk_level_raises_ai_response_error(self):
+    def test_invalid_risk_level_in_llm_response_is_ignored(self):
+        """LLM risk_level is now ignored — an invalid value must NOT raise an error."""
         provider = self._provider()
-        data = json.loads(_valid_ollama_response())
+        data = json.loads(_valid_ollama_response("baseline"))
         data["risk_level"] = "SUPER_LOW"
-        with pytest.raises(AIResponseError):
-            provider._parse_response(json.dumps(data), self._plans())
+        # Should NOT raise: LLM risk values are discarded in favour of EvaluationResult
+        result = provider._parse_response(json.dumps(data), self._plans(), self._evals())
+        assert isinstance(result, AIRecommendation)
 
     def test_hallucinated_evidence_field_raises_ai_hallucination_error(self):
         provider = self._provider()
@@ -486,33 +502,35 @@ class TestOllamaProviderParsing:
             "value": 42, "interpretation": "made up",
         })
         with pytest.raises(AIHallucinationError):
-            provider._parse_response(json.dumps(data), self._plans())
+            provider._parse_response(json.dumps(data), self._plans(), self._evals())
 
     def test_invalid_alternative_plan_id_raises_ai_response_error(self):
         provider = self._provider()
         data = json.loads(_valid_ollama_response("baseline"))
         data["alternative_plan_id"] = "does-not-exist"
         with pytest.raises(AIResponseError):
-            provider._parse_response(json.dumps(data), self._plans())
+            provider._parse_response(json.dumps(data), self._plans(), self._evals())
 
     def test_confidence_above_1_raises_ai_response_error(self):
         provider = self._provider()
         data = json.loads(_valid_ollama_response())
         data["confidence"] = 1.5
         with pytest.raises(AIResponseError):
-            provider._parse_response(json.dumps(data), self._plans())
+            provider._parse_response(json.dumps(data), self._plans(), self._evals())
 
-    def test_risk_score_below_0_raises_ai_response_error(self):
+    def test_llm_risk_score_below_0_is_ignored(self):
+        """LLM risk_score is now ignored — an out-of-range value must NOT raise."""
         provider = self._provider()
-        data = json.loads(_valid_ollama_response())
-        data["risk_score"] = -0.1
-        with pytest.raises(AIResponseError):
-            provider._parse_response(json.dumps(data), self._plans())
+        data = json.loads(_valid_ollama_response("baseline"))
+        data["risk_score"] = -0.1  # would have been invalid under the old code
+        result = provider._parse_response(json.dumps(data), self._plans(), self._evals())
+        # risk_score comes from EvaluationResult, not the LLM
+        assert result.risk_score == pytest.approx(0.12)  # from make_evaluation("baseline")
 
     def test_markdown_fenced_json_parsed(self):
         provider = self._provider()
         fenced = f"```json\n{_valid_ollama_response()}\n```"
-        result = provider._parse_response(fenced, self._plans())
+        result = provider._parse_response(fenced, self._plans(), self._evals())
         assert isinstance(result, AIRecommendation)
 
     def test_server_unreachable_raises_ai_provider_error(self):
@@ -528,6 +546,100 @@ class TestOllamaProviderParsing:
     def test_provider_name_includes_model(self):
         provider = OllamaProvider(model="llama3.2")
         assert "llama3.2" in provider.provider_name
+
+    # ── F1: Deterministic risk-authority tests ────────────────────────────
+
+    def test_risk_score_comes_from_evaluation_result_not_llm(self):
+        """F1: risk_score must equal EvaluationResult.risk_score, ignoring LLM value."""
+        provider = self._provider()
+        # LLM claims risk_score=0.99 (obviously wrong)
+        data = json.loads(_valid_ollama_response("baseline"))
+        data["risk_score"] = 0.99
+        evals = [make_evaluation("baseline", risk_score=0.12, risk_level=RiskLevel.LOW)]
+        result = provider._parse_response(json.dumps(data), self._plans(), evals)
+        assert result.risk_score == pytest.approx(0.12), (
+            "OllamaProvider must use EvaluationResult.risk_score, not the LLM value"
+        )
+
+    def test_risk_level_comes_from_evaluation_result_not_llm(self):
+        """F1: risk_level must equal EvaluationResult.risk_level, ignoring LLM value."""
+        provider = self._provider()
+        data = json.loads(_valid_ollama_response("baseline"))
+        data["risk_level"] = "CRITICAL"  # LLM claims CRITICAL
+        evals = [make_evaluation("baseline", risk_score=0.12, risk_level=RiskLevel.LOW)]
+        result = provider._parse_response(json.dumps(data), self._plans(), evals)
+        assert result.risk_level == RiskLevel.LOW, (
+            "OllamaProvider must use EvaluationResult.risk_level, not the LLM value"
+        )
+
+    def test_risk_score_matches_recommended_plan_eval_not_other_plan(self):
+        """F1: when multiple evaluations exist, only the recommended plan's eval is used."""
+        provider = self._provider()
+        data = json.loads(_valid_ollama_response("baseline"))
+        evals = [
+            make_evaluation("baseline", risk_score=0.12, risk_level=RiskLevel.LOW),
+            make_evaluation("deadline-first", risk_score=0.55, risk_level=RiskLevel.HIGH),
+        ]
+        result = provider._parse_response(json.dumps(data), self._plans(), evals)
+        assert result.risk_score == pytest.approx(0.12)
+        assert result.risk_level == RiskLevel.LOW
+
+    def test_missing_evaluation_for_recommended_plan_raises(self):
+        """F1: if no EvaluationResult matches the recommended plan, raise AIResponseError."""
+        provider = self._provider()
+        data = json.loads(_valid_ollama_response("baseline"))
+        # Only provide an eval for a different plan
+        evals = [make_evaluation("deadline-first")]
+        with pytest.raises(AIResponseError, match="No EvaluationResult found"):
+            provider._parse_response(json.dumps(data), self._plans(), evals)
+
+    def test_granite_risk_score_still_from_evaluation_result(self):
+        """Regression: GraniteAgent must still bind risk values from EvaluationResult."""
+        from backend.app.agent.granite_agent import GraniteAgent
+        agent = GraniteAgent.__new__(GraniteAgent)
+        plans = self._plans()
+        evals = [
+            make_evaluation("baseline", risk_score=0.07, risk_level=RiskLevel.LOW),
+            make_evaluation("deadline-first", risk_score=0.40, risk_level=RiskLevel.MEDIUM),
+        ]
+        raw = json.dumps({
+            "recommended_plan_id": "baseline",
+            "reasoning": "best plan",
+            "confidence": 0.9,
+            "risk_score": 0.99,  # LLM lies
+            "risk_level": "CRITICAL",  # LLM lies
+            "evidence": [
+                {"source": "link_state", "field": "ber", "value": 1e-6, "interpretation": "ok"}
+            ],
+            "alternative_plan_id": None,
+        })
+        result = agent._parse_response(raw, plans, evals)
+        assert result.risk_score == pytest.approx(0.07)
+        assert result.risk_level == RiskLevel.LOW
+
+    def test_gemini_risk_score_still_from_evaluation_result(self):
+        """Regression: GeminiProvider must still bind risk values from EvaluationResult."""
+        from backend.app.agent.gemini_provider import GeminiProvider
+        provider = GeminiProvider(api_key="fake")
+        plans = self._plans()
+        evals = [
+            make_evaluation("baseline", risk_score=0.07, risk_level=RiskLevel.LOW),
+            make_evaluation("deadline-first", risk_score=0.40, risk_level=RiskLevel.MEDIUM),
+        ]
+        raw = json.dumps({
+            "recommended_plan_id": "baseline",
+            "reasoning": "best plan",
+            "confidence": 0.85,
+            "risk_score": 0.99,
+            "risk_level": "CRITICAL",
+            "evidence": [
+                {"source": "link_state", "field": "ber", "value": 1e-6, "interpretation": "ok"}
+            ],
+            "alternative_plan_id": None,
+        })
+        result = provider._parse_response(raw, plans, evals)
+        assert result.risk_score == pytest.approx(0.07)
+        assert result.risk_level == RiskLevel.LOW
 
 
 # ---------------------------------------------------------------------------

@@ -3,6 +3,34 @@
  * Maintained manually — keep in sync with backend/app/models/.
  */
 
+// Phase 2E-C1/C2/C3-C: authoritative communication budget and geometry from GET /state
+export interface StateResponse {
+  link_state: LinkState;
+  mission_state: MissionState;
+  data_products_count: number;
+  anomalies_count: number;
+  anomalies: AnomalyEvent[];
+  /** Maximum bits transmittable in the remaining window at current goodput. */
+  available_capacity_bits: number;
+  /** Total size of all queued data products (or legacy packets). */
+  queued_data_bits: number;
+  // Phase 2E-C3-C: spacecraft communication geometry (null for legacy scenarios)
+  /** Spacecraft-to-Earth distance in km. null when scenario does not provide it. */
+  distance_km: number | null;
+  /** One-way signal propagation delay in seconds (distance_km × 1000 / c). null when distance_km is null. */
+  propagation_delay_s: number | null;
+  /** Round-trip propagation time in seconds (2 × propagation_delay_s). null when distance_km is null. */
+  round_trip_time_s: number | null;
+}
+
+export interface AnomalyEvent {
+  anomaly_id: string;
+  subsystem: string;
+  severity: number;
+  description: string;
+  detected_at_s: number;
+}
+
 // Enums
 export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 
@@ -102,9 +130,37 @@ export interface AIRecommendation {
   alternative_plan_id: string | null;
 }
 
+// Phase 2D: AI prioritization transparency types
+export interface RankedProduct {
+  product_id: string;
+  priority: number;
+  reason: string;
+  /** Phase 2E-D3: human-readable product description from DataProduct.description.
+   *  Absent or empty string when not available (backwards compatible with existing
+   *  serialized responses that do not include this field). */
+  description?: string;
+  factors: string[];
+  anomaly_ids: string[];
+  subsystem: string;
+  confidence: number | null;
+}
+
+export interface CandidatePrioritization {
+  ranked_products: RankedProduct[];
+  overall_reasoning: string;
+  confidence: number;
+  decision_factors: string[];
+  candidate_count: number | null;
+}
+
 export interface RecommendResponse {
   provider: string;
   recommendation: AIRecommendation;
+  /** Phase 2C/2D: structured AI prioritization result (v2 scenarios only). */
+  prioritization: CandidatePrioritization | null;
+  candidate_count: number | null;
+  /** Phase 2D: error message if AI prioritization failed (deterministic fallback active). */
+  prioritization_error: string | null;
 }
 
 export interface ApproveResponse {

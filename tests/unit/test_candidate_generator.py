@@ -190,6 +190,140 @@ class TestScenarioLoader:
 
 
 # ===========================================================================
+# ScenarioLoaderV2 tests — mission_data_v2.json with DataProduct + AnomalyEvent
+# ===========================================================================
+
+
+class TestScenarioLoaderV2:
+    """Verify that ScenarioLoader correctly loads the v2 reference scenario."""
+
+    _SCENARIO_PATH = Path(__file__).parents[2] / "data" / "scenarios" / "mission_data_v2.json"
+
+    def test_v2_scenario_loads_without_error(self):
+        """mission_data_v2.json must load via ScenarioLoader without raising."""
+        scenario = ScenarioLoader.load(str(self._SCENARIO_PATH))
+        assert scenario is not None
+
+    def test_v2_scenario_id(self):
+        scenario = ScenarioLoader.load(str(self._SCENARIO_PATH))
+        assert scenario.scenario_id == "mission_data_v2_anomaly_pass"
+
+    def test_v2_is_simulated(self):
+        scenario = ScenarioLoader.load(str(self._SCENARIO_PATH))
+        assert scenario.simulated is True
+
+    def test_v2_packets_field_empty(self):
+        """The v2 fixture intentionally carries zero legacy Packet objects."""
+        scenario = ScenarioLoader.load(str(self._SCENARIO_PATH))
+        assert scenario.packets == []
+
+    def test_v2_data_products_count(self):
+        """The v2 fixture carries exactly 50 DataProduct entries."""
+        scenario = ScenarioLoader.load(str(self._SCENARIO_PATH))
+        assert len(scenario.data_products) == 50
+
+    def test_v2_anomalies_count(self):
+        """The v2 fixture carries exactly 3 AnomalyEvent entries."""
+        scenario = ScenarioLoader.load(str(self._SCENARIO_PATH))
+        assert len(scenario.anomalies) == 3
+
+    def test_v2_data_products_are_typed(self):
+        """Every element of data_products must be a DataProduct instance."""
+        from backend.app.models.data_product import DataProduct
+
+        scenario = ScenarioLoader.load(str(self._SCENARIO_PATH))
+        for dp in scenario.data_products:
+            assert isinstance(dp, DataProduct), (
+                f"Expected DataProduct, got {type(dp)} for id={dp.product_id!r}"
+            )
+
+    def test_v2_anomalies_are_typed(self):
+        """Every element of anomalies must be an AnomalyEvent instance."""
+        from backend.app.models.anomaly_event import AnomalyEvent
+
+        scenario = ScenarioLoader.load(str(self._SCENARIO_PATH))
+        for ae in scenario.anomalies:
+            assert isinstance(ae, AnomalyEvent), (
+                f"Expected AnomalyEvent, got {type(ae)} for id={ae.anomaly_id!r}"
+            )
+
+    def test_v2_all_product_ids_unique(self):
+        """Every DataProduct must have a distinct product_id."""
+        scenario = ScenarioLoader.load(str(self._SCENARIO_PATH))
+        ids = [dp.product_id for dp in scenario.data_products]
+        assert len(ids) == len(set(ids)), "Duplicate product_id detected"
+
+    def test_v2_all_anomaly_ids_unique(self):
+        """Every AnomalyEvent must have a distinct anomaly_id."""
+        scenario = ScenarioLoader.load(str(self._SCENARIO_PATH))
+        ids = [ae.anomaly_id for ae in scenario.anomalies]
+        assert len(ids) == len(set(ids)), "Duplicate anomaly_id detected"
+
+    def test_v2_known_anomaly_ids(self):
+        """The three anomalies must have the expected IDs."""
+        scenario = ScenarioLoader.load(str(self._SCENARIO_PATH))
+        ids = {ae.anomaly_id for ae in scenario.anomalies}
+        assert ids == {"ANOM-017", "ANOM-023", "ANOM-031"}
+
+    def test_v2_severities_in_range(self):
+        """All anomaly severities must be within [0.0, 1.0]."""
+        scenario = ScenarioLoader.load(str(self._SCENARIO_PATH))
+        for ae in scenario.anomalies:
+            assert 0.0 <= ae.severity <= 1.0, (
+                f"Severity out of range for {ae.anomaly_id}: {ae.severity}"
+            )
+
+    def test_v2_product_criticality_in_range(self):
+        """All DataProduct criticality values must be within [0.0, 1.0]."""
+        scenario = ScenarioLoader.load(str(self._SCENARIO_PATH))
+        for dp in scenario.data_products:
+            assert 0.0 <= dp.criticality <= 1.0, (
+                f"Criticality out of range for {dp.product_id}: {dp.criticality}"
+            )
+
+    def test_v2_anomaly_linked_products_reference_valid_ids(self):
+        """Every product_id referenced in anomaly.related_product_ids must exist."""
+        scenario = ScenarioLoader.load(str(self._SCENARIO_PATH))
+        product_id_set = {dp.product_id for dp in scenario.data_products}
+        for ae in scenario.anomalies:
+            for ref_id in ae.related_product_ids:
+                assert ref_id in product_id_set, (
+                    f"Anomaly {ae.anomaly_id} references unknown product_id {ref_id!r}"
+                )
+
+    def test_v2_product_anomaly_ids_reference_valid_anomalies(self):
+        """Every non-None anomaly_id on a DataProduct must exist as an AnomalyEvent."""
+        scenario = ScenarioLoader.load(str(self._SCENARIO_PATH))
+        anomaly_id_set = {ae.anomaly_id for ae in scenario.anomalies}
+        for dp in scenario.data_products:
+            if dp.anomaly_id is not None:
+                assert dp.anomaly_id in anomaly_id_set, (
+                    f"DataProduct {dp.product_id} references unknown anomaly_id {dp.anomaly_id!r}"
+                )
+
+    def test_v2_all_product_sizes_positive(self):
+        """All DataProduct size_bits values must be strictly positive."""
+        scenario = ScenarioLoader.load(str(self._SCENARIO_PATH))
+        for dp in scenario.data_products:
+            assert dp.size_bits > 0, f"{dp.product_id} has non-positive size_bits={dp.size_bits}"
+
+    def test_v2_high_severity_anomaly_has_related_products(self):
+        """ANOM-017 (severity 0.85) must have at least one related product."""
+        scenario = ScenarioLoader.load(str(self._SCENARIO_PATH))
+        anom = next(ae for ae in scenario.anomalies if ae.anomaly_id == "ANOM-017")
+        assert len(anom.related_product_ids) >= 1
+
+    def test_v2_mission_state_risk_level(self):
+        """The v2 scenario mission state must reflect the HIGH risk_level."""
+        from backend.app.models.risk_level import RiskLevel
+
+        scenario = ScenarioLoader.load(str(self._SCENARIO_PATH))
+        assert scenario.mission_state.risk_level == RiskLevel.HIGH
+
+
+
+
+# ===========================================================================
 # CandidateGenerator — strategy-specific fixtures
 # ===========================================================================
 

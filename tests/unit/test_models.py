@@ -302,10 +302,116 @@ class TestScenario:
         sc = Scenario(**data)
         assert sc.packets == []
 
+# ---------------------------------------------------------------------------
+# Scenario Phase 2A — data_products and anomalies fields
+# ---------------------------------------------------------------------------
+
+class TestScenarioV2Fields:
+    """Verify that data_products and anomalies are optional and default safely."""
+
+    def _valid_legacy_scenario(self) -> dict:
+        """A scenario dict that has no v2 fields — simulates an existing scenario file."""
+        return dict(
+            scenario_id="legacy-sc-001",
+            simulated=True,
+            link_inputs={"snr_db": 10.0},
+            mission_state=MissionState(**make_mission_state()),
+            packets=[Packet(**make_packet())],
+        )
+
+    def test_legacy_scenario_loads_without_v2_fields(self):
+        sc = Scenario(**self._valid_legacy_scenario())
+        assert sc.data_products == []
+        assert sc.anomalies == []
+
+    def test_data_products_defaults_to_empty_list(self):
+        sc = Scenario(**self._valid_legacy_scenario())
+        assert isinstance(sc.data_products, list)
+        assert len(sc.data_products) == 0
+
+    def test_anomalies_defaults_to_empty_list(self):
+        sc = Scenario(**self._valid_legacy_scenario())
+        assert isinstance(sc.anomalies, list)
+        assert len(sc.anomalies) == 0
+
+    def test_data_products_can_be_populated(self):
+        from backend.app.models.data_product import DataProduct
+        dp = DataProduct(
+            product_id="TEL-PROP-001",
+            product_type="telemetry",
+            subsystem="propulsion",
+            size_bits=4096,
+            criticality=0.9,
+            mission_relevance=0.85,
+            scientific_value=0.0,
+            deadline_s=120.0,
+            age_s=60.0,
+            delivery_requirement="required",
+            retry_cost=0.5,
+        )
+        data = self._valid_legacy_scenario()
+        data["data_products"] = [dp]
+        sc = Scenario(**data)
+        assert len(sc.data_products) == 1
+        assert sc.data_products[0].product_id == "TEL-PROP-001"
+
+    def test_anomalies_can_be_populated(self):
+        from backend.app.models.anomaly_event import AnomalyEvent
+        ae = AnomalyEvent(
+            anomaly_id="ANOM-017",
+            subsystem="propulsion",
+            severity=0.85,
+            detected_at_s=480.0,
+            description="Thrust oscillation detected.",
+            status="active",
+        )
+        data = self._valid_legacy_scenario()
+        data["anomalies"] = [ae]
+        sc = Scenario(**data)
+        assert len(sc.anomalies) == 1
+        assert sc.anomalies[0].anomaly_id == "ANOM-017"
+
+    def test_packets_field_still_works_alongside_v2_fields(self):
+        """The legacy packets list and new data_products list coexist."""
+        from backend.app.models.data_product import DataProduct
+        dp = DataProduct(
+            product_id="DP-001",
+            product_type="science",
+            subsystem="payload",
+            size_bits=65536,
+            criticality=0.7,
+            mission_relevance=0.8,
+            scientific_value=0.9,
+            deadline_s=300.0,
+            age_s=100.0,
+            delivery_requirement="best_effort",
+            retry_cost=0.4,
+        )
+        data = self._valid_legacy_scenario()
+        data["data_products"] = [dp]
+        sc = Scenario(**data)
+        assert len(sc.packets) == 1       # legacy still works
+        assert len(sc.data_products) == 1  # new field works too
+
+    def test_v2_field_invalid_data_product_raises(self):
+        """An invalid DataProduct in data_products must fail validation."""
+        data = self._valid_legacy_scenario()
+        data["data_products"] = [{"product_id": "bad", "size_bits": -1}]  # invalid
+        with pytest.raises(ValidationError):
+            Scenario(**data)
+
+    def test_v2_field_invalid_anomaly_raises(self):
+        """An invalid AnomalyEvent in anomalies must fail validation."""
+        data = self._valid_legacy_scenario()
+        data["anomalies"] = [{"anomaly_id": "X", "severity": 2.0}]  # severity > 1
+        with pytest.raises(ValidationError):
+            Scenario(**data)
+
 
 # ---------------------------------------------------------------------------
 # CandidatePlan
 # ---------------------------------------------------------------------------
+
 
 
 class TestCandidatePlan:

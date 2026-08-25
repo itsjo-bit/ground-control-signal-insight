@@ -9,8 +9,10 @@ import {
 } from './api/client';
 import type {
   AIRecommendation,
+  AnomalyEvent,
   ApproveResponse,
   CandidatePlan,
+  CandidatePrioritization,
   EvaluationResult,
   LinkState,
   MissionState,
@@ -18,11 +20,20 @@ import type {
 } from './types/domain';
 import { LinkHealthPanel } from './components/LinkHealthPanel';
 import { MissionStatePanel } from './components/MissionStatePanel';
+import { CommBudgetBar } from './components/CommBudgetBar';
+import { SignalGeometryBlock } from './components/SignalGeometryBlock';
 import { TransmissionQueuePanel } from './components/TransmissionQueuePanel';
 import { PlanComparisonPanel } from './components/PlanComparisonPanel';
 import { RecommendationPanel } from './components/RecommendationPanel';
+import { AIDecisionPanel } from './components/AIDecisionPanel';
+import { MissionDecisionPanel } from './components/MissionDecisionPanel';
 import { ApprovalBar } from './components/ApprovalBar';
+import type { ApprovalPhase } from './components/ApprovalBar';
 import { SimulationPanel } from './components/SimulationPanel';
+import { TransmissionSummaryPanel } from './components/TransmissionSummaryPanel';
+import { TransmissionNarrativePanel } from './components/TransmissionNarrativePanel';
+import { TransmissionOutcomeBanner } from './components/TransmissionOutcomeBanner';
+import { MissionReportPanel } from './components/MissionReportPanel';
 import { PlanSwitcher } from './components/PlanSwitcher';
 import { OrbitBackground } from './components/OrbitBackground';
 import { usePanelLayout } from './hooks/usePanelLayout';
@@ -33,8 +44,11 @@ const RESIZABLE_PANEL_IDS = new Set<PanelId>([
   'link-health',
   'baseline-plan',
   'plan-comparison',
+  'ai-decision',
   'ai-reasoning',
+  'mission-decision',
   'simulation',
+  'mission-report',
 ]);
 
 const styles = `
@@ -53,8 +67,14 @@ const styles = `
   .orbit-dot { fill: rgba(53,231,183,0.9); }
   .orbit-dot--los { fill: rgba(255,77,94,0.7); animation: los-pulse 1.4s ease-out forwards; }
   @keyframes los-pulse { 0% { opacity: 1; r: 5; } 60% { opacity: 0.6; r: 9; } 100% { opacity: 0.3; r: 5; } }
+  .orbit-dot--complete-success { fill: rgba(53,231,183,1.0); }
+  .orbit-dot--complete-warning { fill: rgba(255,182,72,0.9); }
+  .orbit-dot--complete-neutral { fill: rgba(124,158,255,0.7); }
   .orbit-earth { fill: rgba(30,50,100,0.7); stroke: rgba(124,158,255,0.4); stroke-width: 1; }
   .orbit-earth-glow { fill: none; stroke: rgba(124,158,255,0.12); stroke-width: 1; }
+  .orbit-beam-track { fill: none; stroke: rgba(53,231,183,0.12); stroke-width: 1; }
+  .orbit-beam-pulse { fill: none; stroke: rgba(53,231,183,0.65); stroke-width: 1.5; stroke-linecap: round; }
+  .orbit-beam-label { fill: rgba(53,231,183,0.55); font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.06em; }
   .mc-header {
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     padding: 12px 20px; border-bottom: 1px solid var(--border);
@@ -381,14 +401,29 @@ function DraggableSection({
 export default function MissionControl() {
   const [linkState, setLinkState] = useState<LinkState | null>(null);
   const [missionState, setMissionState] = useState<MissionState | null>(null);
+  // Phase 2E-C2: communication budget from GET /state (C1 fields)
+  const [availableCapacityBits, setAvailableCapacityBits] = useState<number>(0);
+  const [queuedDataBits, setQueuedDataBits] = useState<number>(0);
+  const [dataProductsCount, setDataProductsCount] = useState<number>(0);
+  const [anomalies, setAnomalies] = useState<AnomalyEvent[]>([]);
+  // Phase 2E-C3-D: spacecraft communication geometry (null for legacy scenarios)
+  const [distanceKm, setDistanceKm] = useState<number | null>(null);
+  const [propagationDelayS, setPropagationDelayS] = useState<number | null>(null);
+  const [roundTripTimeS, setRoundTripTimeS] = useState<number | null>(null);
   const [queue, setQueue] = useState<CandidatePlan | null>(null);
   const [recommendation, setRecommendation] = useState<AIRecommendation | null>(null);
   const [aiProvider, setAiProvider] = useState<string | null>(null);
+  const [aiPrioritization, setAiPrioritization] = useState<CandidatePrioritization | null>(null);
+  const [aiCandidateCount, setAiCandidateCount] = useState<number | null>(null);
+  const [aiPrioritizationError, setAiPrioritizationError] = useState<string | null>(null);
   const [recommendationError, setRecommendationError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [resetting, setResetting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [approveResult, setApproveResult] = useState<ApproveResponse | null>(null);
+  // Phase 2E-D4: operator approval state machine
+  // IDLE → AI_ANALYZING → READY → TRANSMITTING → COMPLETE
+  const [approvalPhase, setApprovalPhase] = useState<ApprovalPhase>('idle');
   const [allPlans, setAllPlans] = useState<CandidatePlan[]>([]);
   const [allEvaluations, setAllEvaluations] = useState<EvaluationResult[]>([]);
   const [activePlanId, setActivePlanId] = useState<string>('baseline');
@@ -410,10 +445,20 @@ export default function MissionControl() {
 
   const refresh = useCallback(async () => {
     setLoading(true); setError(null); setApproveResult(null); setWhatIfEvals(null); setWhatIfSnr(null);
+    setApprovalPhase('ai_analyzing');
     try {
       const [stateData, queueData] = await Promise.all([getState(), getQueue()]);
       setLinkState(stateData.link_state);
       setMissionState(stateData.mission_state);
+      // Phase 2E-C2: store communication budget fields
+      setAvailableCapacityBits(stateData.available_capacity_bits ?? 0);
+      setQueuedDataBits(stateData.queued_data_bits ?? 0);
+      setDataProductsCount(stateData.data_products_count ?? 0);
+      setAnomalies(stateData.anomalies ?? []);
+      // Phase 2E-C3-D: store spacecraft communication geometry fields
+      setDistanceKm(stateData.distance_km ?? null);
+      setPropagationDelayS(stateData.propagation_delay_s ?? null);
+      setRoundTripTimeS(stateData.round_trip_time_s ?? null);
       setQueue(queueData);
       if (totalWindowRef.current === null) totalWindowRef.current = stateData.mission_state.comm_window_remaining_s;
       try {
@@ -423,11 +468,27 @@ export default function MissionControl() {
         setAllEvaluations(evals);
         setActivePlanId(plans[0]?.plan_id ?? 'baseline');
       } catch { setAllPlans([]); setAllEvaluations([]); }
+      let recOk = false;
       try {
         const resp = await getRecommendation();
-        setRecommendation(resp.recommendation); setAiProvider(resp.provider); setRecommendationError(null);
-      } catch (recErr) { setRecommendation(null); setAiProvider(null); setRecommendationError(String(recErr)); }
-    } catch (err) { setError(String(err)); }
+        setRecommendation(resp.recommendation);
+        setAiProvider(resp.provider);
+        setAiPrioritization(resp.prioritization ?? null);
+        setAiCandidateCount(resp.candidate_count ?? null);
+        setAiPrioritizationError(resp.prioritization_error ?? null);
+        setRecommendationError(null);
+        recOk = true;
+      } catch (recErr) {
+        setRecommendation(null);
+        setAiProvider(null);
+        setAiPrioritization(null);
+        setAiCandidateCount(null);
+        setAiPrioritizationError(null);
+        setRecommendationError(String(recErr));
+      }
+      // Phase 2E-D4: advance state machine once AI analysis is done
+      setApprovalPhase(recOk ? 'ready' : 'idle');
+    } catch (err) { setError(String(err)); setApprovalPhase('idle'); }
     finally { setLoading(false); }
   }, []);
 
@@ -444,6 +505,12 @@ export default function MissionControl() {
     setApproveResult(result);
     setLinkState(result.simulation_result.link_state);
     setMissionState(result.simulation_result.mission_state);
+    setApprovalPhase('complete');
+  }
+
+  // Phase 2E-D3 (P0-2): reset to 'ready' on approval failure so operator can retry.
+  function handleApprovalError() {
+    setApprovalPhase('ready');
   }
 
   function handleWhatIfResult(result: WhatIfEvalResponse, snrDb: number) {
@@ -462,10 +529,43 @@ export default function MissionControl() {
   const recEval = recommendation ? (displayEvals.find((e) => e.plan_id === recommendation.recommended_plan_id) ?? null) : null;
   const riskWeights = { w_deadline_miss: 0.40, w_critical_deficit: 0.40, w_window_pressure: 0.20 };
 
+  // Resolve the AI-recommended plan from the generated plan list.
+  // This is the plan the deterministic scheduler created from AI-ordered packets.
+  // It is NOT the baseline queue — this is the P0 fix.
+  const recPlan = recommendation
+    ? (allPlans.find((p) => p.plan_id === recommendation.recommended_plan_id) ?? null)
+    : null;
+
   const panelRenderers: Record<PanelId, React.ReactNode> = {
-    'mission-state': <MissionStatePanel missionState={missionState} />,
+    'mission-state': (
+      <>
+        <MissionStatePanel missionState={missionState} />
+        <section className="panel" style={{ paddingTop: 8, paddingBottom: 10 }}>
+          <CommBudgetBar
+            availableCapacityBits={availableCapacityBits}
+            queuedDataBits={queuedDataBits}
+            dataProductsCount={dataProductsCount}
+            remainingWindowS={linkState.remaining_window_s}
+          />
+          <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', marginTop: 12 }} />
+          <SignalGeometryBlock
+            distanceKm={distanceKm}
+            propagationDelayS={propagationDelayS}
+            roundTripTimeS={roundTripTimeS}
+          />
+        </section>
+      </>
+    ),
     'link-health': <LinkHealthPanel linkState={linkState} onWhatIfResult={handleWhatIfResult} />,
     'baseline-plan': <TransmissionQueuePanel plan={queue} />,
+    'ai-decision': (
+      <AIDecisionPanel
+        prioritization={aiPrioritization}
+        providerName={aiProvider}
+        candidateCount={aiCandidateCount}
+        prioritizationError={aiPrioritizationError}
+      />
+    ),
     'plan-comparison': allPlans.length > 0 ? (
       <section className="panel">
         <h2>
@@ -479,6 +579,18 @@ export default function MissionControl() {
         <PlanSwitcher plans={allPlans} evaluations={displayEvals} activePlanId={activePlanId} aiRecommendedPlanId={recommendation?.recommended_plan_id ?? null} onSelect={setActivePlanId} />
       </section>
     ) : null,
+    'mission-decision': (
+      <MissionDecisionPanel
+        prioritization={aiPrioritization}
+        recommendation={recommendation}
+        allPlans={allPlans}
+        recEval={recEval}
+        linkState={linkState}
+        providerName={aiProvider}
+        prioritizationError={aiPrioritizationError}
+        candidateCount={aiCandidateCount}
+      />
+    ),
     'ai-order': recommendation ? (
       <div key={activePlanId} className="plan-content-fade">
         <PlanComparisonPanel activePlan={activePlan} recommendation={recommendation} evaluation={activeEval} />
@@ -494,8 +606,71 @@ export default function MissionControl() {
       </section>
     ),
     'ai-reasoning': <RecommendationPanel recommendation={recommendation} providerName={aiProvider} evaluation={recEval} riskWeights={riskWeights} />,
-    'approval': <ApprovalBar recommendedPlanId={recommendation ? recommendation.recommended_plan_id : null} baselinePlan={queue} onApproved={handleApproved} />,
-    'simulation': <SimulationPanel approveResult={approveResult} />,
+    'approval': (
+      <>
+        {/* Phase 2E-D3 (D3-E): always show the AI-recommended plan summary.
+            Falls back to activePlan only when no recommendation is available. */}
+        <TransmissionSummaryPanel
+          plan={recPlan ?? activePlan}
+          evaluation={recEval ?? activeEval}
+          availableCapacityBits={availableCapacityBits}
+        />
+        <ApprovalBar
+          recommendedPlanId={recommendation ? recommendation.recommended_plan_id : null}
+          recommendedPlan={recPlan}
+          baselinePlan={queue}
+          approvalPhase={approvalPhase}
+          onApproved={handleApproved}
+          onTransmitting={() => setApprovalPhase('transmitting')}
+          onApprovalError={handleApprovalError}
+        />
+        {/* Phase 2E-D5: compact post-transmission outcome banner.
+            isAiRecommendedPlan is true only when the simulated plan_id matches
+            the AI recommendation.  For operator-override plans the plan_id is
+            'operator-override' (set in ApprovalBar.handleOverride) so this
+            evaluates to false, showing OPERATOR OVERRIDE instead of AI RECOMMENDED.
+            We use plan_id comparison rather than a separate boolean flag so the
+            badge remains correct even if MissionControl state is stale. */}
+        <TransmissionOutcomeBanner
+          approvalPhase={approvalPhase}
+          simulationResult={approveResult?.simulation_result ?? null}
+          isAiRecommendedPlan={
+            approveResult?.simulation_result?.plan_id !== undefined &&
+            approveResult.simulation_result.plan_id !== 'operator-override'
+          }
+        />
+      </>
+    ),
+    'simulation': (
+      <>
+        <SimulationPanel approveResult={approveResult} propagationDelayS={propagationDelayS} />
+        {approveResult && (
+          <TransmissionNarrativePanel
+            prioritization={aiPrioritization}
+            simulationResult={approveResult.simulation_result}
+            anomalies={anomalies}
+            isAiRecommendedPlan={
+              approveResult.simulation_result.plan_id !== undefined &&
+              approveResult.simulation_result.plan_id !== 'operator-override'
+            }
+          />
+        )}
+      </>
+    ),
+    'mission-report': (
+      <MissionReportPanel
+        approvalPhase={approvalPhase}
+        missionState={missionState}
+        recommendation={recommendation}
+        aiPrioritization={aiPrioritization}
+        aiProvider={aiProvider}
+        simulationResult={approveResult?.simulation_result ?? null}
+        anomalies={anomalies}
+        distanceKm={distanceKm}
+        propagationDelayS={propagationDelayS}
+        roundTripTimeS={roundTripTimeS}
+      />
+    ),
   };
 
   const visiblePanels = prefs.panels.filter((p) => p.visible);
@@ -504,7 +679,13 @@ export default function MissionControl() {
     <>
       <style>{styles}</style>
       <div className="orbit-bg-wrap">
-        <OrbitBackground commWindowRemainingS={missionState.comm_window_remaining_s} totalWindowS={totalWindowRef.current ?? missionState.comm_window_remaining_s} />
+        <OrbitBackground
+          commWindowRemainingS={missionState.comm_window_remaining_s}
+          totalWindowS={totalWindowRef.current ?? missionState.comm_window_remaining_s}
+          distanceKm={distanceKm}
+          approvalPhase={approvalPhase}
+          simulationResult={approveResult?.simulation_result ?? null}
+        />
       </div>
       <header className="mc-header">
         <h1>

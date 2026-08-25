@@ -39,21 +39,29 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any
+from typing import Any, Sequence
 
 import httpx
 
+from ..models.anomaly_event import AnomalyEvent
 from ..models.candidate_plan import CandidatePlan
+from ..models.candidate_prioritization import CandidatePrioritization
+from ..models.candidate_summary import CandidateSummary
 from ..models.evaluation_result import EvaluationResult
 from ..models.evidence_item import EvidenceItem
 from ..models.link_state import LinkState
 from ..models.mission_state import MissionState
 from ..models.recommendation import AIRecommendation
 from ..models.risk_level import RiskLevel
-from .base_provider import AIHallucinationError, AIProviderError, AIResponseError, BaseAIProvider
+from .base_provider import AIHallucinationError, AIPrioritizationError, AIProviderError, AIResponseError, BaseAIProvider
 from .granite_agent import (
-    _ALL_CITEABLE_FIELDS,  # reuse the same field registry as Granite and Ollama
-    _SYSTEM_PROMPT,        # reuse the same system prompt
+    _ALL_CITEABLE_FIELDS,
+    _PRIORITIZATION_SYSTEM_PROMPT,
+    _SYSTEM_PROMPT,
+)
+from .prioritization_helpers import (
+    build_prioritization_message as _build_prioritization_message,
+    parse_prioritization_response as _parse_prioritization_response,
 )
 
 # ---------------------------------------------------------------------------
@@ -108,6 +116,8 @@ class GeminiProvider(BaseAIProvider):
         mission_state: MissionState,
         plans: list[CandidatePlan],
         evaluations: list[EvaluationResult],
+        *,
+        anomalies: list[AnomalyEvent] | None = None,
     ) -> AIRecommendation:
         """Generate a plan recommendation using the Gemini API.
 
@@ -138,6 +148,8 @@ class GeminiProvider(BaseAIProvider):
             "candidate_plans": [p.model_dump(mode="json") for p in plans],
             "evaluations": [e.model_dump(mode="json") for e in evaluations],
         }
+        if anomalies:
+            ctx["anomalies"] = [a.model_dump(mode="json") for a in anomalies]
         user_message = json.dumps(ctx, indent=2)
         raw = self._call_api(user_message)
         return self._parse_response(raw, plans, evaluations)
@@ -335,3 +347,65 @@ class GeminiProvider(BaseAIProvider):
             raise AIResponseError(
                 f"Gemini response failed AIRecommendation validation: {exc}"
             ) from exc
+
+    def prioritize_candidates(
+        self,
+        candidates: Sequence[CandidateSummary],
+        link_state: LinkState,
+        mission_state: MissionState,
+        anomalies: Sequence[AnomalyEvent] | None = None,
+        *,
+        distance_km: float | None = None,
+    ) -> CandidatePrioritization:
+        """Rank candidates using the Gemini API with the prioritization prompt.
+
+        Raises:
+            AIProviderError:       If the API key is missing or the API fails.
+            AIPrioritizationError: If the response fails validation.
+        """
+        if not self._api_key:
+            raise AIProviderError(
+                "GCSI_GEMINI_API_KEY is not set.  Gemini API is unavailable."
+            )
+
+        user_message = _build_prioritization_message(
+            candidates, link_state, mission_state, anomalies,
+            distance_km=distance_km,
+        )
+
+        url = f"{_GEMINI_BASE_URL}/{self._model}:generateContent"
+        params = {"key": self._api_key}
+        payload = {
+            "system_instruction": {
+                "parts": [{"text": _PRIORITIZATION_SYSTEM_PROMPT}]
+            },
+            "contents": [{"role": "user", "parts": [{"text": user_message}]}],
+            "generationConfig": {
+                "response_mime_type": "application/json",
+                "temperature": 0.0,
+                "maxOutputTokens": 8192,
+            },
+        }
+        try:
+            with httpx.Client(timeout=self._timeout_s) as client:
+                resp = client.post(url, params=params, json=payload)
+        except Exception as exc:  # noqa: BLE001
+            raise AIProviderError(f"Gemini prioritization API request failed: {exc}") from exc
+
+        if resp.status_code != 200:
+            raise AIProviderError(f"Gemini prioritization API returned HTTP {resp.status_code}.")
+
+        try:
+            body = resp.json()
+            raw = body["candidates"][0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError) as exc:
+            raise AIProviderError(f"Unexpected Gemini prioritization response shape: {exc}") from exc
+
+        valid_ids = {cs.product_id for cs in candidates}
+        try:
+            return _parse_prioritization_response(raw, valid_ids, candidates)
+        except Exception as exc:  # noqa: BLE001
+            from .granite_agent import GraniteResponseError
+            if isinstance(exc, GraniteResponseError):
+                raise AIPrioritizationError(str(exc)) from exc
+            raise AIPrioritizationError(f"Gemini prioritization response validation failed: {exc}") from exc

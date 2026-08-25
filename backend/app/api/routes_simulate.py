@@ -7,6 +7,7 @@ from .. import state
 from ..models.candidate_plan import CandidatePlan
 from ..models.simulation_result import SimulationResult
 from ..simulation.transmission_sim import TransmissionSimulator
+from .routes_plans import _effective_packets
 
 router = APIRouter()
 
@@ -58,7 +59,7 @@ def simulate(req: SimulateRequest) -> SimulationResult:
     weights = SchedulerWeights()
     gen = CandidateGenerator()
     plans = gen.generate(
-        state.active_scenario.packets,
+        _effective_packets(state.active_scenario),
         state.active_link_state,
         state.active_scenario.mission_state,
         weights,

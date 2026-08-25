@@ -6,6 +6,7 @@ from .. import state
 from ..config import SchedulerWeights
 from ..models.candidate_plan import CandidatePlan
 from ..scheduler.baseline import BaselineScheduler
+from .routes_plans import _effective_packets
 
 router = APIRouter()
 
@@ -15,6 +16,8 @@ def get_queue() -> CandidatePlan:
     """Return the baseline-ranked transmission queue.
 
     Calls BaselineScheduler.rank() on the active scenario.
+    Supports both legacy (packets) and v2 (data_products) scenarios via
+    _effective_packets().
     Raises 503 if no scenario has been loaded yet.
     """
     if state.active_scenario is None or state.active_link_state is None:
@@ -22,7 +25,7 @@ def get_queue() -> CandidatePlan:
 
     weights = SchedulerWeights()
     return BaselineScheduler.rank(
-        state.active_scenario.packets,
+        _effective_packets(state.active_scenario),
         state.active_link_state,
         state.active_scenario.mission_state,
         weights,

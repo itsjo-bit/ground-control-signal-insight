@@ -2,12 +2,39 @@ import { useState, useRef } from 'react';
 import { approvePlan, approveCustomPlan } from '../api/client';
 import type { ApproveResponse, CandidatePlan, Packet } from '../types/domain';
 
+
+/** Phase 2E-D4: operator approval state machine phases. */
+export type ApprovalPhase = 'idle' | 'ai_analyzing' | 'ready' | 'transmitting' | 'complete';
+
 interface Props {
   /** plan_id of the AI-recommended plan, or null when no recommendation is available. */
   recommendedPlanId: string | null;
-  /** The baseline plan — used to populate the drag-to-reorder list. */
+  /**
+   * The AI-recommended plan — used to populate the drag-to-reorder list.
+   *
+   * Phase 2E-D2 (P0 fix): this must be the recommended plan (AI-ordered packets),
+   * NOT the raw baseline queue. The operator should see exactly which packets they
+   * are approving — the set the AI prioritized and the scheduler selected.
+   *
+   * Falls back to baselinePlan when the recommended plan is not available (e.g.
+   * legacy scenarios or before AI recommendation completes).
+   */
+  recommendedPlan: CandidatePlan | null;
+  /**
+   * The baseline plan — kept as a fallback for legacy/unavailable states.
+   * Used only when recommendedPlan is null.
+   */
   baselinePlan: CandidatePlan | null;
+  /** Current phase of the approval state machine. */
+  approvalPhase: ApprovalPhase;
   onApproved: (result: ApproveResponse) => void;
+  /** Called immediately when the operator clicks Approve — before the async call resolves. */
+  onTransmitting: () => void;
+  /**
+   * Phase 2E-D3 (P0-2): called when the approval POST fails.
+   * The parent should reset approvalPhase back to 'ready' so the operator can retry.
+   */
+  onApprovalError: () => void;
 }
 
 const TYPE_COLOUR: Record<string, string> = {
@@ -20,7 +47,7 @@ function packetTypeColour(type: string): string {
   return TYPE_COLOUR[type.toLowerCase()] ?? 'var(--text-muted)';
 }
 
-export function ApprovalBar({ recommendedPlanId, baselinePlan, onApproved }: Props) {
+export function ApprovalBar({ recommendedPlanId, recommendedPlan, baselinePlan, approvalPhase, onApproved, onTransmitting, onApprovalError }: Props) {
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,8 +57,35 @@ export function ApprovalBar({ recommendedPlanId, baselinePlan, onApproved }: Pro
   const dragIdx = useRef<number | null>(null);
   const dragOverIdx = useRef<number | null>(null);
 
-  // Initialise custom order lazily from baseline
-  const packets = customOrder ?? baselinePlan?.packets ?? [];
+  // Phase 2E-D2 (P0 fix): use recommendedPlan packets as the source of truth.
+  // The operator sees and can reorder exactly the packets from the AI-recommended
+  // plan — not the raw baseline queue.  Falls back to baseline for legacy scenarios
+  // where recommendedPlan is null.
+  const sourcePlan = recommendedPlan ?? baselinePlan;
+  const packets: Packet[] = customOrder ?? sourcePlan?.packets ?? [];
+
+  // ── AI Analyzing state ────────────────────────────────────────────────────
+  if (approvalPhase === 'ai_analyzing') {
+    return (
+      <section className="approval-bar" style={{ opacity: 0.75 }}>
+        <h2>
+          Approval
+          <span style={{
+            marginLeft: 10, fontSize: 9, fontWeight: 700,
+            background: 'rgba(124,158,255,0.10)', color: 'var(--ai)',
+            border: '1px solid rgba(124,158,255,0.35)',
+            borderRadius: 2, padding: '1px 7px', fontFamily: 'var(--font-mono)',
+            letterSpacing: '0.06em',
+          }}>
+            AI ANALYZING
+          </span>
+        </h2>
+        <p style={{ color: 'var(--text-muted)', fontSize: 12, fontFamily: 'var(--font-mono)' }}>
+          Waiting for AI prioritization to complete…
+        </p>
+      </section>
+    );
+  }
 
   // ── Unavailable state ────────────────────────────────────────────────────
   if (recommendedPlanId === null) {
@@ -50,37 +104,75 @@ export function ApprovalBar({ recommendedPlanId, baselinePlan, onApproved }: Pro
     );
   }
 
+  // ── Complete state ────────────────────────────────────────────────────────
+  if (approvalPhase === 'complete') {
+    return (
+      <section className="approval-bar">
+        <h2>
+          Approval
+          <span style={{
+            marginLeft: 10, fontSize: 9, fontWeight: 700,
+            background: 'rgba(53,231,183,0.08)', color: 'var(--signal)',
+            border: '1px solid rgba(53,231,183,0.35)',
+            borderRadius: 2, padding: '1px 7px', fontFamily: 'var(--font-mono)',
+            letterSpacing: '0.06em',
+          }}>
+            ✓ TRANSMITTED
+          </span>
+        </h2>
+        <p style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+          Transmission complete. Review the simulation results below.
+        </p>
+      </section>
+    );
+  }
+
   // ── Active state ─────────────────────────────────────────────────────────
+
+  // Phase 2E-D3 (P0-1): send the full recommendedPlan so the backend uses it
+  // directly — no packet-order loss from regeneration.
   async function handleApprove() {
+    if (!recommendedPlan) {
+      // Block approval if the recommended plan object is missing.
+      // This prevents silently falling back to baseline.
+      setError('Recommended plan is not available. Refresh and wait for AI analysis.');
+      return;
+    }
+    onTransmitting();
     setLoading(true);
     setError(null);
     try {
-      const result = await approvePlan(recommendedPlanId!, notes);
+      const result = await approvePlan(recommendedPlanId!, recommendedPlan, notes);
       onApproved(result);
     } catch (err) {
+      // Phase 2E-D3 (P0-2): return to 'ready' so operator can retry.
       setError(String(err));
+      onApprovalError();
     } finally {
       setLoading(false);
     }
   }
 
   async function handleOverride() {
-    if (!baselinePlan || packets.length === 0) return;
+    if (!sourcePlan || packets.length === 0) return;
+    onTransmitting();
     setLoading(true);
     setError(null);
     try {
       const customPlan: CandidatePlan = {
-        ...baselinePlan,
+        ...sourcePlan,
         plan_id: 'operator-override',
         strategy: 'operator_override',
         packets,
         generated_by: 'operator',
-        metadata: { ...baselinePlan.metadata, override: true },
+        metadata: { ...sourcePlan.metadata, override: true },
       };
       const result = await approveCustomPlan(customPlan, notes);
       onApproved(result);
     } catch (err) {
+      // Phase 2E-D3 (P0-2): return to 'ready' so operator can retry.
       setError(String(err));
+      onApprovalError();
     } finally {
       setLoading(false);
     }
@@ -101,7 +193,7 @@ export function ApprovalBar({ recommendedPlanId, baselinePlan, onApproved }: Pro
     const to = dragOverIdx.current;
     if (from === null || to === null || from === to) return;
 
-    const base = customOrder ?? (baselinePlan?.packets ?? []);
+    const base = customOrder ?? (sourcePlan?.packets ?? []);
     const next = [...base];
     const [moved] = next.splice(from, 1);
     next.splice(to, 0, moved);
@@ -121,9 +213,39 @@ export function ApprovalBar({ recommendedPlanId, baselinePlan, onApproved }: Pro
 
   const isCustom = customOrder !== null;
 
+  // Label shown in the drag list header — tells the operator which plan they're editing
+  const packetListLabel = recommendedPlan
+    ? `AI-recommended plan (${recommendedPlan.plan_id}) — drag to reorder`
+    : `Baseline plan — drag to reorder`;
+
   return (
     <section className="approval-bar">
-      <h2>Approval</h2>
+      <h2>
+        Approval
+        {approvalPhase === 'transmitting' && (
+          <span style={{
+            marginLeft: 10, fontSize: 9, fontWeight: 700,
+            background: 'rgba(255,182,72,0.10)', color: 'var(--warn)',
+            border: '1px solid rgba(255,182,72,0.40)',
+            borderRadius: 2, padding: '1px 7px', fontFamily: 'var(--font-mono)',
+            letterSpacing: '0.06em',
+            animation: 'pulse 1.4s infinite',
+          }}>
+            ⟳ TRANSMITTING
+          </span>
+        )}
+        {approvalPhase === 'ready' && (
+          <span style={{
+            marginLeft: 10, fontSize: 9, fontWeight: 700,
+            background: 'rgba(53,231,183,0.06)', color: 'var(--signal)',
+            border: '1px solid rgba(53,231,183,0.25)',
+            borderRadius: 2, padding: '1px 7px', fontFamily: 'var(--font-mono)',
+            letterSpacing: '0.06em',
+          }}>
+            READY
+          </span>
+        )}
+      </h2>
 
       {/* Notes input */}
       <div style={{ marginBottom: 10 }}>
@@ -152,7 +274,7 @@ export function ApprovalBar({ recommendedPlanId, baselinePlan, onApproved }: Pro
           onClick={handleOverride}
           disabled={loading || packets.length === 0}
           className="btn-override"
-          title="Submit the operator-reordered packet list below"
+          title="Submit the operator-reordered packet list"
         >
           ⚡ Submit reordered override
         </button>
@@ -166,10 +288,10 @@ export function ApprovalBar({ recommendedPlanId, baselinePlan, onApproved }: Pro
       </div>
 
       {/* Drag-to-reorder packet list */}
-      {baselinePlan && (
+      {sourcePlan && (
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-            <h3 style={{ margin: 0 }}>Packet order{isCustom ? ' — CUSTOM (drag to reorder)' : ' — drag to reorder'}</h3>
+            <h3 style={{ margin: 0 }}>{isCustom ? 'Packet order — CUSTOM' : packetListLabel}</h3>
             {isCustom && (
               <span style={{
                 background: 'rgba(255,182,72,0.12)', color: 'var(--warn)',
