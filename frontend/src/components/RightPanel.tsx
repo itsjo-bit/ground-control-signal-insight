@@ -1,27 +1,35 @@
 /**
- * RightPanel — contextual main control panel (right side).
+ * RightPanel — GCSI V3.5 contextual main control panel (right side).
  *
- * V3.3:
- * - ResizableSection used throughout for consistent resize behavior
- * - Table overflow fixed (horizontal scroll inside containers)
- * - Gray + blue palette
- * - Config view wired to ConfigPanel
- * - min-width:0 applied consistently to prevent flex blowout
+ * V3.5 changes:
+ * - Accepts workspaceMode: 'normal' | 'expanded' | 'focus'
+ * - Panel width driven by workspaceMode (normal=manual, expanded=clamp(650,58vw,1100), focus=full)
+ * - Workspace mode controls in panel header (⇔ Expand, ⛶ Focus, ↩ Normal)
+ * - AI Copilot: tabbed workspace (Prioritization / Reasoning / Decision)
+ * - Mission Log: tabbed workspace (Simulation / Narrative / Report)
+ * - Data: responsive columns by workspace mode
+ * - Focus mode: header shows "FOCUS MODE" indicator with EXIT button
  */
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import type { NavSection } from './NavigationSidebar';
 import type {
   AIRecommendation,
+  AiLifecycle,
   AnomalyEvent,
   ApproveResponse,
   CandidatePlan,
   CandidatePrioritization,
+  DataProduct,
+  DecisionMode,
   EvaluationResult,
   LinkState,
   MissionState,
+  ScenarioInfo,
   WhatIfEvalResponse,
 } from '../types/domain';
 import type { ApprovalPhase } from './ApprovalBar';
 import type { ViewSettings } from '../hooks/useViewSettings';
+import type { WorkspaceMode } from '../MissionControl';
 
 // Import existing panels (preserved as-is)
 import { MissionStatePanel } from './MissionStatePanel';
@@ -41,7 +49,7 @@ import { MissionReportPanel } from './MissionReportPanel';
 import { ResizableSection } from './ResizableSection';
 import { ConfigPanel } from './ConfigPanel';
 
-// ── Shared style tokens (V3.3 gray + blue) ──────────────────────────────────
+// ── Shared style tokens (V3.3 gray + blue, unchanged) ─────────────────────────
 
 const CARD: React.CSSProperties = {
   background: 'rgba(18,24,34,0.7)',
@@ -68,18 +76,16 @@ const VALUE: React.CSSProperties = {
   lineHeight: 1,
 };
 
-/** Wraps a table in a horizontally scrollable container so columns are never clipped */
+/** Wraps a table in a horizontally scrollable container */
 function TableScroll({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ overflowX: 'auto', overflowY: 'visible', minWidth: 0 }}>
-      <div style={{ minWidth: 'max-content' }}>
-        {children}
-      </div>
+      <div style={{ minWidth: 'max-content' }}>{children}</div>
     </div>
   );
 }
 
-// ── Section panels ────────────────────────────────────────────────────────────
+// ── CommonProps — all data passed from MissionControl ──────────────────────────
 
 interface CommonProps {
   linkState: LinkState | null;
@@ -114,9 +120,30 @@ interface CommonProps {
   onApprovalError: () => void;
   onWhatIfResult: (result: WhatIfEvalResponse, snrDb: number) => void;
   onSelectPlan: (planId: string) => void;
+  // ── V3.4 props ───────────────────────────────────────────────────────────────
+  decisionMode: DecisionMode;
+  onSelectDecisionMode: (mode: DecisionMode) => void;
+  aiLifecycle: AiLifecycle;
+  aiError: string | null;
+  onRunAiAnalysis: () => void;
+  rawDataProducts: DataProduct[];
+  hasDataProducts: boolean;
+  manualSelectedIds: Set<string>;
+  manualOrder: string[];
+  manualPlan: CandidatePlan | null;
+  onToggleManualSelect: (productId: string) => void;
+  onClearManualSelection: () => void;
+  onManualReorder: (newOrder: string[]) => void;
+  availableScenarios: ScenarioInfo[];
+  activeScenarioPath: string | null;
+  scenarioSwitching: boolean;
+  onSwitchScenario: (filename: string) => void;
+  // ── V3.5 props ───────────────────────────────────────────────────────────────
+  workspaceMode: WorkspaceMode;
+  onSetWorkspaceMode: (mode: WorkspaceMode) => void;
 }
 
-// ── Stat tile grid ────────────────────────────────────────────────────────────
+// ── StatGrid ──────────────────────────────────────────────────────────────────
 
 function StatGrid({ items }: { items: { label: string; value: string; color: string }[] }) {
   return (
@@ -136,11 +163,93 @@ function StatGrid({ items }: { items: { label: string; value: string; color: str
   );
 }
 
+// ── V3.5: Reusable Tab Bar component ─────────────────────────────────────────
+
+interface TabItem<T extends string> {
+  id: T;
+  label: string;
+  badge?: string | number;
+}
+
+function TabBar<T extends string>({
+  tabs,
+  active,
+  onSelect,
+}: {
+  tabs: TabItem<T>[];
+  active: T;
+  onSelect: (id: T) => void;
+}) {
+  return (
+    <div
+      role="tablist"
+      style={{
+        display: 'flex',
+        gap: 2,
+        borderBottom: '1px solid rgba(46,58,79,0.7)',
+        marginBottom: 0,
+        flexShrink: 0,
+        background: 'rgba(8,12,22,0.6)',
+        padding: '0 10px',
+      }}
+    >
+      {tabs.map((tab) => {
+        const isActive = active === tab.id;
+        return (
+          <button
+            key={tab.id}
+            role="tab"
+            aria-selected={isActive}
+            onClick={() => onSelect(tab.id)}
+            style={{
+              padding: '8px 12px',
+              background: 'transparent',
+              border: 'none',
+              borderBottom: isActive ? '2px solid #4C8DFF' : '2px solid transparent',
+              color: isActive ? '#6EA8FF' : 'rgba(147,160,180,0.55)',
+              fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
+              fontSize: 11,
+              fontWeight: isActive ? 600 : 400,
+              cursor: 'pointer',
+              letterSpacing: '0.02em',
+              transition: 'color 0.15s, border-color 0.15s',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              marginBottom: -1,
+              outline: 'none',
+            }}
+            onFocus={(e) => { (e.currentTarget as HTMLButtonElement).style.outline = '1px solid rgba(76,141,255,0.4)'; }}
+            onBlur={(e) => { (e.currentTarget as HTMLButtonElement).style.outline = 'none'; }}
+          >
+            {tab.label}
+            {tab.badge !== undefined && tab.badge !== null && (
+              <span style={{
+                background: isActive ? 'rgba(76,141,255,0.18)' : 'rgba(147,160,180,0.10)',
+                color: isActive ? '#6EA8FF' : 'rgba(147,160,180,0.5)',
+                borderRadius: 3,
+                padding: '0 4px',
+                fontSize: 9,
+                fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
+                fontWeight: 700,
+              }}>
+                {tab.badge}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Mission section ───────────────────────────────────────────────────────────
 
 function MissionSection(props: CommonProps) {
   const ms = props.missionState;
   const ls = props.linkState;
+  const dpCount = props.dataProductsCount;
+  const anomCount = props.anomalies.length;
 
   return (
     <>
@@ -153,7 +262,44 @@ function MissionSection(props: CommonProps) {
         ]} />
       )}
 
-      <ResizableSection title="Mission State" icon="◉" accent="#4C8DFF" storageKey="mission-state" defaultHeight={220}>
+      {props.decisionMode === 'unselected' && dpCount > 0 && (
+        <div style={{ ...CARD, borderColor: 'rgba(76,141,255,0.22)', background: 'rgba(8,12,22,0.85)', marginBottom: 10 }}>
+          <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 9, color: 'rgba(76,141,255,0.7)', letterSpacing: '0.1em', marginBottom: 10 }}>
+            MISSION CONTEXT
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontFamily: '"IBM Plex Sans", system-ui', fontSize: 12, color: 'rgba(147,160,180,0.8)' }}>Data products</span>
+              <span style={{ fontFamily: '"IBM Plex Mono", ui-monospace', fontSize: 14, fontWeight: 700, color: '#f59e0b' }}>{dpCount}</span>
+            </div>
+            {anomCount > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontFamily: '"IBM Plex Sans", system-ui', fontSize: 12, color: 'rgba(147,160,180,0.8)' }}>Active anomalies</span>
+                <span style={{ fontFamily: '"IBM Plex Mono", ui-monospace', fontSize: 14, fontWeight: 700, color: '#f87171' }}>{anomCount}</span>
+              </div>
+            )}
+            {ms && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontFamily: '"IBM Plex Sans", system-ui', fontSize: 12, color: 'rgba(147,160,180,0.8)' }}>Comm window</span>
+                <span style={{ fontFamily: '"IBM Plex Mono", ui-monospace', fontSize: 14, fontWeight: 700, color: '#34d399' }}>{ms.comm_window_remaining_s.toFixed(0)} s</span>
+              </div>
+            )}
+            {ls && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontFamily: '"IBM Plex Sans", system-ui', fontSize: 12, color: 'rgba(147,160,180,0.8)' }}>Link status</span>
+                <span style={{ fontFamily: '"IBM Plex Mono", ui-monospace', fontSize: 12, fontWeight: 600, color: ls.link_stability > 0.7 ? '#34d399' : '#f59e0b' }}>
+                  {ls.link_stability > 0.85 ? 'Stable' : ls.link_stability > 0.6 ? 'Degraded' : 'Unstable'}
+                </span>
+              </div>
+            )}
+          </div>
+          <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(46,58,79,0.5)', fontFamily: '"IBM Plex Sans", system-ui', fontSize: 11, color: 'rgba(147,160,180,0.5)', lineHeight: 1.5 }}>
+            No transmission plan has been created yet. Choose a decision mode below or navigate to the AI or Data sections.
+          </div>
+        </div>
+      )}
+
+      <ResizableSection title="Mission State" icon="◉" accent="#4C8DFF">
         {ms ? (
           <TableScroll>
             <MissionStatePanel missionState={ms} />
@@ -164,7 +310,7 @@ function MissionSection(props: CommonProps) {
       </ResizableSection>
 
       {props.linkState && (
-        <ResizableSection title="Comm Budget" icon="⌾" accent="#4C8DFF" storageKey="comm-budget" defaultHeight={120}>
+        <ResizableSection title="Comm Budget" icon="⌾" accent="#4C8DFF">
           <CommBudgetBar
             availableCapacityBits={props.availableCapacityBits}
             queuedDataBits={props.queuedDataBits}
@@ -175,7 +321,7 @@ function MissionSection(props: CommonProps) {
       )}
 
       {props.anomalies.length > 0 && (
-        <ResizableSection title="Anomalies" icon="⚠" accent="#f87171" storageKey="anomalies" defaultHeight={160}>
+        <ResizableSection title="Anomalies" icon="⚠" accent="#f87171">
           {props.anomalies.map((a) => (
             <div key={a.anomaly_id} style={{
               display: 'flex', gap: 10, alignItems: 'flex-start',
@@ -183,7 +329,7 @@ function MissionSection(props: CommonProps) {
               minWidth: 0,
             }}>
               <span style={{ color: '#f87171', flexShrink: 0, fontSize: 11, marginTop: 1 }}>
-                {a.severity >= 4 ? '●' : '○'}
+                {a.severity >= 0.75 ? '●' : '○'}
               </span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{
@@ -193,7 +339,7 @@ function MissionSection(props: CommonProps) {
                 }}>{a.anomaly_id}</div>
                 <div style={{ color: 'rgba(147,160,180,0.8)', fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>{a.description}</div>
                 <div style={{ color: 'rgba(147,160,180,0.45)', fontSize: 10, marginTop: 2 }}>
-                  {a.subsystem} · severity {a.severity}
+                  {a.subsystem} · severity {(a.severity * 100).toFixed(0)}%
                 </div>
               </div>
             </div>
@@ -208,7 +354,7 @@ function MissionSection(props: CommonProps) {
 
 function SpacecraftSection(props: CommonProps) {
   return (
-    <ResizableSection title="Spacecraft Geometry" icon="⬡" accent="#4C8DFF" storageKey="spacecraft-geo" defaultHeight={200}>
+    <ResizableSection title="Spacecraft Geometry" icon="⬡" accent="#4C8DFF">
       <TableScroll>
         <SignalGeometryBlock
           distanceKm={props.distanceKm}
@@ -229,7 +375,7 @@ function CommsSection(props: CommonProps) {
     </div>
   );
   return (
-    <ResizableSection title="Link Health" icon="⌾" accent="#4C8DFF" storageKey="link-health" defaultHeight={300}>
+    <ResizableSection title="Link Health" icon="⌾" accent="#4C8DFF">
       <div style={{ minWidth: 0 }}>
         <LinkHealthPanel
           linkState={props.linkState}
@@ -240,124 +386,571 @@ function CommsSection(props: CommonProps) {
   );
 }
 
-// ── Data Products section ─────────────────────────────────────────────────────
+// ── Data section — V3.5 workspace-aware data browser ─────────────────────────
+
+const FILTER_LABELS: Record<string, string> = {
+  all: 'All',
+  critical: 'Critical',
+  required: 'Required',
+  anomaly: 'Anomaly',
+  telemetry: 'Telemetry',
+  diagnostic: 'Diagnostic',
+  science: 'Science',
+  image: 'Image',
+  housekeeping: 'Housekeeping',
+  navigation: 'Nav',
+};
+
+type SortKey = 'criticality' | 'deadline_s' | 'size_bits' | 'age_s' | 'mission_relevance';
+
+const PAGE_SIZE = 20;
 
 function DataSection(props: CommonProps) {
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<string>('all');
+  const [sortKey, setSortKey] = useState<SortKey>('criticality');
+  const [sortDesc, setSortDesc] = useState(true);
+  const [page, setPage] = useState(0);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const products = props.rawDataProducts;
+  const hasDP = props.hasDataProducts;
+  const isLegacy = !hasDP && (props.dataProductsCount === 0);
+  const wm = props.workspaceMode;
+
+  // Derive available filter categories from actual data
+  const availableTypes = useMemo(() => {
+    const types = new Set(products.map((p) => p.product_type));
+    return Array.from(types);
+  }, [products]);
+
+  const hasAnomaly = useMemo(() => products.some((p) => p.anomaly_id), [products]);
+  const hasRequired = useMemo(() => products.some((p) => p.delivery_requirement === 'required'), [products]);
+
+  // Filtered + sorted products
+  const filtered = useMemo(() => {
+    let list = products;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter((p) =>
+        p.product_id.toLowerCase().includes(q) ||
+        p.product_type.toLowerCase().includes(q) ||
+        p.subsystem.toLowerCase().includes(q) ||
+        (p.anomaly_id?.toLowerCase().includes(q) ?? false) ||
+        p.description.toLowerCase().includes(q)
+      );
+    }
+    if (filter !== 'all') {
+      if (filter === 'critical') list = list.filter((p) => p.criticality >= 0.7);
+      else if (filter === 'required') list = list.filter((p) => p.delivery_requirement === 'required');
+      else if (filter === 'anomaly') list = list.filter((p) => p.anomaly_id !== null);
+      else list = list.filter((p) => p.product_type === filter);
+    }
+    list = [...list].sort((a, b) => {
+      const va = a[sortKey] as number;
+      const vb = b[sortKey] as number;
+      return sortDesc ? vb - va : va - vb;
+    });
+    return list;
+  }, [products, search, filter, sortKey, sortDesc]);
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  const handleSearch = useCallback((v: string) => { setSearch(v); setPage(0); }, []);
+  const handleFilter = useCallback((v: string) => { setFilter(v); setPage(0); }, []);
+  const handleSort = useCallback((key: SortKey) => {
+    setSortKey((prev) => {
+      if (prev === key) { setSortDesc((d) => !d); return key; }
+      setSortDesc(true);
+      return key;
+    });
+    setPage(0);
+  }, []);
+
+  if (isLegacy) {
+    return (
+      <div style={{ ...CARD, borderColor: 'rgba(245,158,11,0.28)', background: 'rgba(245,158,11,0.04)' }}>
+        <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 9, color: '#f59e0b', letterSpacing: '0.1em', marginBottom: 8 }}>
+          LEGACY PACKET SCENARIO
+        </div>
+        <div style={{ fontFamily: '"IBM Plex Sans", system-ui', fontSize: 12, color: 'rgba(147,160,180,0.8)', lineHeight: 1.55, marginBottom: 10 }}>
+          This scenario uses the legacy packet model. AI data-product prioritization and high-volume manual planning are unavailable.
+        </div>
+        {props.queue && (
+          <ResizableSection title="Transmission Queue" icon="▦" accent="#4C8DFF">
+            <div style={{ overflowX: 'auto', minWidth: 0 }}>
+              <TransmissionQueuePanel plan={props.queue} />
+            </div>
+          </ResizableSection>
+        )}
+      </div>
+    );
+  }
+
+  const selectedCount = props.manualSelectedIds.size;
+  const selectedBits = props.manualOrder.reduce((sum, id) => {
+    const p = products.find((dp) => dp.product_id === id);
+    return sum + (p?.size_bits ?? 0);
+  }, 0);
+  const capacityUsedPct = props.availableCapacityBits > 0
+    ? Math.min(100, (selectedBits / props.availableCapacityBits) * 100)
+    : 0;
+
+  // Expanded/Focus: show inline summary bar instead of card
+  const showExpandedColumns = wm === 'expanded' || wm === 'focus';
+
   return (
-    <>
-      {props.dataProductsCount > 0 && (
-        <div style={{ ...CARD, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{
-            display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
-            background: '#f59e0b', flexShrink: 0,
-          }} />
-          <div style={{
-            fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-            fontSize: 12, color: '#f59e0b', fontWeight: 500,
-          }}>
-            {props.dataProductsCount} products queued
-          </div>
+    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      {/* Toolbar */}
+      <div style={{ padding: '8px 0 6px', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <span style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 10, color: '#f59e0b', fontWeight: 700 }}>
+            DATA PRODUCTS
+          </span>
+          <span style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 16, fontWeight: 700, color: '#f59e0b' }}>
+            {products.length}
+          </span>
+        </div>
+        <input
+          type="text"
+          placeholder="Search products, subsystem, anomaly…"
+          value={search}
+          onChange={(e) => handleSearch(e.target.value)}
+          style={{
+            width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(46,58,79,0.8)',
+            color: '#e2e8f4', borderRadius: 6, padding: '6px 10px', fontSize: 12,
+            fontFamily: '"IBM Plex Mono", ui-monospace, monospace', boxSizing: 'border-box',
+            marginBottom: 5,
+          }}
+        />
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginBottom: 5 }}>
+          {['all', hasRequired && 'required', hasAnomaly && 'anomaly', 'critical', ...availableTypes]
+            .filter(Boolean)
+            .filter((v, i, a) => a.indexOf(v) === i)
+            .slice(0, 10)
+            .map((f) => {
+              const fStr = f as string;
+              const activeF = filter === fStr;
+              return (
+                <button key={fStr} onClick={() => handleFilter(fStr)} style={{
+                  fontSize: 10, padding: '3px 8px',
+                  background: activeF ? 'rgba(76,141,255,0.15)' : 'rgba(255,255,255,0.03)',
+                  color: activeF ? '#6EA8FF' : 'rgba(147,160,180,0.6)',
+                  border: `1px solid ${activeF ? 'rgba(76,141,255,0.35)' : 'rgba(46,58,79,0.7)'}`,
+                  borderRadius: 4, cursor: 'pointer', fontFamily: '"IBM Plex Sans", system-ui',
+                  fontWeight: activeF ? 600 : 400,
+                }}>
+                  {FILTER_LABELS[fStr] ?? fStr}
+                </button>
+              );
+            })}
+        </div>
+        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: 'rgba(147,160,180,0.4)', marginRight: 2 }}>SORT</span>
+          {(['criticality', 'deadline_s', 'size_bits', 'age_s', 'mission_relevance'] as SortKey[]).map((key) => {
+            const labels: Record<SortKey, string> = { criticality: 'Crit', deadline_s: 'Deadline', size_bits: 'Size', age_s: 'Age', mission_relevance: 'Relevance' };
+            const activeS = sortKey === key;
+            return (
+              <button key={key} onClick={() => handleSort(key)} style={{
+                fontSize: 10, padding: '2px 7px',
+                background: activeS ? 'rgba(76,141,255,0.12)' : 'transparent',
+                color: activeS ? '#6EA8FF' : 'rgba(147,160,180,0.5)',
+                border: `1px solid ${activeS ? 'rgba(76,141,255,0.28)' : 'rgba(46,58,79,0.5)'}`,
+                borderRadius: 4, cursor: 'pointer', fontFamily: '"IBM Plex Sans"',
+              }}>
+                {labels[key]}{activeS ? (sortDesc ? ' ↓' : ' ↑') : ''}
+              </button>
+            );
+          })}
+          <span style={{ marginLeft: 'auto', fontFamily: '"IBM Plex Mono"', fontSize: 9, color: 'rgba(147,160,180,0.4)' }}>
+            {filtered.length}/{products.length}
+            {selectedCount > 0 && ` · ${selectedCount} sel`}
+          </span>
+        </div>
+      </div>
+
+      {/* Product list — natural height (pagination limits to PAGE_SIZE rows; Main Control scrolls) */}
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingBottom: selectedCount > 0 ? 60 : 8 }}>
+          {paginated.map((p) => {
+            const isSelected = props.manualSelectedIds.has(p.product_id);
+            const isExp = expandedId === p.product_id;
+            const rank = props.manualOrder.indexOf(p.product_id);
+            return (
+              <div key={p.product_id} style={{
+                background: isSelected ? 'rgba(52,211,153,0.06)' : 'rgba(255,255,255,0.02)',
+                border: `1px solid ${isSelected ? 'rgba(52,211,153,0.25)' : 'rgba(46,58,79,0.6)'}`,
+                borderRadius: 6,
+                overflow: 'hidden',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', cursor: 'pointer' }}
+                  onClick={() => setExpandedId(isExp ? null : p.product_id)}>
+                  {props.decisionMode === 'manual' && (
+                    <div
+                      onClick={(e) => { e.stopPropagation(); props.onToggleManualSelect(p.product_id); }}
+                      style={{
+                        width: 14, height: 14, borderRadius: 3, flexShrink: 0, cursor: 'pointer',
+                        background: isSelected ? '#34d399' : 'transparent',
+                        border: `1px solid ${isSelected ? '#34d399' : 'rgba(147,160,180,0.4)'}`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      {isSelected && <span style={{ color: '#000', fontSize: 9, fontWeight: 700 }}>✓</span>}
+                    </div>
+                  )}
+                  {isSelected && rank >= 0 && (
+                    <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#34d399', minWidth: 16, textAlign: 'right', flexShrink: 0 }}>#{rank + 1}</span>
+                  )}
+                  {p.anomaly_id && (
+                    <span style={{ color: '#f87171', fontSize: 8, fontFamily: '"IBM Plex Mono"', fontWeight: 700, flexShrink: 0 }}>⚠</span>
+                  )}
+                  <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 11, color: '#6EA8FF', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {p.product_id}
+                  </span>
+                  {showExpandedColumns && (
+                    <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: 'rgba(147,160,180,0.5)', flexShrink: 0, minWidth: 52, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {p.subsystem}
+                    </span>
+                  )}
+                  {showExpandedColumns && (
+                    <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: 'rgba(147,160,180,0.5)', flexShrink: 0, minWidth: 40 }}>
+                      {(p.size_bits / 1024).toFixed(0)}kb
+                    </span>
+                  )}
+                  <div style={{ width: 28, height: 3, background: 'rgba(46,58,79,0.8)', borderRadius: 2, flexShrink: 0 }}>
+                    <div style={{ width: `${p.criticality * 100}%`, height: '100%', borderRadius: 2, background: p.criticality >= 0.85 ? '#f87171' : p.criticality >= 0.7 ? '#f59e0b' : '#34d399' }} />
+                  </div>
+                  <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: p.deadline_s < 120 ? '#f87171' : 'rgba(147,160,180,0.5)', flexShrink: 0, minWidth: 36, textAlign: 'right' }}>
+                    {p.deadline_s < 3600 ? `${p.deadline_s.toFixed(0)}s` : `${(p.deadline_s / 3600).toFixed(1)}h`}
+                  </span>
+                  {showExpandedColumns && (
+                    <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: p.mission_relevance > 0.7 ? '#34d399' : 'rgba(147,160,180,0.4)', flexShrink: 0, minWidth: 28 }}>
+                      {(p.mission_relevance * 100).toFixed(0)}%
+                    </span>
+                  )}
+                  <span style={{ color: 'rgba(147,160,180,0.3)', fontSize: 9, flexShrink: 0 }}>{isExp ? '▲' : '▼'}</span>
+                </div>
+                {isExp && (
+                  <div style={{ padding: '8px 10px 10px', borderTop: '1px solid rgba(46,58,79,0.5)', background: 'rgba(0,0,0,0.15)' }}>
+                    <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 11, color: 'rgba(147,160,180,0.8)', lineHeight: 1.55, marginBottom: 8 }}>
+                      {p.description || '—'}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 12px', fontSize: 10 }}>
+                      {[
+                        ['Type', p.product_type],
+                        ['Subsystem', p.subsystem],
+                        ['Size', `${(p.size_bits / 1024).toFixed(1)} kb`],
+                        ['Criticality', p.criticality.toFixed(2)],
+                        ['Relevance', p.mission_relevance.toFixed(2)],
+                        ['Delivery', p.delivery_requirement],
+                        ...(p.anomaly_id ? [['Anomaly', p.anomaly_id]] : []),
+                        ...(p.experiment_id ? [['Experiment', p.experiment_id]] : []),
+                      ].map(([label, val]) => (
+                        <div key={label} style={{ display: 'flex', gap: 4 }}>
+                          <span style={{ color: 'rgba(147,160,180,0.4)', fontFamily: '"IBM Plex Sans"' }}>{label}</span>
+                          <span style={{ color: '#e2e8f4', fontFamily: '"IBM Plex Mono"' }}>{val}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {props.decisionMode === 'manual' && (
+                      <button
+                        onClick={() => props.onToggleManualSelect(p.product_id)}
+                        style={{
+                          marginTop: 8, fontSize: 11, padding: '4px 12px',
+                          background: isSelected ? 'rgba(248,113,113,0.1)' : 'rgba(52,211,153,0.1)',
+                          color: isSelected ? '#f87171' : '#34d399',
+                          border: `1px solid ${isSelected ? 'rgba(248,113,113,0.3)' : 'rgba(52,211,153,0.25)'}`,
+                          borderRadius: 5, cursor: 'pointer', fontFamily: '"IBM Plex Sans"',
+                        }}
+                      >
+                        {isSelected ? 'Deselect' : 'Select for transmission'}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {paginated.length === 0 && (
+            <div style={{ color: 'rgba(147,160,180,0.4)', fontSize: 12, padding: '12px 0', textAlign: 'center' }}>
+              No products match the current filter.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center', padding: '6px 0', borderTop: '1px solid rgba(46,58,79,0.5)', flexShrink: 0 }}>
+          <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}
+            style={{ fontSize: 10, padding: '3px 8px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(46,58,79,0.7)', borderRadius: 4, color: 'rgba(147,160,180,0.7)', cursor: 'pointer' }}>
+            ←
+          </button>
+          <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 10, color: 'rgba(147,160,180,0.6)' }}>
+            {page + 1} / {totalPages}
+          </span>
+          <button onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
+            style={{ fontSize: 10, padding: '3px 8px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(46,58,79,0.7)', borderRadius: 4, color: 'rgba(147,160,180,0.7)', cursor: 'pointer' }}>
+            →
+          </button>
         </div>
       )}
-      {props.queue && (
-        <ResizableSection title="Transmission Queue" icon="▦" accent="#4C8DFF" storageKey="tx-queue" defaultHeight={320}>
-          <div style={{ overflowX: 'auto', minWidth: 0 }}>
-            <TransmissionQueuePanel plan={props.queue} />
-          </div>
-        </ResizableSection>
+
+      {/* Sticky selection summary bar — manual mode with selection */}
+      {props.decisionMode === 'manual' && selectedCount > 0 && (
+        <div style={{
+          borderTop: '1px solid rgba(52,211,153,0.2)',
+          background: 'rgba(8,14,24,0.97)',
+          padding: '8px 10px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          flexShrink: 0,
+        }}>
+          <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 10, color: '#34d399', fontWeight: 700 }}>{selectedCount}</span>
+          <span style={{ fontFamily: '"IBM Plex Sans"', fontSize: 11, color: 'rgba(147,160,180,0.6)' }}>selected</span>
+          <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 10, color: 'rgba(147,160,180,0.6)' }}>{(selectedBits / 1024).toFixed(0)} kb</span>
+          <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 10, color: capacityUsedPct > 90 ? '#f87171' : 'rgba(147,160,180,0.5)' }}>{capacityUsedPct.toFixed(0)}% cap</span>
+          <button
+            onClick={props.onClearManualSelection}
+            style={{ marginLeft: 'auto', fontSize: 10, padding: '3px 8px', background: 'transparent', color: 'rgba(147,160,180,0.6)', border: '1px solid rgba(46,58,79,0.7)', borderRadius: 4, cursor: 'pointer', fontFamily: '"IBM Plex Sans"' }}
+          >
+            Clear
+          </button>
+        </div>
       )}
-    </>
+    </div>
   );
 }
 
-// ── AI Copilot section ────────────────────────────────────────────────────────
+// ── V3.5: AI Copilot section — Tabbed workspace ───────────────────────────────
+
+type AiTab = 'prioritization' | 'reasoning' | 'decision';
 
 function AiSection(props: CommonProps) {
-  const isAnalyzing = props.approvalPhase === 'ai_analyzing';
-  const hasResult = props.recommendation !== null || props.aiPrioritization !== null;
-  const isStandby = !isAnalyzing && !hasResult;
+  const [activeTab, setActiveTab] = useState<AiTab>('prioritization');
+
+  const lc = props.aiLifecycle;
+  const isStandby = lc === 'standby';
+  const isAnalyzing = lc === 'analyzing';
+  const isReady = lc === 'ready';
+  const isError = lc === 'error';
+  const isStale = lc === 'stale';
+  const hasResult = isReady || isStale;
+  const dp = props.dataProductsCount;
+  const anomCount = props.anomalies.length;
+  const ms = props.missionState;
+  const ls = props.linkState;
+
+  const statusColor = isAnalyzing ? '#4C8DFF' : isReady ? '#34d399' : isError ? '#f87171' : isStale ? '#f59e0b' : 'rgba(147,160,180,0.35)';
+  const statusLabel = isAnalyzing ? 'ANALYZING' : isReady ? 'READY' : isError ? 'FAILED' : isStale ? 'STALE' : 'STANDBY';
+  const notInAiMode = props.decisionMode !== 'ai';
+
+  const rankedCount = props.aiPrioritization?.ranked_products.length ?? null;
 
   return (
-    <>
-      {/* AI status card */}
+    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      {/* AI Copilot status card — always visible */}
       <div style={{
         ...CARD,
-        background: isAnalyzing
-          ? 'rgba(76,141,255,0.06)'
-          : isStandby ? 'rgba(18,24,34,0.6)' : 'rgba(52,211,153,0.04)',
-        borderColor: isAnalyzing
-          ? 'rgba(76,141,255,0.22)'
-          : isStandby ? 'rgba(46,58,79,0.7)' : 'rgba(52,211,153,0.18)',
-        marginBottom: 8,
+        background: isAnalyzing ? 'rgba(76,141,255,0.06)' : isReady ? 'rgba(52,211,153,0.04)' : isError ? 'rgba(248,113,113,0.04)' : isStale ? 'rgba(245,158,11,0.04)' : 'rgba(8,12,22,0.85)',
+        borderColor: isAnalyzing ? 'rgba(76,141,255,0.22)' : isReady ? 'rgba(52,211,153,0.18)' : isError ? 'rgba(248,113,113,0.22)' : isStale ? 'rgba(245,158,11,0.22)' : 'rgba(46,58,79,0.7)',
+        marginBottom: 6,
+        flexShrink: 0,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{
-            borderRadius: '50%', width: 7, height: 7,
-            display: 'inline-block', flexShrink: 0,
-            background: isAnalyzing ? '#4C8DFF' : isStandby ? 'rgba(147,160,180,0.3)' : '#34d399',
-          }} />
-          <span style={{
-            fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-            fontSize: 12, fontWeight: 600,
-            color: isAnalyzing ? '#6EA8FF' : isStandby ? 'rgba(147,160,180,0.5)' : '#34d399',
-            flex: 1, minWidth: 0,
-          }}>
-            AI Copilot{isAnalyzing ? ' — Analyzing…' : isStandby ? ' — Standby' : ' — Ready'}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: hasResult ? 8 : 0 }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', display: 'inline-block', background: statusColor, flexShrink: 0 }} />
+          <span style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', color: statusColor }}>
+            AI COPILOT · {statusLabel}
           </span>
-          {props.aiProvider && (
-            <span style={{
-              fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-              fontSize: 9, color: 'rgba(110,168,255,0.55)',
-              flexShrink: 0,
-            }}>
+          {props.aiProvider && (isReady || isStale) && (
+            <span style={{ marginLeft: 'auto', fontFamily: '"IBM Plex Mono"', fontSize: 9, color: 'rgba(110,168,255,0.6)', flexShrink: 0 }}>
               {props.aiProvider}
             </span>
           )}
         </div>
-        {isStandby && (
-          <div style={{
-            marginTop: 8, fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-            fontSize: 11.5, color: 'rgba(147,160,180,0.55)', lineHeight: 1.55,
-          }}>
-            AI analysis runs automatically with each mission refresh.
+
+        {/* Compact summary row when ready */}
+        {hasResult && props.aiPrioritization && (
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: 'rgba(147,160,180,0.4)', letterSpacing: '0.08em' }}>ANALYZED</div>
+              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>
+                {props.aiCandidateCount ?? props.aiPrioritization.candidate_count ?? '—'}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: 'rgba(147,160,180,0.4)', letterSpacing: '0.08em' }}>RANKED</div>
+              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 13, fontWeight: 700, color: '#6EA8FF' }}>
+                {props.aiPrioritization.ranked_products.length}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: 'rgba(147,160,180,0.4)', letterSpacing: '0.08em' }}>CONFIDENCE</div>
+              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 13, fontWeight: 700, color: '#34d399' }}>
+                {(props.aiPrioritization.confidence * 100).toFixed(0)}%
+              </div>
+            </div>
+            {isStale && (
+              <span style={{ alignSelf: 'center', fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#f59e0b', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 3, padding: '2px 6px' }}>
+                STALE
+              </span>
+            )}
           </div>
         )}
-        {isAnalyzing && (
-          <div style={{
-            marginTop: 8, fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-            fontSize: 11.5, color: 'rgba(110,168,255,0.65)',
-          }}>
-            Retrieving AI prioritization…
+
+        {/* Context summary — standby/stale/not-AI mode */}
+        {(isStandby || isStale || notInAiMode) && !hasResult && (
+          <div style={{ marginTop: hasResult ? 0 : 4 }}>
+            <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: 'rgba(147,160,180,0.4)', letterSpacing: '0.08em', marginBottom: 5 }}>MISSION CONTEXT</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              {dp > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ fontFamily: '"IBM Plex Sans"', fontSize: 12, color: 'rgba(147,160,180,0.7)' }}>Data products</span>
+                  <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 12, fontWeight: 700, color: '#f59e0b' }}>{dp}</span>
+                </div>
+              )}
+              {anomCount > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ fontFamily: '"IBM Plex Sans"', fontSize: 12, color: 'rgba(147,160,180,0.7)' }}>Active anomalies</span>
+                  <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 12, fontWeight: 700, color: '#f87171' }}>{anomCount}</span>
+                </div>
+              )}
+              {ms && (
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ fontFamily: '"IBM Plex Sans"', fontSize: 12, color: 'rgba(147,160,180,0.7)' }}>Comm window</span>
+                  <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 12, color: '#34d399' }}>{ms.comm_window_remaining_s.toFixed(0)} s</span>
+                </div>
+              )}
+              {ls && (
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ fontFamily: '"IBM Plex Sans"', fontSize: 12, color: 'rgba(147,160,180,0.7)' }}>Link status</span>
+                  <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 11, color: ls.link_stability > 0.7 ? '#34d399' : '#f59e0b' }}>
+                    {ls.link_stability > 0.85 ? 'Stable' : ls.link_stability > 0.6 ? 'Degraded' : 'Unstable'}
+                  </span>
+                </div>
+              )}
+            </div>
+            {isStandby && !isAnalyzing && (
+              <div style={{ marginTop: 7, fontFamily: '"IBM Plex Sans"', fontSize: 11, color: 'rgba(147,160,180,0.45)', lineHeight: 1.5 }}>
+                AI has not made any recommendation. No analysis has been requested.
+              </div>
+            )}
           </div>
+        )}
+
+        {/* Analyzing progress */}
+        {isAnalyzing && (
+          <div style={{ marginTop: 6 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {[
+                { done: true, label: 'Mission state loaded' },
+                { done: true, label: `${dp} data products ready` },
+                { done: true, label: `${anomCount} anomalies identified` },
+                { done: true, label: 'Communication constraints evaluated' },
+                { done: false, label: `Requesting AI analysis (${props.aiProvider ?? 'provider'})…` },
+              ].map(({ done, label }) => (
+                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: '"IBM Plex Sans"', fontSize: 11, color: done ? 'rgba(147,160,180,0.75)' : '#6EA8FF' }}>
+                  <span style={{ flexShrink: 0 }}>{done ? '✓' : '●'}</span>
+                  {label}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Error state */}
+        {isError && (
+          <div style={{ background: 'rgba(248,113,113,0.07)', border: '1px solid rgba(248,113,113,0.25)', borderRadius: 5, padding: '8px 10px', marginTop: 8 }}>
+            <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, fontWeight: 700, color: '#f87171', marginBottom: 4 }}>⚠ ANALYSIS FAILED</div>
+            {props.aiProvider && (
+              <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 11, color: 'rgba(147,160,180,0.7)', marginBottom: 3 }}>Provider: {props.aiProvider}</div>
+            )}
+            {props.aiError && (
+              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 10, color: 'rgba(248,113,113,0.7)', wordBreak: 'break-all', lineHeight: 1.4 }}>
+                {props.aiError.slice(0, 200)}
+              </div>
+            )}
+            <div style={{ marginTop: 6, fontFamily: '"IBM Plex Sans"', fontSize: 11, color: 'rgba(147,160,180,0.5)' }}>
+              Mission operations remain available. Use Manual mode if needed.
+            </div>
+          </div>
+        )}
+
+        {/* Action button */}
+        {(isStandby || isStale || isError) && (
+          <button
+            onClick={() => {
+              if (props.decisionMode !== 'ai') props.onSelectDecisionMode('ai');
+              props.onRunAiAnalysis();
+            }}
+            disabled={isAnalyzing}
+            style={{
+              width: '100%', padding: '8px 0', marginTop: 8,
+              background: 'rgba(76,141,255,0.12)',
+              color: '#6EA8FF',
+              border: '1px solid rgba(76,141,255,0.35)',
+              borderRadius: 6, cursor: 'pointer',
+              fontFamily: '"IBM Plex Sans", system-ui', fontSize: 12, fontWeight: 600,
+              transition: 'background 0.15s',
+            }}
+          >
+            {isStale ? 'Re-analyze Mission' : isError ? 'Retry AI Analysis' : 'Analyze Mission with AI'}
+          </button>
+        )}
+        {isAnalyzing && (
+          <button disabled style={{
+            width: '100%', padding: '8px 0', marginTop: 8,
+            background: 'rgba(76,141,255,0.06)',
+            color: 'rgba(110,168,255,0.5)',
+            border: '1px solid rgba(76,141,255,0.15)',
+            borderRadius: 6,
+            fontFamily: '"IBM Plex Sans"', fontSize: 12, fontWeight: 600,
+            cursor: 'not-allowed',
+          }}>
+            Analyzing…
+          </button>
         )}
       </div>
 
+      {/* Tabbed AI result workspace — shown when results are ready */}
       {hasResult && (
-        <>
-          <ResizableSection title="AI Prioritization" icon="◈" accent="#6EA8FF" storageKey="ai-prioritization" defaultHeight={280}>
-            <div style={{ minWidth: 0 }}>
+        <div style={{
+          display: 'flex', flexDirection: 'column',
+          border: '1px solid rgba(46,58,79,0.7)', borderRadius: 8,
+          marginTop: 4,
+        }}>
+          {/* Tab bar */}
+          <TabBar<AiTab>
+            tabs={[
+              { id: 'prioritization', label: 'Prioritization', badge: rankedCount ?? undefined },
+              { id: 'reasoning', label: 'Reasoning' },
+              { id: 'decision', label: 'Decision' },
+            ]}
+            active={activeTab}
+            onSelect={setActiveTab}
+          />
+
+          {/* Tab content — natural height, Main Control scrolls */}
+          <div style={{ padding: '10px', overflowX: 'hidden' }}>
+            {activeTab === 'prioritization' && (
               <AIDecisionPanel
                 prioritization={props.aiPrioritization}
                 providerName={props.aiProvider}
                 candidateCount={props.aiCandidateCount}
                 prioritizationError={props.aiPrioritizationError}
               />
-            </div>
-          </ResizableSection>
-
-          <ResizableSection title="Recommendation" icon="◉" accent="#34d399" storageKey="recommendation" defaultHeight={240}>
-            <div style={{ minWidth: 0 }}>
+            )}
+            {activeTab === 'reasoning' && (
               <RecommendationPanel
                 recommendation={props.recommendation}
                 providerName={props.aiProvider}
                 evaluation={props.recEval}
                 riskWeights={props.riskWeights}
               />
-            </div>
-          </ResizableSection>
-
-          <ResizableSection title="Mission Decision" icon="▶" accent="#34d399" storageKey="mission-decision" defaultHeight={220}>
-            <div style={{ minWidth: 0 }}>
+            )}
+            {activeTab === 'decision' && (
               <MissionDecisionPanel
                 prioritization={props.aiPrioritization}
                 recommendation={props.recommendation}
@@ -368,9 +961,104 @@ function AiSection(props: CommonProps) {
                 prioritizationError={props.aiPrioritizationError}
                 candidateCount={props.aiCandidateCount}
               />
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Decision Mode selector ─────────────────────────────────────────────────────
+
+function DecisionModeSelector(props: CommonProps) {
+  const dp = props.dataProductsCount;
+  const isLegacy = !props.hasDataProducts;
+
+  if (isLegacy) {
+    return (
+      <div style={{ ...CARD, borderColor: 'rgba(245,158,11,0.28)', background: 'rgba(245,158,11,0.04)' }}>
+        <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#f59e0b', letterSpacing: '0.1em', marginBottom: 8 }}>LEGACY PACKET SCENARIO</div>
+        <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 12, color: 'rgba(147,160,180,0.8)', lineHeight: 1.55 }}>
+          This scenario uses the legacy packet model. AI prioritization and high-volume manual planning are not available.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div style={{ ...CARD, borderColor: 'rgba(76,141,255,0.18)', marginBottom: 10 }}>
+        <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: 'rgba(76,141,255,0.7)', letterSpacing: '0.1em', marginBottom: 10 }}>
+          DECISION WORKFLOW
+        </div>
+        <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 12, color: 'rgba(147,160,180,0.8)', lineHeight: 1.55, marginBottom: 14 }}>
+          <strong style={{ color: '#f59e0b' }}>{dp} data products</strong> are awaiting downlink.
+          Communication resources are limited. Choose how to build the transmission plan.
+        </div>
+
+        <div style={{
+          border: `1px solid ${props.decisionMode === 'manual' ? 'rgba(52,211,153,0.35)' : 'rgba(46,58,79,0.7)'}`,
+          borderRadius: 8, padding: '12px 14px', marginBottom: 8,
+          background: props.decisionMode === 'manual' ? 'rgba(52,211,153,0.06)' : 'rgba(255,255,255,0.02)',
+        }}>
+          <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 12, fontWeight: 600, color: props.decisionMode === 'manual' ? '#34d399' : '#e2e8f4', marginBottom: 6 }}>
+            MANUAL DECISION
+          </div>
+          <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 11, color: 'rgba(147,160,180,0.7)', lineHeight: 1.5, marginBottom: 10 }}>
+            Review and prioritize mission data yourself. Browse all {dp} products, apply filters, select what to transmit.
+          </div>
+          <button
+            onClick={() => props.onSelectDecisionMode('manual')}
+            style={{
+              width: '100%', padding: '7px 0',
+              background: props.decisionMode === 'manual' ? 'rgba(52,211,153,0.15)' : 'rgba(52,211,153,0.08)',
+              color: '#34d399', border: '1px solid rgba(52,211,153,0.3)',
+              borderRadius: 5, cursor: 'pointer', fontFamily: '"IBM Plex Sans"', fontSize: 12, fontWeight: 600,
+            }}
+          >
+            {props.decisionMode === 'manual' ? '✓ Manual Mode Active' : 'Start Manual Planning'}
+          </button>
+        </div>
+
+        <div style={{
+          border: `1px solid ${props.decisionMode === 'ai' ? 'rgba(76,141,255,0.35)' : 'rgba(46,58,79,0.7)'}`,
+          borderRadius: 8, padding: '12px 14px',
+          background: props.decisionMode === 'ai' ? 'rgba(76,141,255,0.06)' : 'rgba(255,255,255,0.02)',
+        }}>
+          <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 12, fontWeight: 600, color: props.decisionMode === 'ai' ? '#6EA8FF' : '#e2e8f4', marginBottom: 6 }}>
+            AI ASSISTED
+          </div>
+          <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 11, color: 'rgba(147,160,180,0.7)', lineHeight: 1.5, marginBottom: 10 }}>
+            Ask the AI Copilot to analyze the mission context, anomalies, deadlines, and constraints — then recommend a prioritized transmission plan.
+          </div>
+          <button
+            onClick={() => props.onSelectDecisionMode('ai')}
+            style={{
+              width: '100%', padding: '7px 0',
+              background: props.decisionMode === 'ai' ? 'rgba(76,141,255,0.15)' : 'rgba(76,141,255,0.08)',
+              color: '#6EA8FF', border: '1px solid rgba(76,141,255,0.3)',
+              borderRadius: 5, cursor: 'pointer', fontFamily: '"IBM Plex Sans"', fontSize: 12, fontWeight: 600,
+            }}
+          >
+            {props.decisionMode === 'ai' ? '✓ AI Mode Active' : 'Use AI Assistant'}
+          </button>
+        </div>
+      </div>
+
+      {props.decisionMode === 'ai' && <AiSection {...props} />}
+
+      {props.decisionMode === 'manual' && (
+        <div style={{ ...CARD, borderColor: 'rgba(52,211,153,0.2)' }}>
+          <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 12, color: 'rgba(147,160,180,0.8)', lineHeight: 1.5 }}>
+            Manual mode active. Navigate to the <strong style={{ color: '#34d399' }}>Data</strong> section to browse and select data products.
+          </div>
+          {props.manualSelectedIds.size > 0 && (
+            <div style={{ marginTop: 8, fontFamily: '"IBM Plex Mono"', fontSize: 11, color: '#34d399' }}>
+              {props.manualSelectedIds.size} products selected
             </div>
-          </ResizableSection>
-        </>
+          )}
+        </div>
       )}
     </>
   );
@@ -379,23 +1067,34 @@ function AiSection(props: CommonProps) {
 // ── Transmission section ──────────────────────────────────────────────────────
 
 function TransmissionSection(props: CommonProps) {
+  const activeTxPlan = props.decisionMode === 'manual' && props.manualPlan
+    ? props.manualPlan
+    : (props.recPlan ?? props.activePlan);
+  const activeTxEval = props.decisionMode === 'manual'
+    ? null
+    : (props.recEval ?? props.activeEval);
+
   return (
     <>
-      <ResizableSection title="Transmission Summary" icon="↗" accent="#4C8DFF" storageKey="tx-summary" defaultHeight={200}>
+      <ResizableSection title="Transmission Summary" icon="↗" accent="#4C8DFF">
         <div style={{ minWidth: 0 }}>
           <TransmissionSummaryPanel
-            plan={props.recPlan ?? props.activePlan}
-            evaluation={props.recEval ?? props.activeEval}
+            plan={activeTxPlan}
+            evaluation={activeTxEval}
             availableCapacityBits={props.availableCapacityBits}
           />
         </div>
       </ResizableSection>
 
-      <ResizableSection title="Approval" icon="◉" accent="#4C8DFF" storageKey="approval" defaultHeight={180}>
+      <ResizableSection title="Approval" icon="◉" accent="#4C8DFF">
         <div style={{ minWidth: 0 }}>
           <ApprovalBar
             recommendedPlanId={props.recommendation ? props.recommendation.recommended_plan_id : null}
-            recommendedPlan={props.recPlan}
+            recommendedPlan={
+              props.decisionMode === 'manual' && props.manualPlan
+                ? props.manualPlan
+                : props.recPlan
+            }
             baselinePlan={props.queue}
             approvalPhase={props.approvalPhase}
             onApproved={props.onApproved}
@@ -410,47 +1109,79 @@ function TransmissionSection(props: CommonProps) {
         simulationResult={props.approveResult?.simulation_result ?? null}
         isAiRecommendedPlan={
           props.approveResult?.simulation_result?.plan_id !== undefined &&
-          props.approveResult.simulation_result.plan_id !== 'operator-override'
+          props.approveResult.simulation_result.plan_id !== 'operator-override' &&
+          props.approveResult.simulation_result.plan_id !== 'operator-manual'
         }
       />
     </>
   );
 }
 
-// ── Log section ───────────────────────────────────────────────────────────────
+// ── V3.5: Log section — Tabbed workspace ─────────────────────────────────────
+
+type LogTab = 'simulation' | 'narrative' | 'report';
 
 function LogSection(props: CommonProps) {
+  const hasResult = !!props.approveResult;
+  const [activeTab, setActiveTab] = useState<LogTab>(hasResult ? 'simulation' : 'report');
+
+  const isAiPlan = props.approveResult
+    ? (props.approveResult.simulation_result.plan_id !== undefined &&
+       props.approveResult.simulation_result.plan_id !== 'operator-override' &&
+       props.approveResult.simulation_result.plan_id !== 'operator-manual')
+    : false;
+
+  const tabs: TabItem<LogTab>[] = [
+    { id: 'simulation', label: 'Simulation' },
+    { id: 'narrative', label: 'Narrative' },
+    { id: 'report', label: 'Report' },
+  ];
+
   return (
-    <>
-      {props.approveResult && (
-        <>
-          <ResizableSection title="Simulation" icon="⟳" accent="#4C8DFF" storageKey="simulation" defaultHeight={300}>
-            <div style={{ minWidth: 0 }}>
+    <div style={{
+      display: 'flex', flexDirection: 'column',
+      border: '1px solid rgba(46,58,79,0.7)', borderRadius: 8,
+    }}>
+      {/* Tab bar */}
+      <TabBar<LogTab>
+        tabs={tabs}
+        active={activeTab}
+        onSelect={setActiveTab}
+      />
+
+      {/* Tab content — natural height, Main Control scrolls */}
+      <div style={{ padding: '10px', overflowX: 'hidden' }}>
+        {activeTab === 'simulation' && (
+          <>
+            {hasResult ? (
               <SimulationPanel
-                approveResult={props.approveResult}
+                approveResult={props.approveResult!}
                 propagationDelayS={props.propagationDelayS}
               />
-            </div>
-          </ResizableSection>
-
-          <ResizableSection title="Transmission Narrative" icon="≡" accent="#4C8DFF" storageKey="tx-narrative" defaultHeight={240}>
-            <div style={{ minWidth: 0 }}>
+            ) : (
+              <div style={{ color: 'rgba(147,160,180,0.4)', fontSize: 12, padding: '20px 0', textAlign: 'center' }}>
+                No simulation data yet. Approve a transmission plan to run the simulation.
+              </div>
+            )}
+          </>
+        )}
+        {activeTab === 'narrative' && (
+          <>
+            {hasResult ? (
               <TransmissionNarrativePanel
                 prioritization={props.aiPrioritization}
-                simulationResult={props.approveResult.simulation_result}
+                simulationResult={props.approveResult!.simulation_result}
                 anomalies={props.anomalies}
-                isAiRecommendedPlan={
-                  props.approveResult.simulation_result.plan_id !== undefined &&
-                  props.approveResult.simulation_result.plan_id !== 'operator-override'
-                }
+                isAiRecommendedPlan={isAiPlan}
               />
-            </div>
-          </ResizableSection>
-        </>
-      )}
-
-      <ResizableSection title="Mission Report" icon="◉" accent="#4C8DFF" storageKey="mission-report" defaultHeight={360}>
-        <div style={{ minWidth: 0, overflowX: 'hidden' }}>
+            ) : (
+              <div style={{ color: 'rgba(147,160,180,0.4)', fontSize: 12, padding: '20px 0', textAlign: 'center' }}>
+                No transmission narrative yet. Complete a transmission to generate the mission narrative.
+              </div>
+            )}
+          </>
+        )}
+        {activeTab === 'report' && (
           <MissionReportPanel
             approvalPhase={props.approvalPhase}
             missionState={props.missionState}
@@ -463,9 +1194,9 @@ function LogSection(props: CommonProps) {
             propagationDelayS={props.propagationDelayS}
             roundTripTimeS={props.roundTripTimeS}
           />
-        </div>
-      </ResizableSection>
-    </>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -482,7 +1213,85 @@ const SECTION_HEADINGS: Record<NavSection, { icon: string; title: string }> = {
   config:       { icon: '⚙', title: 'Configuration' },
 };
 
-// ── RightPanel ────────────────────────────────────────────────────────────────
+// ── V3.5: Workspace mode control buttons ──────────────────────────────────────
+
+function WorkspaceModeControls({
+  mode,
+  onSet,
+}: {
+  mode: WorkspaceMode;
+  onSet: (m: WorkspaceMode) => void;
+}) {
+  const btnBase: React.CSSProperties = {
+    background: 'transparent',
+    border: '1px solid rgba(46,58,79,0.7)',
+    borderRadius: 4,
+    color: 'rgba(147,160,180,0.55)',
+    cursor: 'pointer',
+    fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
+    fontSize: 11,
+    padding: '3px 6px',
+    lineHeight: 1,
+    transition: 'color 0.15s, border-color 0.15s, background 0.15s',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+  };
+  const btnActive: React.CSSProperties = {
+    ...btnBase,
+    color: '#4C8DFF',
+    border: '1px solid rgba(76,141,255,0.4)',
+    background: 'rgba(76,141,255,0.08)',
+  };
+
+  if (mode === 'focus') {
+    return (
+      <button
+        style={{ ...btnBase, color: '#f87171', border: '1px solid rgba(248,113,113,0.35)', background: 'rgba(248,113,113,0.06)' }}
+        onClick={() => onSet('normal')}
+        title="Exit focus mode (Esc)"
+        aria-label="Exit focus mode"
+      >
+        ↩ Exit Focus
+      </button>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', gap: 4 }}>
+      {mode === 'expanded' && (
+        <button
+          style={btnActive}
+          onClick={() => onSet('normal')}
+          title="Return to normal mode"
+          aria-label="Return to normal workspace"
+        >
+          ↔ Normal
+        </button>
+      )}
+      {mode === 'normal' && (
+        <button
+          style={btnBase}
+          onClick={() => onSet('expanded')}
+          title="Expand workspace"
+          aria-label="Expand workspace"
+        >
+          ⇔
+        </button>
+      )}
+      <button
+        style={btnBase}
+        onClick={() => onSet('focus')}
+        title="Focus workspace — full panel (Ctrl+Shift+F)"
+        aria-label="Enter focus workspace"
+      >
+        ⛶
+      </button>
+    </div>
+  );
+}
+
+// ── RightPanelProps ───────────────────────────────────────────────────────────
 
 interface RightPanelProps extends CommonProps {
   section: NavSection;
@@ -494,6 +1303,8 @@ interface RightPanelProps extends CommonProps {
   panelDefaultWidth: number;
 }
 
+// ── RightPanel ────────────────────────────────────────────────────────────────
+
 export function RightPanel({
   section,
   viewSettings,
@@ -502,27 +1313,107 @@ export function RightPanel({
   onResetPanelWidth,
   panelWidth,
   panelDefaultWidth,
+  workspaceMode,
+  onSetWorkspaceMode,
   ...props
 }: RightPanelProps) {
   const heading = SECTION_HEADINGS[section];
+  const isFocus = workspaceMode === 'focus';
+  const isExpanded = workspaceMode === 'expanded';
 
-  function handleResetSectionSizes() {
-    // no-op callback passed to ConfigPanel; actual localStorage clearing happens inside ConfigPanel
-  }
+  // Compute effective panel width from workspace mode
+  const effectiveWidth = isFocus ? undefined : isExpanded ? 'clamp(650px, 58vw, 1100px)' : panelWidth;
+
+  // V3.5.2: purge obsolete per-section height keys written by the old ResizableSection
+  useEffect(() => {
+    try {
+      const stale = Object.keys(localStorage).filter((k) => k.startsWith('GCSI_SEC_H_'));
+      stale.forEach((k) => localStorage.removeItem(k));
+    } catch { /* ignore */ }
+  }, []);
+
+  // AI lifecycle badge for section header
+  const aiStatusBadge = section === 'ai' && (
+    <span style={{
+      marginLeft: 8, fontSize: 9, fontWeight: 700,
+      background: props.aiLifecycle === 'ready' ? 'rgba(52,211,153,0.10)' :
+                  props.aiLifecycle === 'analyzing' ? 'rgba(76,141,255,0.10)' :
+                  props.aiLifecycle === 'error' ? 'rgba(248,113,113,0.10)' :
+                  props.aiLifecycle === 'stale' ? 'rgba(245,158,11,0.10)' : 'transparent',
+      color: props.aiLifecycle === 'ready' ? '#34d399' :
+             props.aiLifecycle === 'analyzing' ? '#6EA8FF' :
+             props.aiLifecycle === 'error' ? '#f87171' :
+             props.aiLifecycle === 'stale' ? '#f59e0b' : 'transparent',
+      border: `1px solid ${props.aiLifecycle === 'ready' ? 'rgba(52,211,153,0.25)' :
+              props.aiLifecycle === 'analyzing' ? 'rgba(76,141,255,0.25)' :
+              props.aiLifecycle === 'error' ? 'rgba(248,113,113,0.25)' :
+              props.aiLifecycle === 'stale' ? 'rgba(245,158,11,0.25)' : 'transparent'}`,
+      borderRadius: 2, padding: '1px 6px',
+      fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
+      letterSpacing: '0.05em',
+    }}>
+      {props.aiLifecycle.toUpperCase()}
+    </span>
+  );
+
+  const dataBadge = section === 'data' && props.dataProductsCount > 0 && (
+    <span style={{
+      marginLeft: 8, fontSize: 9, fontWeight: 700,
+      background: 'rgba(245,158,11,0.08)',
+      color: '#f59e0b',
+      border: '1px solid rgba(245,158,11,0.22)',
+      borderRadius: 2, padding: '1px 6px',
+      fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
+    }}>
+      {props.dataProductsCount}
+    </span>
+  );
+
+  // Focus mode indicator
+  const focusBadge = isFocus && (
+    <span style={{
+      marginLeft: 8, fontSize: 9, fontWeight: 700,
+      background: 'rgba(248,113,113,0.08)',
+      color: '#f87171',
+      border: '1px solid rgba(248,113,113,0.25)',
+      borderRadius: 2, padding: '1px 6px',
+      fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
+      letterSpacing: '0.05em',
+    }}>
+      FOCUS
+    </span>
+  );
+
+  // Expanded mode indicator
+  const expandedBadge = isExpanded && (
+    <span style={{
+      marginLeft: 8, fontSize: 9, fontWeight: 700,
+      background: 'rgba(76,141,255,0.08)',
+      color: '#4C8DFF',
+      border: '1px solid rgba(76,141,255,0.25)',
+      borderRadius: 2, padding: '1px 6px',
+      fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
+      letterSpacing: '0.05em',
+    }}>
+      EXPANDED
+    </span>
+  );
 
   return (
-    <div style={{
-      width: panelWidth,
-      minWidth: 340,
-      maxWidth: 680,
-      flexShrink: 0,
-      background: '#0B0F18',
-      borderLeft: '1px solid rgba(46,58,79,0.8)',
-      display: 'flex',
-      flexDirection: 'column',
-      overflow: 'hidden',
-    }}>
-      {/* Panel header */}
+    <div
+      className="workspace-right-panel"
+      style={{
+        ...(isFocus ? { flex: 1 } : { width: effectiveWidth, flexShrink: 0 }),
+        minWidth: isFocus ? 0 : 340,
+        maxWidth: isFocus ? undefined : isExpanded ? 1100 : 680,
+        background: '#0B0F18',
+        borderLeft: '1px solid rgba(46,58,79,0.8)',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Panel header — sticky */}
       <div style={{
         padding: '11px 16px 10px',
         borderBottom: '1px solid rgba(46,58,79,0.7)',
@@ -542,36 +1433,51 @@ export function RightPanel({
           minWidth: 0,
         }}>
           {heading.title}
+          {aiStatusBadge}
+          {dataBadge}
+          {focusBadge}
+          {expandedBadge}
         </span>
+        {/* V3.5: Workspace mode controls */}
+        <WorkspaceModeControls mode={workspaceMode} onSet={onSetWorkspaceMode} />
       </div>
 
-      {/* Scrollable content */}
+      {/* Primary vertical scroll container — single scrollbar for all content */}
       <div style={{
         flex: 1,
         overflowY: 'auto',
         overflowX: 'hidden',
-        padding: '10px 10px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 0,
+        padding: '10px',
         minWidth: 0,
+        minHeight: 0,
       }}>
-        {section === 'mission'      && <MissionSection {...props} />}
-        {section === 'spacecraft'   && <SpacecraftSection {...props} />}
-        {section === 'comms'        && <CommsSection {...props} />}
-        {section === 'data'         && <DataSection {...props} />}
-        {section === 'ai'           && <AiSection {...props} />}
-        {section === 'transmission' && <TransmissionSection {...props} />}
-        {section === 'log'          && <LogSection {...props} />}
+        {section === 'mission'      && <MissionSection {...props} workspaceMode={workspaceMode} onSetWorkspaceMode={onSetWorkspaceMode} />}
+        {section === 'spacecraft'   && <SpacecraftSection {...props} workspaceMode={workspaceMode} onSetWorkspaceMode={onSetWorkspaceMode} />}
+        {section === 'comms'        && <CommsSection {...props} workspaceMode={workspaceMode} onSetWorkspaceMode={onSetWorkspaceMode} />}
+        {section === 'data'         && <DataSection {...props} workspaceMode={workspaceMode} onSetWorkspaceMode={onSetWorkspaceMode} />}
+        {section === 'ai'           && <AiSection {...props} workspaceMode={workspaceMode} onSetWorkspaceMode={onSetWorkspaceMode} />}
+        {section === 'transmission' && (
+          <>
+            {props.decisionMode === 'unselected' && (
+              <DecisionModeSelector {...props} workspaceMode={workspaceMode} onSetWorkspaceMode={onSetWorkspaceMode} />
+            )}
+            {props.decisionMode !== 'unselected' && <TransmissionSection {...props} workspaceMode={workspaceMode} onSetWorkspaceMode={onSetWorkspaceMode} />}
+            {props.decisionMode === 'unselected' && <TransmissionSection {...props} workspaceMode={workspaceMode} onSetWorkspaceMode={onSetWorkspaceMode} />}
+          </>
+        )}
+        {section === 'log'          && <LogSection {...props} workspaceMode={workspaceMode} onSetWorkspaceMode={onSetWorkspaceMode} />}
         {section === 'config'       && (
           <ConfigPanel
             settings={viewSettings}
             onUpdate={onUpdateSetting}
             onResetSettings={onResetSettings}
             onResetPanelWidth={onResetPanelWidth}
-            onResetSectionSizes={handleResetSectionSizes}
             panelWidth={panelWidth}
             panelDefaultWidth={panelDefaultWidth}
+            availableScenarios={props.availableScenarios}
+            activeScenarioPath={props.activeScenarioPath}
+            scenarioSwitching={props.scenarioSwitching}
+            onSwitchScenario={props.onSwitchScenario}
           />
         )}
       </div>

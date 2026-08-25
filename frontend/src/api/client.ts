@@ -6,8 +6,10 @@
 import type {
   ApproveResponse,
   CandidatePlan,
+  DataProductsResponse,
   EvaluationResult,
   RecommendResponse,
+  ScenariosResponse,
   SimulationResult,
   StateResponse,
   WhatIfEvalResponse,
@@ -114,4 +116,27 @@ export async function approveCustomPlan(
 // Agent
 export async function getRecommendation(): Promise<RecommendResponse> {
   return fetchJson(`${BASE}/agent/recommend`, { method: 'POST' });
+}
+
+// Raw data products — full unfiltered list from active scenario
+export async function getDataProducts(): Promise<DataProductsResponse> {
+  return fetchJson<DataProductsResponse>(`${BASE}/data-products`);
+}
+
+// Scenario management
+export async function listScenarios(): Promise<ScenariosResponse> {
+  return fetchJson<ScenariosResponse>(`${BASE}/scenarios`);
+}
+
+export async function switchScenario(filename: string): Promise<{
+  status: string;
+  scenario_id: string;
+  scenario_path: string;
+  data_products_count: number;
+  anomalies_count: number;
+}> {
+  return fetchJson(`${BASE}/scenarios/switch`, {
+    method: 'POST',
+    body: JSON.stringify({ filename }),
+  });
 }

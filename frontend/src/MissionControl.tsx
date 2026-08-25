@@ -1,16 +1,13 @@
 /**
- * MissionControl — GCSI V3 primary layout.
+ * MissionControl — GCSI V3.5 primary layout.
  *
- * Three-column mission-control interface:
- *   LEFT:   NavigationSidebar (56px, persistent)
- *   CENTER: MissionViewport (3D Three.js scene, flex:1)
- *   RIGHT:  RightPanel (contextual control panel, 320px)
- *
- * All existing backend logic, API calls, state management, and mission
- * functionality is preserved. The visual architecture is redesigned around
- * the central 3D space visualization.
- *
- * State machine: IDLE → AI_ANALYZING → READY → TRANSMITTING → COMPLETE
+ * V3.5 changes:
+ * - Adaptive workspace system: normal | expanded | focus
+ * - Focus mode hides 3D viewport; full panel workspace
+ * - Expanded mode: ~58vw panel, 3D still visible
+ * - Keyboard shortcuts: Ctrl+Shift+F (toggle focus), Esc (exit focus)
+ * - Workspace mode persists across navigation; reset does NOT change mode
+ * - workspaceMode stored in localStorage
  */
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
@@ -20,16 +17,23 @@ import {
   generatePlans,
   evaluatePlan,
   resetScenario,
+  getDataProducts,
+  listScenarios,
+  switchScenario,
 } from './api/client';
 import type {
   AIRecommendation,
+  AiLifecycle,
   AnomalyEvent,
   ApproveResponse,
   CandidatePlan,
   CandidatePrioritization,
+  DataProduct,
+  DecisionMode,
   EvaluationResult,
   LinkState,
   MissionState,
+  ScenarioInfo,
   WhatIfEvalResponse,
 } from './types/domain';
 import type { ApprovalPhase } from './components/ApprovalBar';
@@ -38,6 +42,27 @@ import { MissionViewport } from './components/MissionViewport';
 import { RightPanel } from './components/RightPanel';
 import { useResizablePanel } from './hooks/useResizablePanel';
 import { useViewSettings } from './hooks/useViewSettings';
+
+// ── Workspace mode ─────────────────────────────────────────────────────────────
+
+export type WorkspaceMode = 'normal' | 'expanded' | 'focus';
+
+const WORKSPACE_MODE_KEY = 'GCSI_WORKSPACE_MODE_v1';
+
+function loadWorkspaceMode(): WorkspaceMode {
+  try {
+    const raw = localStorage.getItem(WORKSPACE_MODE_KEY) as WorkspaceMode | null;
+    // Always start normal after a fresh session (don't trap in focus on reload)
+    if (raw === 'expanded') return 'expanded';
+    return 'normal';
+  } catch {
+    return 'normal';
+  }
+}
+
+function saveWorkspaceMode(mode: WorkspaceMode) {
+  try { localStorage.setItem(WORKSPACE_MODE_KEY, mode); } catch { /* ignore */ }
+}
 
 // ── Global styles ─────────────────────────────────────────────────────────────
 
@@ -189,231 +214,71 @@ const styles = `
     border: 1px solid var(--panel-border);
     border-radius: var(--panel-radius);
     padding: 14px 16px;
-    min-width: 0;
   }
-  .approval-bar h2 {
-    font-family: var(--font-sans);
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-muted);
-    letter-spacing: 0.01em;
-    margin-bottom: 12px;
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  button { cursor: pointer; border: none; border-radius: 6px; margin: 0; font-family: var(--font-sans); }
-  button:disabled { opacity: 0.4; cursor: not-allowed; }
-  input[type=text] {
-    background: rgba(255,255,255,0.04);
-    border: 1px solid var(--border);
-    color: var(--text);
-    border-radius: 6px;
-    padding: 6px 10px;
-    font-size: 12px;
-    font-family: var(--font-mono);
-  }
-  input[type=range] { accent-color: var(--warn); cursor: pointer; }
 
-  /* ── Action buttons ── */
-  .btn-approve {
-    background: var(--btn-primary-bg);
-    color: var(--btn-primary-color);
-    border: none !important;
-    font-weight: 600;
-    padding: 6px 16px;
-    font-size: 12px;
-    border-radius: 6px;
-    transition: opacity 0.15s;
+  /* ── V3.5: workspace transitions ── */
+  .workspace-right-panel {
+    transition: width 0.25s cubic-bezier(0.4,0,0.2,1);
   }
-  .btn-approve:hover:not(:disabled) { opacity: 0.85; }
-  .btn-override {
-    background: transparent;
-    color: var(--warn);
-    border: 1px solid rgba(245,158,11,0.35) !important;
-    font-weight: 500;
-    padding: 6px 16px;
-    font-size: 12px;
-    border-radius: 6px;
-    transition: background 0.15s;
+  .workspace-viewport {
+    transition: flex 0.25s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease;
   }
-  .btn-override:hover:not(:disabled) { background: rgba(245,158,11,0.07); }
-  .btn-reset {
-    background: transparent;
-    color: var(--text-muted);
-    border: 1px solid var(--border) !important;
-    padding: 6px 12px;
-    font-size: 12px;
-    border-radius: 6px;
-    transition: background 0.15s;
+  .workspace-divider {
+    transition: opacity 0.2s ease;
   }
-  .btn-reset:hover:not(:disabled) { background: rgba(255,255,255,0.04); }
 
-  /* ── Drag list (transmission queue) ── */
-  .drag-list { display: flex; flex-direction: column; gap: 3px; max-height: 220px; overflow-y: auto; }
-  .drag-item {
-    display: flex; align-items: center; gap: 8px; padding: 5px 8px;
-    background: rgba(255,255,255,0.025);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    cursor: grab;
-    user-select: none;
-    transition: background 0.12s;
-    font-family: var(--font-mono);
-    font-size: 11px;
-  }
-  .drag-item:hover { background: rgba(255,255,255,0.045); }
-  .drag-item:active { cursor: grabbing; }
-  .drag-handle { color: var(--text-dim); font-size: 13px; flex-shrink: 0; }
-  .drag-rank { color: var(--text-dim); min-width: 16px; text-align: right; }
-  .drag-id { min-width: 100px; }
-  .drag-type { min-width: 70px; font-size: 10px; font-weight: 600; }
-  .drag-crit { color: var(--text-muted); font-size: 10px; min-width: 56px; }
-  .drag-size { color: var(--text-dim); font-size: 10px; }
-
-  /* ── Simulation controls ── */
-  .sim-ctrl {
-    background: rgba(255,255,255,0.04);
-    color: var(--text);
-    border: 1px solid var(--border) !important;
-    padding: 5px 10px;
-    font-size: 13px;
-    border-radius: 6px;
-    transition: background 0.12s;
-  }
-  .sim-ctrl:hover { background: rgba(255,255,255,0.07); }
-  .sim-timeline {
-    position: relative;
-    height: 4px;
-    background: var(--border);
-    border-radius: 3px;
-    overflow: visible;
-    margin: 0 0 6px;
-  }
-  .sim-timeline-fill { height: 100%; background: rgba(52,211,153,0.28); border-radius: 3px; }
-  .sim-marker { position: absolute; top: 50%; width: 8px; height: 8px; border-radius: 50%; }
-
-  /* ── Plan tabs ── */
-  .plan-switcher { display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
-  .plan-tab {
-    display: flex; align-items: center; gap: 5px; padding: 5px 11px;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid var(--border) !important;
-    border-radius: 6px;
-    color: var(--text-muted);
-    font-family: var(--font-sans);
-    font-size: 11px;
-    cursor: pointer;
-    transition: background 0.12s, border-color 0.12s, color 0.12s;
-  }
-  .plan-tab:hover { background: rgba(255,255,255,0.055); color: var(--text); }
-  .plan-tab--active {
-    background: rgba(129,140,248,0.10);
-    color: var(--text);
-    border-color: rgba(129,140,248,0.35) !important;
-  }
-  .plan-tab__label { font-weight: 600; }
-  .plan-tab__ai-badge {
-    background: rgba(129,140,248,0.12);
-    color: var(--ai);
-    border-radius: 3px;
-    padding: 1px 5px;
-    font-size: 9px;
-    font-weight: 600;
-  }
-  .plan-tab__risk { font-size: 10px; font-weight: 600; }
-
-  /* ── Risk breakdown ── */
-  .risk-breakdown {
-    background: rgba(255,255,255,0.02);
-    border: 1px solid var(--border-strong);
-    border-radius: 8px;
-    padding: 12px 14px;
-    margin: 8px 0;
-  }
-  .risk-breakdown__header {
-    display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 10px;
-    font-family: var(--font-sans);
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-  .risk-breakdown__close {
-    background: none; border: none !important; color: var(--text-dim);
-    font-size: 14px; cursor: pointer; padding: 0 2px; border-radius: 3px;
-  }
-  .risk-breakdown__close:hover { color: var(--text); }
-  .risk-breakdown__total {
-    margin-top: 10px;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--text-muted);
-    border-top: 1px solid var(--border);
-    padding-top: 8px;
-  }
-  .risk-row { margin-bottom: 8px; }
-  .risk-row__header {
-    display: flex; justify-content: space-between;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    color: var(--text-muted);
-    margin-bottom: 3px;
-  }
-  .risk-row__label { color: var(--text); }
-  .risk-row__weight { color: var(--text-dim); margin: 0 3px; }
-  .risk-row__contrib { color: var(--text); font-weight: 600; margin-left: 2px; }
-  .risk-bar-track { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
-  .risk-bar-fill { height: 100%; border-radius: 2px; }
-
-  /* ── What-if section ── */
-  .whatif-section { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
-  .whatif-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-  .whatif-label {
-    font-family: var(--font-sans);
-    font-size: 10px;
-    font-weight: 500;
-    color: var(--text-muted);
-  }
-  .whatif-preview-badge {
-    background: rgba(245,158,11,0.10);
-    color: var(--warn);
-    border: 1px solid rgba(245,158,11,0.30);
-    border-radius: 4px;
-    padding: 1px 6px;
-    font-family: var(--font-mono);
-    font-size: 9px;
-    font-weight: 600;
-  }
-  .whatif-slider { flex: 1; height: 3px; accent-color: var(--warn); cursor: pointer; }
-  .whatif-reset {
-    background: none;
-    border: 1px solid var(--border) !important;
-    color: var(--text-dim);
-    font-size: 11px;
-    padding: 2px 7px;
-    border-radius: 5px;
-    cursor: pointer;
-    transition: color 0.12s;
-  }
-  .whatif-reset:hover { color: var(--text); }
-
-  /* ── Animations ── */
-  .plan-content-fade { animation: fade-in 0.18s ease-out; }
-  @keyframes fade-in { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
   @keyframes pulse {
-    0%   { box-shadow: 0 0 0 0 rgba(52,211,153,0.50); }
-    70%  { box-shadow: 0 0 0 6px rgba(52,211,153,0); }
-    100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); }
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
   }
 `;
-
-// ── MissionControl ─────────────────────────────────────────────────────────────
 
 export default function MissionControl() {
   // ── Resize + settings hooks ────────────────────────────────────────────────
   const { width: panelWidth, handleMouseDown: handleDividerMouseDown, resetWidth: resetPanelWidth, DEFAULT_WIDTH } = useResizablePanel();
   const { settings: viewSettings, update: updateViewSetting, resetSettings } = useViewSettings();
+
+  // ── V3.5: Workspace mode ───────────────────────────────────────────────────
+  const [workspaceMode, setWorkspaceModeRaw] = useState<WorkspaceMode>(loadWorkspaceMode);
+
+  const setWorkspaceMode = useCallback((mode: WorkspaceMode) => {
+    setWorkspaceModeRaw(mode);
+    saveWorkspaceMode(mode);
+  }, []);
+
+  const toggleFocus = useCallback(() => {
+    setWorkspaceMode(workspaceMode === 'focus' ? 'normal' : 'focus');
+  }, [workspaceMode, setWorkspaceMode]);
+
+  // ── V3.5: Keyboard shortcuts ───────────────────────────────────────────────
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      // Esc: exit focus mode (if not in a modal/input context)
+      if (e.key === 'Escape') {
+        const active = document.activeElement;
+        const isInput = active instanceof HTMLInputElement ||
+                        active instanceof HTMLTextAreaElement ||
+                        active instanceof HTMLSelectElement;
+        if (!isInput && workspaceMode === 'focus') {
+          setWorkspaceMode('normal');
+        }
+        return;
+      }
+      // Ctrl+Shift+F: toggle focus mode (avoid when typing)
+      if (e.ctrlKey && e.shiftKey && e.key === 'F') {
+        const active = document.activeElement;
+        const isInput = active instanceof HTMLInputElement ||
+                        active instanceof HTMLTextAreaElement ||
+                        active instanceof HTMLSelectElement;
+        if (!isInput) {
+          e.preventDefault();
+          toggleFocus();
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [workspaceMode, setWorkspaceMode, toggleFocus]);
 
   // ── Mission state ──────────────────────────────────────────────────────────
   const [linkState, setLinkState] = useState<LinkState | null>(null);
@@ -426,11 +291,6 @@ export default function MissionControl() {
   const [propagationDelayS, setPropagationDelayS] = useState<number | null>(null);
   const [roundTripTimeS, setRoundTripTimeS] = useState<number | null>(null);
   const [queue, setQueue] = useState<CandidatePlan | null>(null);
-  const [recommendation, setRecommendation] = useState<AIRecommendation | null>(null);
-  const [aiProvider, setAiProvider] = useState<string | null>(null);
-  const [aiPrioritization, setAiPrioritization] = useState<CandidatePrioritization | null>(null);
-  const [aiCandidateCount, setAiCandidateCount] = useState<number | null>(null);
-  const [aiPrioritizationError, setAiPrioritizationError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [resetting, setResetting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -443,18 +303,43 @@ export default function MissionControl() {
   const [whatIfSnr, setWhatIfSnr] = useState<number | null>(null);
   const totalWindowRef = useRef<number | null>(null);
 
+  // ── V3.4: Raw data products ────────────────────────────────────────────────
+  const [rawDataProducts, setRawDataProducts] = useState<DataProduct[]>([]);
+  const [hasDataProducts, setHasDataProducts] = useState<boolean>(false);
+
+  // ── V3.4: Scenario management ──────────────────────────────────────────────
+  const [availableScenarios, setAvailableScenarios] = useState<ScenarioInfo[]>([]);
+  const [activeScenarioPath, setActiveScenarioPath] = useState<string | null>(null);
+  const [scenarioSwitching, setScenarioSwitching] = useState(false);
+
+  // ── V3.4: Decision mode ────────────────────────────────────────────────────
+  const [decisionMode, setDecisionMode] = useState<DecisionMode>('unselected');
+
+  // ── V3.4: AI lifecycle ─────────────────────────────────────────────────────
+  const [aiLifecycle, setAiLifecycle] = useState<AiLifecycle>('standby');
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [recommendation, setRecommendation] = useState<AIRecommendation | null>(null);
+  const [aiProvider, setAiProvider] = useState<string | null>(null);
+  const [aiPrioritization, setAiPrioritization] = useState<CandidatePrioritization | null>(null);
+  const [aiCandidateCount, setAiCandidateCount] = useState<number | null>(null);
+  const [aiPrioritizationError, setAiPrioritizationError] = useState<string | null>(null);
+  const aiRequestInFlight = useRef(false);
+
+  // ── V3.4: Manual mode state ────────────────────────────────────────────────
+  const [manualSelectedIds, setManualSelectedIds] = useState<Set<string>>(new Set());
+  const [manualOrder, setManualOrder] = useState<string[]>([]);
+
   // ── Navigation ─────────────────────────────────────────────────────────────
   const [activeSection, setActiveSection] = useState<NavSection>('mission');
 
-  // ── Load / refresh ─────────────────────────────────────────────────────────
-
-  const refresh = useCallback(async () => {
+  // ── V3.4: Load mission data — NO AI ───────────────────────────────────────
+  const loadMissionData = useCallback(async (markStale = false) => {
     setLoading(true);
     setError(null);
     setApproveResult(null);
     setWhatIfEvals(null);
     setWhatIfSnr(null);
-    setApprovalPhase('ai_analyzing');
+    setApprovalPhase('idle');
     try {
       const [stateData, queueData] = await Promise.all([getState(), getQueue()]);
       setLinkState(stateData.link_state);
@@ -480,48 +365,132 @@ export default function MissionControl() {
         setAllPlans([]);
         setAllEvaluations([]);
       }
-      let recOk = false;
       try {
-        const resp = await getRecommendation();
-        setRecommendation(resp.recommendation);
-        setAiProvider(resp.provider);
-        setAiPrioritization(resp.prioritization ?? null);
-        setAiCandidateCount(resp.candidate_count ?? null);
-        setAiPrioritizationError(resp.prioritization_error ?? null);
-        recOk = true;
-      } catch (recErr) {
-        setRecommendation(null);
-        setAiProvider(null);
-        setAiPrioritization(null);
-        setAiCandidateCount(null);
-        setAiPrioritizationError(null);
-        console.warn('AI recommendation unavailable:', recErr);
+        const dpResp = await getDataProducts();
+        setRawDataProducts(dpResp.data_products);
+        setHasDataProducts(dpResp.has_data_products);
+      } catch {
+        setRawDataProducts([]);
+        setHasDataProducts(stateData.data_products_count > 0);
       }
-      setApprovalPhase(recOk ? 'ready' : 'idle');
+      if (markStale) {
+        setAiLifecycle((lc) => lc === 'ready' ? 'stale' : lc);
+      }
     } catch (err) {
       setError(String(err));
-      setApprovalPhase('idle');
     } finally {
       setLoading(false);
     }
   }, []);
 
+  // ── V3.4: Refresh — mission data only, never AI ────────────────────────────
+  const refresh = useCallback(async () => {
+    await loadMissionData(true);
+  }, [loadMissionData]);
+
+  // ── V3.4: Reset scenario ──────────────────────────────────────────────────
   const handleReset = useCallback(async () => {
     setResetting(true);
     setError(null);
+    setDecisionMode('unselected');
+    setAiLifecycle('standby');
+    setAiError(null);
+    setRecommendation(null);
+    setAiProvider(null);
+    setAiPrioritization(null);
+    setAiCandidateCount(null);
+    setAiPrioritizationError(null);
+    setManualSelectedIds(new Set());
+    setManualOrder([]);
+    aiRequestInFlight.current = false;
+    // V3.5: workspace mode is NOT reset on mission reset
     try {
       await resetScenario();
       totalWindowRef.current = null;
-    } catch {}
+    } catch { /* ignore */ }
     finally {
       setResetting(false);
     }
-    await refresh();
-  }, [refresh]);
+    await loadMissionData(false);
+  }, [loadMissionData]);
 
+  // ── V3.4: Initial load — NO AI ────────────────────────────────────────────
   useEffect(() => {
-    handleReset();
-  }, [handleReset]);
+    const init = async () => {
+      setLoading(true);
+      try {
+        const scenList = await listScenarios();
+        setAvailableScenarios(scenList.scenarios);
+        setActiveScenarioPath(scenList.active_scenario_path);
+      } catch { /* informational */ }
+      await loadMissionData(false);
+    };
+    init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── V3.4: Scenario switch ─────────────────────────────────────────────────
+  const handleSwitchScenario = useCallback(async (filename: string) => {
+    setScenarioSwitching(true);
+    setDecisionMode('unselected');
+    setAiLifecycle('standby');
+    setAiError(null);
+    setRecommendation(null);
+    setAiProvider(null);
+    setAiPrioritization(null);
+    setAiCandidateCount(null);
+    setAiPrioritizationError(null);
+    setManualSelectedIds(new Set());
+    setManualOrder([]);
+    aiRequestInFlight.current = false;
+    totalWindowRef.current = null;
+    try {
+      await switchScenario(filename);
+      const scenList = await listScenarios();
+      setAvailableScenarios(scenList.scenarios);
+      setActiveScenarioPath(scenList.active_scenario_path);
+      await loadMissionData(false);
+    } catch (err) {
+      setError(`Failed to switch scenario: ${err}`);
+    } finally {
+      setScenarioSwitching(false);
+    }
+  }, [loadMissionData]);
+
+  // ── V3.4: Explicit AI analysis — ONLY called by operator action ───────────
+  const runAiAnalysis = useCallback(async () => {
+    if (aiRequestInFlight.current) return;
+    aiRequestInFlight.current = true;
+    setAiLifecycle('analyzing');
+    setAiError(null);
+    setRecommendation(null);
+    setAiPrioritization(null);
+    setAiCandidateCount(null);
+    setAiPrioritizationError(null);
+    if (allPlans.length === 0) {
+      try {
+        const plans = await generatePlans();
+        setAllPlans(plans);
+        const evals = await Promise.all(plans.map((p) => evaluatePlan(p)));
+        setAllEvaluations(evals);
+      } catch { /* use existing */ }
+    }
+    try {
+      const resp = await getRecommendation();
+      setRecommendation(resp.recommendation);
+      setAiProvider(resp.provider);
+      setAiPrioritization(resp.prioritization ?? null);
+      setAiCandidateCount(resp.candidate_count ?? null);
+      setAiPrioritizationError(resp.prioritization_error ?? null);
+      setAiLifecycle('ready');
+      setApprovalPhase('ready');
+    } catch (err) {
+      setAiLifecycle('error');
+      setAiError(String(err));
+    } finally {
+      aiRequestInFlight.current = false;
+    }
+  }, [allPlans]);
 
   // ── Approval handlers ──────────────────────────────────────────────────────
 
@@ -530,7 +499,6 @@ export default function MissionControl() {
     setLinkState(result.simulation_result.link_state);
     setMissionState(result.simulation_result.mission_state);
     setApprovalPhase('complete');
-    // Auto-navigate to log after successful transmission
     setActiveSection('log');
   }
 
@@ -548,6 +516,30 @@ export default function MissionControl() {
     }
   }
 
+  // ── V3.4: Manual selection helpers ───────────────────────────────────────
+  function handleToggleManualSelect(productId: string) {
+    setManualSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(productId)) {
+        next.delete(productId);
+        setManualOrder((o) => o.filter((id) => id !== productId));
+      } else {
+        next.add(productId);
+        setManualOrder((o) => [...o, productId]);
+      }
+      return next;
+    });
+  }
+
+  function handleClearManualSelection() {
+    setManualSelectedIds(new Set());
+    setManualOrder([]);
+  }
+
+  function handleManualReorder(newOrder: string[]) {
+    setManualOrder(newOrder);
+  }
+
   // ── Derived values ─────────────────────────────────────────────────────────
 
   const displayEvals = whatIfEvals ?? allEvaluations;
@@ -560,8 +552,35 @@ export default function MissionControl() {
   const recPlan = recommendation
     ? (allPlans.find((p) => p.plan_id === recommendation.recommended_plan_id) ?? null)
     : null;
+  const manualPlan: CandidatePlan | null = manualOrder.length > 0 ? {
+    plan_id: 'operator-manual',
+    strategy: 'manual',
+    generated_by: 'operator',
+    metadata: { decision_mode: 'manual', selected_count: manualOrder.length },
+    packets: manualOrder.map((id) => {
+      const dp = rawDataProducts.find((p) => p.product_id === id);
+      return dp ? {
+        packet_id: dp.product_id,
+        packet_type: dp.product_type,
+        size_bits: dp.size_bits,
+        criticality: dp.criticality,
+        mission_relevance: dp.mission_relevance,
+        deadline_s: dp.deadline_s,
+        retry_cost: dp.retry_cost,
+        delivery_requirement: dp.delivery_requirement,
+      } : null;
+    }).filter(Boolean) as import('./types/domain').Packet[],
+  } : null;
+
+  // ── V3.5: Compute panel width based on workspace mode ─────────────────────
+  // In focus mode: panel fills everything except sidebar (64px)
+  // In expanded mode: clamp(650px, 58vw, 1100px)
+  // In normal mode: use manual panelWidth
 
   // ── Render ────────────────────────────────────────────────────────────────
+
+  const isFocus = workspaceMode === 'focus';
+  const isExpanded = workspaceMode === 'expanded';
 
   return (
     <>
@@ -635,18 +654,41 @@ export default function MissionControl() {
           </span>
         )}
 
-        {aiProvider && (
+        {/* V3.4: Decision mode badge */}
+        {decisionMode !== 'unselected' && (
           <span style={{
             padding: '2px 8px',
-            background: 'rgba(129,140,248,0.08)',
-            color: '#818cf8',
-            border: '1px solid rgba(129,140,248,0.22)',
+            background: decisionMode === 'manual' ? 'rgba(52,211,153,0.07)' : 'rgba(76,141,255,0.07)',
+            color: decisionMode === 'manual' ? '#34d399' : '#6EA8FF',
+            border: `1px solid ${decisionMode === 'manual' ? 'rgba(52,211,153,0.22)' : 'rgba(76,141,255,0.22)'}`,
             borderRadius: 4,
             fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
             fontSize: 9, fontWeight: 600,
             flexShrink: 0,
           }}>
-            AI · {aiProvider}
+            {decisionMode === 'manual' ? 'MANUAL' : 'AI ASSISTED'}
+          </span>
+        )}
+
+        {/* V3.4: AI lifecycle badge */}
+        {aiLifecycle !== 'standby' && (
+          <span style={{
+            padding: '2px 8px',
+            background: aiLifecycle === 'analyzing' ? 'rgba(76,141,255,0.07)' :
+                        aiLifecycle === 'ready' ? 'rgba(52,211,153,0.07)' :
+                        aiLifecycle === 'error' ? 'rgba(248,113,113,0.07)' : 'rgba(245,158,11,0.07)',
+            color: aiLifecycle === 'analyzing' ? '#6EA8FF' :
+                   aiLifecycle === 'ready' ? '#34d399' :
+                   aiLifecycle === 'error' ? '#f87171' : '#f59e0b',
+            border: `1px solid ${aiLifecycle === 'analyzing' ? 'rgba(76,141,255,0.22)' :
+                    aiLifecycle === 'ready' ? 'rgba(52,211,153,0.22)' :
+                    aiLifecycle === 'error' ? 'rgba(248,113,113,0.22)' : 'rgba(245,158,11,0.22)'}`,
+            borderRadius: 4,
+            fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
+            fontSize: 9, fontWeight: 600,
+            flexShrink: 0,
+          }}>
+            AI · {aiLifecycle === 'analyzing' ? 'ANALYZING' : aiLifecycle === 'ready' ? (aiProvider ?? 'READY') : aiLifecycle === 'error' ? 'FAILED' : 'STALE'}
           </span>
         )}
 
@@ -732,6 +774,51 @@ export default function MissionControl() {
         </div>
       )}
 
+      {/* ── Legacy mode banner ───────────────────────────────────────────── */}
+      {!loading && !error && !hasDataProducts && dataProductsCount === 0 && (
+        <div style={{
+          background: 'rgba(245,158,11,0.07)',
+          borderBottom: '1px solid rgba(245,158,11,0.22)',
+          padding: '10px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 14,
+          flexShrink: 0,
+          zIndex: 50,
+        }}>
+          <span style={{
+            fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
+            fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
+            color: '#f59e0b', flexShrink: 0,
+          }}>
+            LIMITED DEMO MODE
+          </span>
+          <span style={{
+            fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
+            fontSize: 11, color: 'rgba(147,160,180,0.8)', flex: 1,
+          }}>
+            {missionState ? `${missionState.current_event} — ` : ''}
+            Legacy packet scenario active. High-volume AI prioritization, anomaly analysis, and spacecraft geometry are unavailable.
+          </span>
+          <button
+            onClick={() => handleSwitchScenario('mission_data_v3.json')}
+            disabled={scenarioSwitching}
+            style={{
+              padding: '5px 14px',
+              background: 'rgba(76,141,255,0.10)',
+              color: '#6EA8FF',
+              border: '1px solid rgba(76,141,255,0.30)',
+              borderRadius: 5, cursor: 'pointer', flexShrink: 0,
+              fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
+              fontSize: 11, fontWeight: 600,
+              opacity: scenarioSwitching ? 0.5 : 1,
+            }}
+          >
+            {scenarioSwitching ? 'Switching…' : 'Switch to High-Volume Demo'}
+          </button>
+        </div>
+      )}
+
       {/* ── Main 3-column layout ──────────────────────────────────────────── */}
       {!loading && !error && (
         <div style={{
@@ -740,14 +827,27 @@ export default function MissionControl() {
           overflow: 'hidden',
           minHeight: 0,
         }}>
-          {/* LEFT: Navigation sidebar */}
+          {/* LEFT: Navigation sidebar — always visible, even in focus mode */}
           <NavigationSidebar
             active={activeSection}
             onNavigate={setActiveSection}
           />
 
-          {/* CENTER: 3D Mission Viewport */}
-          <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+          {/* CENTER: 3D Mission Viewport — hidden in focus mode */}
+          <div
+            className="workspace-viewport"
+            style={{
+              flex: isFocus ? '0 0 0px' : 1,
+              minWidth: 0,
+              position: 'relative',
+              overflow: 'hidden',
+              opacity: isFocus ? 0 : 1,
+              // Use visibility so the canvas stays mounted (preserves 3D state)
+              // but takes no space in focus mode
+              pointerEvents: isFocus ? 'none' : 'auto',
+              width: isFocus ? 0 : undefined,
+            }}
+          >
             <MissionViewport
               linkState={linkState}
               missionState={missionState}
@@ -760,52 +860,57 @@ export default function MissionControl() {
             />
           </div>
 
-          {/* ── Drag divider — resizes Main Control width ── */}
-          <div
-            onMouseDown={handleDividerMouseDown}
-            onDoubleClick={resetPanelWidth}
-            title="Drag to resize · Double-click to reset"
-            style={{
-              width: 5,
-              flexShrink: 0,
-              background: 'transparent',
-              borderLeft: '1px solid rgba(46,58,79,0.7)',
-              cursor: 'col-resize',
-              position: 'relative',
-              zIndex: 30,
-              transition: 'background 0.15s, border-color 0.15s',
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLDivElement).style.background = 'rgba(76,141,255,0.12)';
-              (e.currentTarget as HTMLDivElement).style.borderLeftColor = 'rgba(76,141,255,0.40)';
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLDivElement).style.background = 'transparent';
-              (e.currentTarget as HTMLDivElement).style.borderLeftColor = 'rgba(46,58,79,0.7)';
-            }}
-          >
-            {/* grip dots */}
-            <div style={{
-              position: 'absolute',
-              top: '50%', left: '50%',
-              transform: 'translate(-50%, -50%)',
-              display: 'flex', flexDirection: 'column', gap: 3,
-              pointerEvents: 'none',
-            }}>
-              {[0,1,2].map((i) => (
-                <div key={i} style={{
-                  width: 3, height: 3, borderRadius: '50%',
-                  background: 'rgba(76,141,255,0.30)',
-                }} />
-              ))}
+          {/* ── Drag divider — hidden in focus/expanded modes ── */}
+          {!isFocus && !isExpanded && (
+            <div
+              className="workspace-divider"
+              onMouseDown={handleDividerMouseDown}
+              onDoubleClick={resetPanelWidth}
+              title="Drag to resize · Double-click to reset"
+              style={{
+                width: 5,
+                flexShrink: 0,
+                background: 'transparent',
+                borderLeft: '1px solid rgba(46,58,79,0.7)',
+                cursor: 'col-resize',
+                position: 'relative',
+                zIndex: 30,
+                transition: 'background 0.15s, border-color 0.15s',
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLDivElement).style.background = 'rgba(76,141,255,0.12)';
+                (e.currentTarget as HTMLDivElement).style.borderLeftColor = 'rgba(76,141,255,0.40)';
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLDivElement).style.background = 'transparent';
+                (e.currentTarget as HTMLDivElement).style.borderLeftColor = 'rgba(46,58,79,0.7)';
+              }}
+            >
+              {/* grip dots */}
+              <div style={{
+                position: 'absolute',
+                top: '50%', left: '50%',
+                transform: 'translate(-50%, -50%)',
+                display: 'flex', flexDirection: 'column', gap: 3,
+                pointerEvents: 'none',
+              }}>
+                {[0,1,2].map((i) => (
+                  <div key={i} style={{
+                    width: 3, height: 3, borderRadius: '50%',
+                    background: 'rgba(76,141,255,0.30)',
+                  }} />
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* RIGHT: Contextual control panel — always visible (config view when no mission data) */}
+          {/* RIGHT: Contextual control panel */}
           <RightPanel
             section={activeSection}
             panelWidth={panelWidth}
             panelDefaultWidth={DEFAULT_WIDTH}
+            workspaceMode={workspaceMode}
+            onSetWorkspaceMode={setWorkspaceMode}
             viewSettings={viewSettings}
             onUpdateSetting={updateViewSetting}
             onResetSettings={resetSettings}
@@ -842,6 +947,23 @@ export default function MissionControl() {
             onApprovalError={handleApprovalError}
             onWhatIfResult={handleWhatIfResult}
             onSelectPlan={setActivePlanId}
+            decisionMode={decisionMode}
+            onSelectDecisionMode={setDecisionMode}
+            aiLifecycle={aiLifecycle}
+            aiError={aiError}
+            onRunAiAnalysis={runAiAnalysis}
+            rawDataProducts={rawDataProducts}
+            hasDataProducts={hasDataProducts}
+            manualSelectedIds={manualSelectedIds}
+            manualOrder={manualOrder}
+            manualPlan={manualPlan}
+            onToggleManualSelect={handleToggleManualSelect}
+            onClearManualSelection={handleClearManualSelection}
+            onManualReorder={handleManualReorder}
+            availableScenarios={availableScenarios}
+            activeScenarioPath={activeScenarioPath}
+            scenarioSwitching={scenarioSwitching}
+            onSwitchScenario={handleSwitchScenario}
           />
         </div>
       )}

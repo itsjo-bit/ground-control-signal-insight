@@ -3,6 +3,57 @@
  * Maintained manually — keep in sync with backend/app/models/.
  */
 
+// ── V3.4: Decision mode ───────────────────────────────────────────────────────
+/** The operator's chosen decision workflow. */
+export type DecisionMode = 'unselected' | 'manual' | 'ai';
+
+/** AI Copilot lifecycle status. */
+export type AiLifecycle = 'standby' | 'analyzing' | 'ready' | 'error' | 'stale';
+
+// ── Raw data product (mirrors DataProduct Pydantic model) ─────────────────────
+export interface DataProduct {
+  product_id: string;
+  product_type: string;
+  description: string;
+  subsystem: string;
+  size_bits: number;
+  criticality: number;
+  mission_relevance: number;
+  scientific_value: number;
+  deadline_s: number;
+  age_s: number;
+  anomaly_id: string | null;
+  experiment_id: string | null;
+  related_ids: string[];
+  delivery_requirement: string;
+  retry_cost: number;
+}
+
+// ── Data products API response ────────────────────────────────────────────────
+export interface DataProductsResponse {
+  scenario_id: string;
+  data_products: DataProduct[];
+  total: number;
+  has_data_products: boolean;
+}
+
+// ── Scenario management ───────────────────────────────────────────────────────
+export interface ScenarioInfo {
+  filename: string;
+  scenario_id: string | null;
+  has_data_products: boolean;
+  has_anomalies: boolean;
+  data_products_count: number;
+  anomalies_count: number;
+  is_active: boolean;
+  label: string;
+}
+
+export interface ScenariosResponse {
+  scenarios: ScenarioInfo[];
+  active_scenario_path: string | null;
+}
+
 // Phase 2E-C1/C2/C3-C: authoritative communication budget and geometry from GET /state
 export interface StateResponse {
   link_state: LinkState;

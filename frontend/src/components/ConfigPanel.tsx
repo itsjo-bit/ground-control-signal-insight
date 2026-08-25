@@ -1,21 +1,23 @@
 /**
  * ConfigPanel — Interface / Layout / View settings panel.
  *
- * Shown when user clicks the Config button in the NavigationSidebar.
- * All settings are persisted via useViewSettings hook.
- *
- * V3.3: functional config panel with useful UI/3D settings.
+ * V3.4: Added scenario management section.
  */
 import type { ViewSettings } from '../hooks/useViewSettings';
+import type { ScenarioInfo } from '../types/domain';
 
 interface Props {
   settings: ViewSettings;
   onUpdate: <K extends keyof ViewSettings>(key: K, value: ViewSettings[K]) => void;
   onResetSettings: () => void;
   onResetPanelWidth: () => void;
-  onResetSectionSizes: () => void;
   panelWidth: number;
   panelDefaultWidth: number;
+  // V3.4: scenario management (optional — not shown when unavailable)
+  availableScenarios?: ScenarioInfo[];
+  activeScenarioPath?: string | null;
+  scenarioSwitching?: boolean;
+  onSwitchScenario?: (filename: string) => void;
 }
 
 function ToggleRow({
@@ -145,18 +147,13 @@ export function ConfigPanel({
   onUpdate,
   onResetSettings,
   onResetPanelWidth,
-  onResetSectionSizes,
   panelWidth,
   panelDefaultWidth,
+  availableScenarios = [],
+  activeScenarioPath: _activeScenarioPath,
+  scenarioSwitching = false,
+  onSwitchScenario,
 }: Props) {
-  function resetAllSectionSizes() {
-    // Clear all GCSI_SEC_H_* keys from localStorage
-    try {
-      const keys = Object.keys(localStorage).filter((k) => k.startsWith('GCSI_SEC_H_'));
-      keys.forEach((k) => localStorage.removeItem(k));
-    } catch { /* ignore */ }
-    onResetSectionSizes();
-  }
 
   return (
     <div style={{ padding: '4px 0', minWidth: 0 }}>
@@ -257,7 +254,6 @@ export function ConfigPanel({
 
       <div style={{ display: 'flex', flexWrap: 'wrap', paddingTop: 4 }}>
         <ActionBtn label="Reset panel width" onClick={onResetPanelWidth} />
-        <ActionBtn label="Reset section sizes" onClick={resetAllSectionSizes} />
       </div>
 
       {/* ── 3D View ── */}
@@ -295,6 +291,94 @@ export function ConfigPanel({
           onChange={(v) => onUpdate('smoothCamera', v)}
         />
       </div>
+
+      {/* ── Scenario Management ── */}
+      {availableScenarios && availableScenarios.length > 0 && (
+        <>
+          <SectionHead>Active Scenario</SectionHead>
+          <div style={{ marginBottom: 10 }}>
+            {availableScenarios.map((scen: ScenarioInfo) => {
+              const isActive = scen.is_active;
+              return (
+                <div
+                  key={scen.filename}
+                  style={{
+                    padding: '10px 12px',
+                    marginBottom: 6,
+                    borderRadius: 8,
+                    border: `1px solid ${isActive ? 'rgba(76,141,255,0.35)' : 'rgba(46,58,79,0.7)'}`,
+                    background: isActive ? 'rgba(76,141,255,0.06)' : 'rgba(255,255,255,0.02)',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                    <div style={{
+                      fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
+                      fontSize: 10, fontWeight: 600,
+                      color: isActive ? '#6EA8FF' : 'rgba(147,160,180,0.7)',
+                      wordBreak: 'break-all',
+                    }}>
+                      {scen.filename}
+                    </div>
+                    {isActive && (
+                      <span style={{
+                        fontSize: 8, fontWeight: 700, letterSpacing: '0.07em',
+                        background: 'rgba(52,211,153,0.10)', color: '#34d399',
+                        border: '1px solid rgba(52,211,153,0.25)',
+                        borderRadius: 2, padding: '1px 5px',
+                        fontFamily: '"IBM Plex Mono"', flexShrink: 0, marginLeft: 6,
+                      }}>
+                        ACTIVE
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 10.5, color: 'rgba(147,160,180,0.6)', marginBottom: 4, lineHeight: 1.4 }}>
+                    {scen.label}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {scen.data_products_count > 0 && (
+                      <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#f59e0b' }}>
+                        {scen.data_products_count} products
+                      </span>
+                    )}
+                    {scen.anomalies_count > 0 && (
+                      <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#f87171' }}>
+                        {scen.anomalies_count} anomalies
+                      </span>
+                    )}
+                    {!scen.has_data_products && (
+                      <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#f59e0b' }}>
+                        legacy packets
+                      </span>
+                    )}
+                  </div>
+                  {!isActive && onSwitchScenario && (
+                    <button
+                      onClick={() => onSwitchScenario(scen.filename)}
+                      disabled={scenarioSwitching}
+                      style={{
+                        marginTop: 8, fontSize: 11, padding: '4px 12px',
+                        background: 'rgba(76,141,255,0.08)',
+                        color: '#6EA8FF',
+                        border: '1px solid rgba(76,141,255,0.22)',
+                        borderRadius: 5, cursor: 'pointer',
+                        fontFamily: '"IBM Plex Sans"',
+                        opacity: scenarioSwitching ? 0.5 : 1,
+                      }}
+                    >
+                      {scenarioSwitching ? 'Switching…' : 'Switch to this scenario'}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{
+            fontFamily: '"IBM Plex Sans"', fontSize: 10, color: 'rgba(120,135,155,0.5)', lineHeight: 1.5, marginBottom: 8,
+          }}>
+            Switching scenarios resets AI analysis, manual selections, and transmission state.
+          </div>
+        </>
+      )}
 
       {/* ── Restore Defaults ── */}
       <SectionHead>Restore Defaults</SectionHead>

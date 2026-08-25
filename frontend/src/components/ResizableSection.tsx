@@ -1,12 +1,14 @@
 /**
- * ResizableSection — a vertically resizable content section.
+ * Section — a simple collapsible content section.
  *
- * Renders a header + content area with a drag handle at the bottom.
- * Used inside RightPanel to allow the user to resize stacked sections.
+ * V3.5.2: Replaced the old ResizableSection (drag-resize + fixed height +
+ * localStorage persistence). Sections now use natural content height and let
+ * the parent Main Control scroll container handle vertical scrolling.
  *
- * V3.3: unified resizable section component for all Main Control views.
+ * The resize handle, height state, and GCSI_SEC_H_* localStorage keys have
+ * been removed entirely. Collapse / expand is kept for user convenience.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 
 interface Props {
   /** Title shown in the section header */
@@ -15,94 +17,19 @@ interface Props {
   icon?: string;
   /** Accent color for icon */
   accent?: string;
-  /** Initial height in px. null = auto (content-sized), but still scrollable */
-  defaultHeight?: number | null;
-  /** Minimum allowed height */
-  minHeight?: number;
-  /** Disable the resize handle (for single-section views) */
-  noResize?: boolean;
   /** Whether section starts collapsed */
   defaultOpen?: boolean;
-  /** Storage key for persisting height. If omitted, height is session-only */
-  storageKey?: string;
   children: React.ReactNode;
-}
-
-function loadHeight(key: string | undefined, def: number | null): number | null {
-  if (!key) return def;
-  try {
-    const raw = localStorage.getItem(`GCSI_SEC_H_${key}`);
-    if (!raw) return def;
-    const n = parseInt(raw, 10);
-    return isNaN(n) ? def : n;
-  } catch { return def; }
-}
-
-function saveHeight(key: string | undefined, h: number) {
-  if (!key) return;
-  try { localStorage.setItem(`GCSI_SEC_H_${key}`, String(h)); } catch { /* ignore */ }
 }
 
 export function ResizableSection({
   title,
   icon = '◆',
   accent = '#4C8DFF',
-  defaultHeight = null,
-  minHeight = 80,
-  noResize = false,
   defaultOpen = true,
-  storageKey,
   children,
 }: Props) {
   const [open, setOpen] = useState(defaultOpen);
-  const [height, setHeight] = useState<number | null>(() =>
-    loadHeight(storageKey, defaultHeight)
-  );
-  const dragging = useRef(false);
-  const startY = useRef(0);
-  const startH = useRef(0);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const handleDragStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    if (!open) return;
-    dragging.current = true;
-    startY.current = e.clientY;
-    // Snapshot current rendered height
-    startH.current = height ?? (containerRef.current?.clientHeight ?? 200);
-    document.body.style.cursor = 'ns-resize';
-    document.body.style.userSelect = 'none';
-  }, [open, height]);
-
-  useEffect(() => {
-    function onMove(e: MouseEvent) {
-      if (!dragging.current) return;
-      const delta = e.clientY - startY.current;
-      const next = Math.max(minHeight, startH.current + delta);
-      setHeight(next);
-    }
-    function onUp() {
-      if (!dragging.current) return;
-      dragging.current = false;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      setHeight((h) => {
-        if (h !== null) saveHeight(storageKey, h);
-        return h;
-      });
-    }
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-  }, [storageKey, minHeight]);
-
-  const resetHeight = useCallback(() => {
-    setHeight(defaultHeight);
-    saveHeight(storageKey, defaultHeight ?? 0);
-  }, [storageKey, defaultHeight]);
 
   return (
     <div style={{
@@ -111,11 +38,8 @@ export function ResizableSection({
       borderRadius: 10,
       marginBottom: 8,
       minWidth: 0,
-      overflow: 'hidden',
-      display: 'flex',
-      flexDirection: 'column',
     }}>
-      {/* Header */}
+      {/* Collapse toggle header */}
       <button
         onClick={() => setOpen((o) => !o)}
         style={{
@@ -143,19 +67,6 @@ export function ResizableSection({
         }}>
           {title}
         </span>
-        {!noResize && open && (
-          <span
-            title="Double-click to reset height"
-            onDoubleClick={(e) => { e.stopPropagation(); resetHeight(); }}
-            style={{
-              fontSize: 10, color: 'rgba(76,141,255,0.3)',
-              marginRight: 6, cursor: 'default',
-              fontFamily: 'monospace', userSelect: 'none',
-            }}
-          >
-            ↕
-          </span>
-        )}
         <span style={{
           fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
           fontSize: 13, color: 'rgba(120,140,168,0.45)',
@@ -165,54 +76,14 @@ export function ResizableSection({
         </span>
       </button>
 
-      {/* Content area */}
+      {/* Content — natural height, no scroll trap */}
       {open && (
-        <div
-          ref={containerRef}
-          style={{
-            flex: height === null ? '1 1 auto' : undefined,
-            height: height !== null ? height : undefined,
-            minHeight,
-            overflowY: 'auto',
-            overflowX: 'hidden',
-            padding: '12px 14px',
-            minWidth: 0,
-          }}
-        >
+        <div style={{
+          padding: '12px 14px',
+          minWidth: 0,
+          overflowX: 'hidden',
+        }}>
           {children}
-        </div>
-      )}
-
-      {/* Drag handle — only shown when open and resize enabled */}
-      {open && !noResize && (
-        <div
-          onMouseDown={handleDragStart}
-          style={{
-            height: 6,
-            cursor: 'ns-resize',
-            flexShrink: 0,
-            background: 'transparent',
-            borderTop: '1px solid rgba(76,141,255,0.12)',
-            transition: 'background 0.15s, border-color 0.15s',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLDivElement).style.background = 'rgba(76,141,255,0.08)';
-            (e.currentTarget as HTMLDivElement).style.borderTopColor = 'rgba(76,141,255,0.30)';
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLDivElement).style.background = 'transparent';
-            (e.currentTarget as HTMLDivElement).style.borderTopColor = 'rgba(76,141,255,0.12)';
-          }}
-        >
-          {/* grip dots */}
-          <div style={{
-            width: 28, height: 3,
-            background: 'rgba(76,141,255,0.18)',
-            borderRadius: 2,
-          }} />
         </div>
       )}
     </div>
