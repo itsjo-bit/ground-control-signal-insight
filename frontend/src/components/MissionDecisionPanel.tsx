@@ -638,7 +638,7 @@ export function MissionDecisionPanel({
           </div>
           <div style={{ color: MUTED }}>{prioritizationError}</div>
           <div style={{ color: DIM, fontSize: 11, marginTop: 3 }}>
-            Mission safety is unaffected. The deterministic scheduler has selected the transmission plan.
+            Deterministic scheduler has selected the transmission plan. Operator approval is still required.
           </div>
         </div>
       )}

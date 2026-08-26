@@ -371,8 +371,8 @@ export function AIDecisionPanel({
 
           <div style={{ color: DIM, fontSize: 11, marginTop: 5 }}>
             {providerSwitchedToLocal
-              ? `Local rule-based reasoning completed the workflow. Requested: ${requestedProviderName ?? 'external AI'}.`
-              : 'Deterministic candidate ordering is active. Mission safety is unaffected.'}
+              ? `Local deterministic fallback completed the workflow. Requested: ${requestedProviderName ?? 'external AI'}.`
+              : 'Deterministic candidate ordering is active. Operator approval is still required.'}
           </div>
         </div>
       )}
