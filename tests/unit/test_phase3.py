@@ -603,7 +603,12 @@ class TestWhatIfAPIIntegration:
 
         base_overhead = base_body["evaluations"][0]["retransmission_overhead"]
         bad_overhead = bad_body["evaluations"][0]["retransmission_overhead"]
-        # High BER → more retransmission overhead
+        # High BER → packets defer rather than retransmit when the window is tight.
+        # retransmission_overhead is only non-zero for packets that are analytically
+        # delivered (not deferred).  At BER=0.1 the nominal_pass scenario's first
+        # plan has all packets deferred, so its overhead is 0.0.  The baseline
+        # (BER≈0) also delivers with overhead≈0.  Therefore strict > is NOT
+        # mathematically guaranteed for this fixture; >= remains the correct assertion.
         assert bad_overhead >= base_overhead
 
 

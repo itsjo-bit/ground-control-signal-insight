@@ -28,6 +28,7 @@ from ..domain.plan_integrity import (
     IntegrityReason,
     PlanIntegrityError,
     PlanSource,
+    canonicalize_issued_plan,
     compute_plan_fingerprint,
     get_authoritative_packets,
     reconstruct_authoritative_plan,
@@ -80,13 +81,17 @@ def generate_plans() -> list[CandidatePlan]:
     )
 
     # Register each plan in the issued-plan registry.
+    # canonicalize_issued_plan() sets plan_source BEFORE hashing (invariant),
+    # then returns a deep-copy snapshot so the registry is immutable.
     scenario_id = state.active_scenario.scenario_id
     for plan in plans:
-        order_sha, canonical_sha = compute_plan_fingerprint(plan, scenario_id)
-        # Tag the plan with its trusted source
-        plan.metadata["plan_source"] = PlanSource.deterministic_generated.value
-        state.register_issued_plan(
+        snapshot, order_sha, canonical_sha = canonicalize_issued_plan(
             plan,
+            scenario_id,
+            PlanSource.deterministic_generated,
+        )
+        state.register_issued_plan(
+            snapshot,
             scenario_id=scenario_id,
             packet_order_sha256=order_sha,
             canonical_plan_sha256=canonical_sha,

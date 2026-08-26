@@ -48,6 +48,7 @@ from ..domain.plan_integrity import (
     IntegrityReason,
     PlanIntegrityError,
     PlanSource,
+    _compute_order_hash,
     compute_plan_fingerprint,
     reconstruct_authoritative_plan,
 )
@@ -142,9 +143,11 @@ def _build_approval_trace(
     canonical_plan_sha256: str,
 ) -> ApprovalTrace:
     """Construct an ApprovalTrace from discrete fields."""
+    import uuid  # noqa: PLC0415
     now_utc = datetime.now(timezone.utc)
     timestamp_str = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-    approval_id = f"{plan_id}:{now_utc.strftime('%H%M%S')}"
+    # Use UUID4 suffix for collision resistance across multiple approvals per second.
+    approval_id = f"{plan_id}:{now_utc.strftime('%H%M%S')}:{uuid.uuid4().hex[:8]}"
 
     # Trim operator notes to 500 chars for safety.
     notes = (operator_notes or "").strip()[:500]
@@ -198,7 +201,7 @@ def approve_plan(req: ApproveRequest) -> ApproveResponse:
     issued_plan_verified = False
 
     if req.plan is not None:
-        # ── Phase 4 standard path ─────────────────────────────────────────────
+        # ── Phase 4.1 standard path ───────────────────────────────────────────
         # Validate plan_id consistency.
         if req.plan.plan_id != req.plan_id:
             raise HTTPException(
@@ -221,8 +224,49 @@ def approve_plan(req: ApproveRequest) -> ApproveResponse:
                 ),
             )
 
-        # Verify the submitted packet order matches the registered order.
-        from ..domain.plan_integrity import _compute_order_hash  # noqa: PLC0415
+        # ── Issue D.1: Scenario binding check ────────────────────────────────
+        # The issued plan must belong to the currently active scenario.
+        # This catches stale plans left over from a previous scenario that was
+        # not fully cleared (belt-and-suspenders on top of normal invalidation).
+        if record.scenario_id != scenario.scenario_id:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Plan '{req.plan_id}' was issued for scenario "
+                    f"'{record.scenario_id}' but the active scenario is "
+                    f"'{scenario.scenario_id}'.  "
+                    f"[{IntegrityReason.stale_plan.value}] "
+                    "Re-generate plans for the current scenario."
+                ),
+            )
+
+        # ── Issue D.2: Registry canonical fingerprint integrity ───────────────
+        # Recompute the canonical SHA from the stored canonical plan and verify
+        # it matches the stored fingerprint.  A mismatch indicates an internal
+        # consistency failure and must never execute.
+        from ..domain.plan_integrity import _compute_canonical_hash  # noqa: PLC0415
+        recomputed_sha = _compute_canonical_hash(
+            record.canonical_plan, record.scenario_id
+        )
+        if recomputed_sha != record.canonical_plan_sha256:
+            logger.error(
+                "Registry fingerprint integrity failure for plan '%s': "
+                "stored=%s recomputed=%s",
+                req.plan_id, record.canonical_plan_sha256, recomputed_sha,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"[{IntegrityReason.fingerprint_mismatch.value}] "
+                    f"Internal registry integrity failure for plan '{req.plan_id}'. "
+                    "The stored canonical fingerprint does not match the canonical plan. "
+                    "Do not execute. Re-generate plans."
+                ),
+            )
+
+        # ── Issue D.3: Submitted order verification ───────────────────────────
+        # The submitted packet order must exactly match the registered order.
+        # This prevents order, subset, or identity tampering via POST /approve.
         submitted_order_sha = _compute_order_hash(
             [p.packet_id for p in req.plan.packets]
         )
@@ -239,15 +283,13 @@ def approve_plan(req: ApproveRequest) -> ApproveResponse:
         issued_plan_verified = True
         plan_source = PlanSource(record.plan_source)
 
-        # Reconstruct packet facts from scenario (authoritative).
-        try:
-            trace = reconstruct_authoritative_plan(
-                req.plan,
-                scenario,
-                plan_source=plan_source,
-            )
-        except PlanIntegrityError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        # ── Issue D.4: Execute the canonical issued plan ──────────────────────
+        # The plan that enters TransmissionSimulator is the canonical issued plan
+        # from the registry — NOT a reconstruction of the client submission.
+        # This guarantees executed canonical identity == issued canonical identity.
+        # Trusted provenance: plan_id, strategy, generated_by, metadata all from
+        # the registry canonical plan, not from the client.
+        executed_plan = record.canonical_plan
 
     else:
         # ── Legacy path: regenerate from plan_id ─────────────────────────────
@@ -283,24 +325,40 @@ def approve_plan(req: ApproveRequest) -> ApproveResponse:
         except PlanIntegrityError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    # ── Determine the plan and fingerprints to use for simulation ─────────────
+    if req.plan is not None:
+        # Standard path: use the canonical issued plan from the registry.
+        # executed_plan was assigned above from record.canonical_plan.
+        exec_order_sha = record.packet_order_sha256  # type: ignore[possibly-undefined]
+        exec_canonical_sha = record.canonical_plan_sha256  # type: ignore[possibly-undefined]
+        packet_count = len(executed_plan.packets)  # type: ignore[possibly-undefined]
+        authoritative_reconstruction = True
+    else:
+        # Legacy path: use the reconstructed plan from trace.
+        executed_plan = trace.reconstructed_plan  # type: ignore[possibly-undefined]
+        exec_order_sha = trace.packet_order_sha256  # type: ignore[possibly-undefined]
+        exec_canonical_sha = trace.canonical_plan_sha256  # type: ignore[possibly-undefined]
+        packet_count = trace.packet_count  # type: ignore[possibly-undefined]
+        authoritative_reconstruction = trace.authoritative_reconstruction  # type: ignore[possibly-undefined]
+
     # Build ApprovalTrace.
     approval_trace = _build_approval_trace(
-        plan_id=trace.reconstructed_plan.plan_id,
+        plan_id=executed_plan.plan_id,
         scenario_id=scenario_id,
         plan_source=plan_source,
         operator_notes=req.operator_notes,
-        authoritative_reconstruction=trace.authoritative_reconstruction,
+        authoritative_reconstruction=authoritative_reconstruction,
         issued_plan_verified=issued_plan_verified,
-        packet_count=trace.packet_count,
-        packet_order_sha256=trace.packet_order_sha256,
-        canonical_plan_sha256=trace.canonical_plan_sha256,
+        packet_count=packet_count,
+        packet_order_sha256=exec_order_sha,
+        canonical_plan_sha256=exec_canonical_sha,
     )
 
     # Persist trace.
     state.last_approval_trace = approval_trace
 
-    # Simulate — uses the authoritative reconstructed plan.
-    result = _run_simulation(trace.reconstructed_plan, seed=None)
+    # Simulate — uses the authoritative executed plan.
+    result = _run_simulation(executed_plan, seed=None)
 
     # Mutate server state with realized outcomes.
     state.active_link_state = result.link_state
@@ -310,14 +368,14 @@ def approve_plan(req: ApproveRequest) -> ApproveResponse:
 
     # Invalidate issued plans — state has mutated.
     state.invalidate_issued_plans(
-        reason=f"plan approved and executed: {trace.reconstructed_plan.plan_id}"
+        reason=f"plan approved and executed: {executed_plan.plan_id}"
     )
 
     return ApproveResponse(
         status="approved",
         simulation_result=result,
         approval_trace=approval_trace,
-        executed_plan=trace.reconstructed_plan,
+        executed_plan=executed_plan,
     )
 
 

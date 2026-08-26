@@ -46,6 +46,10 @@ interface Props {
   evaluation: EvaluationResult | null;
   /** Risk weights from the backend config — used for risk breakdown (Feature 2). */
   riskWeights: RiskWeights | null;
+  /** Phase 4.1: actual Stage-1 prioritization provider (null for legacy scenarios). */
+  prioritizationProvider?: string | null;
+  /** Phase 4.1: actual Stage-2 recommendation provider (equals providerName). */
+  recommendationProvider?: string | null;
 }
 
 export function RecommendationPanel({
@@ -55,6 +59,8 @@ export function RecommendationPanel({
   recommendationFallbackReason,
   evaluation,
   riskWeights,
+  prioritizationProvider,
+  recommendationProvider,
 }: Props) {
   const [showBreakdown, setShowBreakdown] = useState(false);
 
@@ -145,7 +151,9 @@ export function RecommendationPanel({
         <span style={{ fontSize: 10, color: 'var(--text-dim, #57606a)', fontStyle: 'italic' }}>
           ({rec.confidence_semantics === 'uncalibrated_llm'
             ? 'advisory — uncalibrated LLM estimate'
-            : 'advisory — heuristic estimate'})
+            : rec.confidence_semantics === 'heuristic'
+            ? 'advisory — deterministic heuristic estimate'
+            : 'advisory — uncalibrated estimate'})
         </span>
         &nbsp;
         <strong>Plan risk:</strong>{' '}
@@ -171,6 +179,15 @@ export function RecommendationPanel({
           weights={riskWeights}
           onClose={() => setShowBreakdown(false)}
         />
+      )}
+
+      {/* Phase 4.1: Stage-specific provider identity — show when providers differ */}
+      {prioritizationProvider && recommendationProvider && prioritizationProvider !== recommendationProvider && (
+        <p style={{ fontSize: 11, color: 'var(--text-muted, #8b949e)', marginTop: 4 }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}>
+            Prioritization: {prioritizationProvider} · Recommendation: {recommendationProvider}
+          </span>
+        </p>
       )}
 
 <p>

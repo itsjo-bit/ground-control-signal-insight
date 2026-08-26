@@ -170,6 +170,12 @@ export interface EvidenceItem {
   interpretation: string;
 }
 
+/** Phase 4.1: typed confidence semantics — assigned by the backend, not the provider. */
+export type ConfidenceSemantics =
+  | 'heuristic'               // deterministic risk-gap (LocalRuleBasedProvider)
+  | 'uncalibrated_llm'        // LLM self-report, not a calibrated probability
+  | 'unspecified_uncalibrated'; // fail-safe default — uncalibrated, provenance unknown
+
 export interface AIRecommendation {
   recommended_plan_id: string;
   packet_actions: Array<{ packet_id: string; action: string; rank: number }>;
@@ -180,12 +186,12 @@ export interface AIRecommendation {
   /** Provider self-reported confidence. Advisory only — see confidence_semantics. */
   confidence: number;
   /**
-   * How confidence was produced:
-   *   'uncalibrated_llm'  — LLM self-report, not a calibrated probability
-   *   'heuristic'         — deterministic risk-gap (LocalRuleBasedProvider)
-   * Always present from Phase 4+; default 'heuristic' for older responses.
+   * How confidence was produced. Assigned by the backend — NOT by the provider.
+   * 'heuristic'              — deterministic risk-gap (LocalRuleBasedProvider)
+   * 'uncalibrated_llm'       — LLM self-report, not a calibrated probability
+   * 'unspecified_uncalibrated' — fail-safe default, provenance unknown
    */
-  confidence_semantics: string;
+  confidence_semantics: ConfidenceSemantics;
   reasoning: string;
   evidence: EvidenceItem[];
   alternative_plan_id: string | null;
@@ -221,6 +227,16 @@ export interface RecommendResponse {
   requested_provider: string;
   /** The provider that produced the final recommendation (may be 'local' on fallback). */
   actual_provider: string;
+  /**
+   * Phase 4.1: The actual provider that produced Stage-1 ranking.
+   * null for legacy scenarios that skip Stage-1 prioritization.
+   */
+  prioritization_provider: string | null;
+  /**
+   * Phase 4.1: The actual provider that produced the final Stage-2 recommendation.
+   * Equals actual_provider for backwards compatibility.
+   */
+  recommendation_provider: string;
   recommendation: AIRecommendation;
   /** Phase 2C/2D: structured AI prioritization result (v2 scenarios only). */
   prioritization: CandidatePrioritization | null;

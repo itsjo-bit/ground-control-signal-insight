@@ -139,11 +139,15 @@ def register_issued_plan(
     packet_order_sha256: str,
     canonical_plan_sha256: str,
     plan_source_value: str,
-) -> IssuedPlanRecord:
+) -> "IssuedPlanRecord":
     """Add a server-generated plan to the issued-plan registry.
 
     Only call this for plans the backend has generated and sent to the operator.
     Client-submitted plans must NOT be registered here.
+
+    The registry stores a DEEP COPY of the plan, not the original reference.
+    This ensures that subsequent mutations to the original plan object do NOT
+    affect the canonical snapshot in the registry, preserving fingerprint integrity.
 
     Args:
         plan:                   The :class:`CandidatePlan` to register.
@@ -155,10 +159,14 @@ def register_issued_plan(
     Returns:
         The newly created :class:`IssuedPlanRecord`.
     """
+    # Deep-copy the plan into the registry so later mutations to the caller's
+    # plan object cannot affect what the registry considers "issued".
+    canonical_snapshot = plan.model_copy(deep=True)
+
     record = IssuedPlanRecord(
         plan_id=plan.plan_id,
         scenario_id=scenario_id,
-        canonical_plan=plan,
+        canonical_plan=canonical_snapshot,
         packet_order_sha256=packet_order_sha256,
         canonical_plan_sha256=canonical_plan_sha256,
         plan_source=plan_source_value,

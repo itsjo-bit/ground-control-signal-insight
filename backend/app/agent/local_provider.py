@@ -57,7 +57,7 @@ from ..models.evaluation_result import EvaluationResult
 from ..models.evidence_item import EvidenceItem
 from ..models.link_state import LinkState
 from ..models.mission_state import MissionState
-from ..models.recommendation import AIRecommendation
+from ..models.recommendation import AIRecommendation, ConfidenceSemantics
 from ..models.risk_level import RiskLevel
 from .base_provider import AIProviderError, AIResponseError, BaseAIProvider
 from .semantic_rule_prioritizer import SemanticRulePrioritizer
@@ -273,9 +273,9 @@ class LocalRuleBasedProvider(BaseAIProvider):
             packet_actions=packet_actions,
             reasoning=reasoning,
             confidence=confidence,
-            # Phase 4: LocalRuleBasedProvider uses a deterministic risk-gap
-            # heuristic — not an LLM self-report.
-            confidence_semantics="heuristic",
+            # Phase 4.1: LocalRuleBasedProvider uses a deterministic risk-gap
+            # heuristic — not an LLM self-report.  Use typed enum value.
+            confidence_semantics=ConfidenceSemantics.heuristic,
             risk_score=best_eval.risk_score,
             risk_level=risk_level,
             evidence=evidence,

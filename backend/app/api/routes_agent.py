@@ -94,7 +94,7 @@ from ..evaluator.mission_outcome_evaluator import (
     MissionOutcomeEvaluator,
     MissionOutcomeResult,
 )
-from ..domain.plan_integrity import PlanSource, compute_plan_fingerprint
+from ..domain.plan_integrity import PlanSource, canonicalize_issued_plan, get_authoritative_packets
 from ..models.anomaly_event import AnomalyEvent
 from ..models.bridge import data_products_to_packets
 from ..models.candidate_plan import CandidatePlan
@@ -103,7 +103,7 @@ from ..models.candidate_summary import CandidateSummary
 from ..models.evaluation_result import EvaluationResult
 from ..models.evidence_item import EvidenceItem
 from ..models.packet import Packet
-from ..models.recommendation import AIRecommendation
+from ..models.recommendation import AIRecommendation, ConfidenceSemantics
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +129,13 @@ class RecommendResponse(BaseModel):
     ``actual_provider`` — the provider that produced the final recommendation.
     Always set; equals ``requested_provider`` when no fallback occurred.
 
+    ``prioritization_provider`` — the actual provider that produced Stage-1
+    ranking.  ``None`` for legacy scenarios that skip Stage-1 prioritization.
+
+    ``recommendation_provider`` — the actual provider that produced the final
+    Stage-2/operator-facing recommendation.  Defined to equal ``actual_provider``
+    for backwards compatibility.
+
     ``prioritization_fallback_reason`` — set when the primary provider failed
     during candidate prioritization and Local fallback was used.
 
@@ -152,7 +159,11 @@ class RecommendResponse(BaseModel):
     requested_provider: str
     """The provider originally selected by configuration."""
     actual_provider: str
-    """The provider that produced the final result (may be 'local' on fallback)."""
+    """The provider that produced the final recommendation (may be 'local' on fallback)."""
+    prioritization_provider: str | None = None
+    """The actual provider that produced Stage-1 ranking.  None for legacy scenarios."""
+    recommendation_provider: str = ""
+    """The actual provider that produced the final Stage-2 recommendation.  Equals actual_provider."""
     recommendation: AIRecommendation
     prioritization: CandidatePrioritization | None = None
     candidate_count: int | None = None
@@ -173,12 +184,11 @@ class RecommendResponse(BaseModel):
 def _effective_packets(scenario) -> list[Packet]:
     """Return the effective packet list for the given scenario.
 
-    Uses legacy ``packets`` when present; otherwise bridges ``data_products``.
-    Mirrors the same helper in ``routes_plans`` to keep behaviour consistent.
+    Delegates to :func:`~backend.app.domain.plan_integrity.get_authoritative_packets`
+    which is the single authority for this logic.  Both the v2 data_products bridge
+    semantics and the legacy packets path are preserved via that function.
     """
-    if scenario.packets:
-        return scenario.packets
-    return data_products_to_packets(scenario.data_products)
+    return get_authoritative_packets(scenario)
 
 
 def _is_local_provider(provider) -> bool:
@@ -188,6 +198,113 @@ def _is_local_provider(provider) -> bool:
     provenance blinding for Stage-2 recommendation.
     """
     return isinstance(provider, LocalRuleBasedProvider)
+
+
+def _confidence_semantics_for_provider(provider) -> ConfidenceSemantics:
+    """Return the authoritative ConfidenceSemantics for a given provider instance.
+
+    The backend assigns this classification; providers must NOT be able to
+    declare their own confidence semantics.
+
+    Policy:
+        LocalRuleBasedProvider  → heuristic
+        Any other provider      → uncalibrated_llm
+        Unknown/None            → unspecified_uncalibrated
+    """
+    if provider is None:
+        return ConfidenceSemantics.unspecified_uncalibrated
+    if isinstance(provider, LocalRuleBasedProvider):
+        return ConfidenceSemantics.heuristic
+    # Any external LLM provider (Granite, Gemini, Ollama, etc.)
+    return ConfidenceSemantics.uncalibrated_llm
+
+
+def finalize_recommendation(
+    recommendation: AIRecommendation,
+    all_plans: list[CandidatePlan],
+    all_evals: list[EvaluationResult],
+    actual_provider,
+) -> AIRecommendation:
+    """Apply authoritative post-processing to any provider-produced recommendation.
+
+    This is the single backend-controlled finalization layer that runs after
+    EVERY operator-facing recommendation path (Stage-2 external, local, legacy).
+
+    Responsibilities
+    ----------------
+    1. Validate recommended_plan_id refers to a real candidate plan.
+       On invalid ID: return the recommendation unchanged so the caller can
+       apply existing fallback behavior.  (The caller already validated this
+       for the blinded path; this is a safety net for the local/legacy path.)
+
+    2. Locate the authoritative EvaluationResult for the recommended plan.
+
+    3. REPLACE risk_score and risk_level with authoritative PlanEvaluator values.
+
+    4. REBUILD packet_actions from the authoritative recommended plan ordering.
+
+    5. Validate alternative_plan_id; set to None if not a known plan.
+
+    6. Assign confidence_semantics from the ACTUAL provider category.
+       Provider-returned value is NOT trusted for this classification.
+
+    Does NOT modify reasoning or evidence (those remain advisory).
+    Does NOT invent any physical metric.
+
+    Args:
+        recommendation:  The provider-produced AIRecommendation.
+        all_plans:       All authoritative candidate plans.
+        all_evals:       Authoritative EvaluationResult for each plan.
+        actual_provider: The provider instance that produced the recommendation
+                         (used to assign confidence_semantics).
+
+    Returns:
+        A new AIRecommendation with authoritative fields replaced.
+        Returns the original recommendation unchanged if recommended_plan_id
+        is unknown (caller must handle fallback).
+    """
+    plan_map = {p.plan_id: p for p in all_plans}
+    eval_map = {e.plan_id: e for e in all_evals}
+
+    real_plan = plan_map.get(recommendation.recommended_plan_id)
+    real_eval = eval_map.get(recommendation.recommended_plan_id)
+
+    if real_plan is None or real_eval is None:
+        # Unknown plan_id — return unchanged; caller must apply fallback.
+        logger.warning(
+            "finalize_recommendation: recommended_plan_id '%s' not found "
+            "in authoritative plans/evals — skipping finalization.",
+            recommendation.recommended_plan_id,
+        )
+        return recommendation
+
+    # Rebuild authoritative packet_actions from the real plan ordering.
+    authoritative_packet_actions = [
+        {"packet_id": pkt.packet_id, "action": "transmit", "rank": rank}
+        for rank, pkt in enumerate(real_plan.packets, start=1)
+    ]
+
+    # Validate alternative_plan_id; null if not a known plan.
+    alt_id = recommendation.alternative_plan_id
+    if alt_id is not None and alt_id not in plan_map:
+        alt_id = None
+
+    # Assign confidence_semantics from the ACTUAL provider category.
+    # Provider-returned JSON value is never trusted for this.
+    semantics = _confidence_semantics_for_provider(actual_provider)
+
+    return AIRecommendation(
+        recommended_plan_id=recommendation.recommended_plan_id,
+        packet_actions=authoritative_packet_actions,
+        reasoning=recommendation.reasoning,
+        confidence=recommendation.confidence,
+        confidence_semantics=semantics,
+        # Authoritative PlanEvaluator values — never from AI self-reporting.
+        risk_score=real_eval.risk_score,
+        risk_level=real_eval.risk_level,
+        evidence=recommendation.evidence,
+        alternative_plan_id=alt_id,
+    )
 
 
 def _build_blind_recommend(
@@ -606,6 +723,8 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
     # ── Phase 4: register all issued plans ───────────────────────────────────
     # All plans surfaced to the operator (deterministic + optional AI plan) are
     # registered in the issued-plan registry so POST /approve can verify them.
+    # canonicalize_issued_plan() sets plan_source BEFORE hashing (invariant),
+    # then returns a deep-copy snapshot so the registry is immutable.
     _scenario_id = scenario.scenario_id
     for _plan in all_plans_for_stage2:
         _plan_source = (
@@ -613,10 +732,11 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
             if _plan is ai_plan
             else PlanSource.deterministic_generated
         )
-        _order_sha, _canonical_sha = compute_plan_fingerprint(_plan, _scenario_id)
-        _plan.metadata["plan_source"] = _plan_source.value
+        _snapshot, _order_sha, _canonical_sha = canonicalize_issued_plan(
+            _plan, _scenario_id, _plan_source
+        )
         state.register_issued_plan(
-            _plan,
+            _snapshot,
             scenario_id=_scenario_id,
             packet_order_sha256=_order_sha,
             canonical_plan_sha256=_canonical_sha,
@@ -683,10 +803,45 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
     # ── Determine the reported actual_provider ────────────────────────────────
     actual_provider_name = actual_recommendation_provider
 
+    # ── Issue E: Authoritative recommendation finalization ───────────────────
+    # Apply the single finalization layer to EVERY operator-facing recommendation.
+    # This guarantees:
+    #   - risk_score / risk_level are ALWAYS from authoritative PlanEvaluator
+    #   - packet_actions are ALWAYS rebuilt from the authoritative plan ordering
+    #   - confidence_semantics is ALWAYS assigned from the actual provider category
+    #   - alternative_plan_id is validated against known plans
+    #
+    # For the blind Stage-2 path, risk rebinding was already done inside
+    # _build_blind_recommend; finalize_recommendation is idempotent for those
+    # fields and additionally enforces confidence_semantics + alt_id validation.
+    #
+    # Determine which provider instance produced the final recommendation.
+    _final_provider_instance = (
+        _fallback if recommendation_fallback_reason else provider
+    )
+    recommendation = finalize_recommendation(
+        recommendation,
+        all_plans_for_stage2,
+        all_evals_for_stage2,
+        _final_provider_instance,
+    )
+
+    # Stage-specific provider identity (Issue G).
+    # prioritization_provider: actual Stage-1 provider; null for legacy path.
+    # recommendation_provider: actual Stage-2/final provider == actual_provider.
+    _prioritization_provider: str | None
+    if use_v2_path:
+        _prioritization_provider = actual_stage1_provider  # type: ignore[possibly-undefined]
+    else:
+        # Legacy path has no Stage-1 prioritization.
+        _prioritization_provider = None
+
     return RecommendResponse(
         provider=actual_provider_name,
         requested_provider=requested_provider_name,
         actual_provider=actual_provider_name,
+        prioritization_provider=_prioritization_provider,
+        recommendation_provider=actual_provider_name,
         recommendation=recommendation,
         prioritization=prioritization,
         candidate_count=candidate_count,

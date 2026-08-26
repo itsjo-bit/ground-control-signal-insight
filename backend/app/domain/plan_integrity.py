@@ -104,6 +104,9 @@ class IntegrityReason(str, Enum):
     plan_id_conflict = "PLAN_ID_CONFLICT"
     """req.plan_id and req.plan.plan_id disagree."""
 
+    fingerprint_mismatch = "FINGERPRINT_MISMATCH"
+    """Recomputed canonical fingerprint does not match the stored fingerprint."""
+
 
 class PlanIntegrityError(ValueError):
     """Raised when a client plan cannot be reconstructed authoritatively.
@@ -223,6 +226,9 @@ def reconstruct_authoritative_plan(
     deadline_s, retry_cost, delivery_requirement, packet_type) are
     replaced with authoritative scenario values.
 
+    Client-supplied strategy, generated_by, and metadata are NOT preserved.
+    The backend assigns all provenance fields.
+
     Args:
         client_plan:  The client-submitted :class:`CandidatePlan`.
         scenario:     Active :class:`~backend.app.models.scenario.Scenario`.
@@ -266,14 +272,15 @@ def reconstruct_authoritative_plan(
     # Reconstruct packets with authoritative facts, preserving client order.
     authoritative_packets: list[Packet] = [auth_index[pid] for pid in client_ids]
 
-    # Assign backend-controlled provenance metadata.
+    # Assign backend-controlled provenance.
+    # The client must NOT control strategy, generated_by, or metadata provenance.
+    # Only packet IDs/order (already captured in client_ids) are client-controlled.
     reconstructed = CandidatePlan(
         plan_id=client_plan.plan_id,
-        strategy=client_plan.strategy,
+        strategy=f"backend:{plan_source.value}",
         packets=authoritative_packets,
         generated_by=f"backend:{plan_source.value}",
         metadata={
-            **client_plan.metadata,
             "plan_source": plan_source.value,
             "authoritative_reconstruction": True,
         },
@@ -349,8 +356,14 @@ def _compute_canonical_hash(plan: CandidatePlan, scenario_id: str) -> str:
 def compute_plan_fingerprint(plan: CandidatePlan, scenario_id: str) -> tuple[str, str]:
     """Compute both fingerprints for a plan.
 
+    The plan's ``metadata["plan_source"]`` MUST be finalized before calling
+    this function.  The canonical hash includes ``plan_source``; calling this
+    before provenance is set will produce a hash over ``"unknown"`` that will
+    NOT match the hash computed after provenance is set.
+
     Args:
-        plan:        Canonical :class:`CandidatePlan` (must have authoritative packets).
+        plan:        Canonical :class:`CandidatePlan` (must have authoritative packets
+                     and finalized provenance metadata).
         scenario_id: ID of the active scenario.
 
     Returns:
@@ -359,6 +372,49 @@ def compute_plan_fingerprint(plan: CandidatePlan, scenario_id: str) -> tuple[str
     order_sha = _compute_order_hash([p.packet_id for p in plan.packets])
     canonical_sha = _compute_canonical_hash(plan, scenario_id)
     return order_sha, canonical_sha
+
+
+def canonicalize_issued_plan(
+    plan: CandidatePlan,
+    scenario_id: str,
+    plan_source: "PlanSource",
+) -> tuple[CandidatePlan, str, str]:
+    """Finalize provenance, compute fingerprints, and return a deep-copy snapshot.
+
+    This is the single authoritative helper for issuing a backend-generated plan.
+    It guarantees the invariant:
+
+        stored canonical_plan_sha256
+            == SHA-256 of the exact canonical plan snapshot stored in the registry
+
+    Order of operations (required for hash correctness):
+        1. Assign trusted plan_source to metadata (BEFORE hashing).
+        2. Compute order hash and canonical hash.
+        3. Return a deep-copy snapshot of the finalized plan.
+
+    Args:
+        plan:        The backend-generated :class:`CandidatePlan`.  Its metadata
+                     will have ``plan_source`` set to ``plan_source.value`` before
+                     hashing.  The caller's plan object is mutated (plan_source set).
+        scenario_id: Active scenario ID.
+        plan_source: Trusted :class:`PlanSource` classification.
+
+    Returns:
+        Tuple of ``(canonical_snapshot, packet_order_sha256, canonical_plan_sha256)``.
+        ``canonical_snapshot`` is a deep copy with finalized provenance.
+    """
+    # Step 1: Finalize trusted provenance metadata BEFORE hashing.
+    plan.metadata["plan_source"] = plan_source.value
+    plan.metadata["authoritative_reconstruction"] = True
+
+    # Step 2: Compute fingerprints over the finalized plan.
+    order_sha = _compute_order_hash([p.packet_id for p in plan.packets])
+    canonical_sha = _compute_canonical_hash(plan, scenario_id)
+
+    # Step 3: Deep-copy into an immutable snapshot for the registry.
+    snapshot = plan.model_copy(deep=True)
+
+    return snapshot, order_sha, canonical_sha
 
 
 def validate_plan_intent(

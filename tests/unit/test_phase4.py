@@ -740,11 +740,12 @@ class TestConfidenceSemantics:
         )
         provider = LocalRuleBasedProvider()
         rec = provider.recommend(link, mission, [plan_a, plan_b], [eval_a, eval_b])
-        assert rec.confidence_semantics == "heuristic"
+        from backend.app.models.recommendation import ConfidenceSemantics
+        assert rec.confidence_semantics == ConfidenceSemantics.heuristic
 
     def test_ai_recommendation_default_confidence_semantics(self):
-        """Default confidence_semantics must be 'heuristic' per model default."""
-        from backend.app.models.recommendation import AIRecommendation
+        """Default confidence_semantics must be 'unspecified_uncalibrated' (fail-safe)."""
+        from backend.app.models.recommendation import AIRecommendation, ConfidenceSemantics
         from backend.app.models.risk_level import RiskLevel
 
         rec = AIRecommendation(
@@ -756,11 +757,12 @@ class TestConfidenceSemantics:
             reasoning="test",
             evidence=[],
         )
-        assert rec.confidence_semantics == "heuristic"
+        # Phase 4.1: default must be fail-safe unspecified_uncalibrated, NOT heuristic.
+        assert rec.confidence_semantics == ConfidenceSemantics.unspecified_uncalibrated
 
     def test_ai_recommendation_accepts_uncalibrated_llm(self):
-        """confidence_semantics='uncalibrated_llm' must be accepted."""
-        from backend.app.models.recommendation import AIRecommendation
+        """confidence_semantics=ConfidenceSemantics.uncalibrated_llm must be accepted."""
+        from backend.app.models.recommendation import AIRecommendation, ConfidenceSemantics
         from backend.app.models.risk_level import RiskLevel
 
         rec = AIRecommendation(
@@ -769,11 +771,11 @@ class TestConfidenceSemantics:
             risk_score=0.2,
             risk_level=RiskLevel.LOW,
             confidence=0.8,
-            confidence_semantics="uncalibrated_llm",
+            confidence_semantics=ConfidenceSemantics.uncalibrated_llm,
             reasoning="test",
             evidence=[],
         )
-        assert rec.confidence_semantics == "uncalibrated_llm"
+        assert rec.confidence_semantics == ConfidenceSemantics.uncalibrated_llm
 
 
 # ---------------------------------------------------------------------------
