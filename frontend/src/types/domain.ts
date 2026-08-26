@@ -221,6 +221,16 @@ export interface RecommendResponse {
   recommendation_fallback_reason: string | null;
   /** Backwards-compatible alias for prioritization_fallback_reason. */
   prioritization_error: string | null;
+  /**
+   * The AI-prioritized transmission plan (v2/v3 path only).
+   * null for legacy scenarios.
+   */
+  ai_plan: CandidatePlan | null;
+  /**
+   * Deterministic evaluation of ai_plan using the same PlanEvaluator as
+   * the four deterministic baselines (v2/v3 path only). null for legacy scenarios.
+   */
+  ai_evaluation: EvaluationResult | null;
 }
 
 export interface ApproveResponse {

@@ -361,6 +361,9 @@ export default function MissionControl() {
       }
       try {
         const plans = await generatePlans();
+        // Plans are just the 4 deterministic baselines — AI plan is excluded.
+        // If the AI was previously run, its plan entry is removed from the list
+        // here; it will be re-added after the operator runs AI analysis again.
         setAllPlans(plans);
         const evals = await Promise.all(plans.map((p) => evaluatePlan(p)));
         setAllEvaluations(evals);
@@ -378,7 +381,14 @@ export default function MissionControl() {
         setHasDataProducts(stateData.data_products_count > 0);
       }
       if (markStale) {
+        // Mark AI as stale and clear the previous AI plan so stale plan data
+        // does not remain in the plan list while awaiting re-analysis.
         setAiLifecycle((lc) => lc === 'ready' ? 'stale' : lc);
+        // Remove ai-prioritized entries from the lists — they will be re-added
+        // after the operator explicitly runs AI analysis again.
+        setAllPlans((prev) => prev.filter((p) => p.plan_id !== 'ai-prioritized'));
+        setAllEvaluations((prev) => prev.filter((e) => e.plan_id !== 'ai-prioritized'));
+        setRecommendation(null);
       }
     } catch (err) {
       setError(String(err));
@@ -408,6 +418,9 @@ export default function MissionControl() {
     setAiPrioritizationError(null);
     setAiPrioritizationFallbackReason(null);
     setAiRecommendationFallbackReason(null);
+    // Remove ai-prioritized plan from the list on reset
+    setAllPlans((prev) => prev.filter((p) => p.plan_id !== 'ai-prioritized'));
+    setAllEvaluations((prev) => prev.filter((e) => e.plan_id !== 'ai-prioritized'));
     setManualSelectedIds(new Set());
     setManualOrder([]);
     aiRequestInFlight.current = false;
@@ -452,6 +465,9 @@ export default function MissionControl() {
     setAiPrioritizationError(null);
     setAiPrioritizationFallbackReason(null);
     setAiRecommendationFallbackReason(null);
+    // Remove ai-prioritized plan from the list on scenario switch
+    setAllPlans((prev) => prev.filter((p) => p.plan_id !== 'ai-prioritized'));
+    setAllEvaluations((prev) => prev.filter((e) => e.plan_id !== 'ai-prioritized'));
     setManualSelectedIds(new Set());
     setManualOrder([]);
     aiRequestInFlight.current = false;
@@ -481,7 +497,11 @@ export default function MissionControl() {
     setAiPrioritizationError(null);
     setAiPrioritizationFallbackReason(null);
     setAiRecommendationFallbackReason(null);
-    if (allPlans.length === 0) {
+    // Clear stale AI plan before re-analysis so the old plan is never kept
+    // when a new analysis produces a different ranking.
+    setAllPlans((prev) => prev.filter((p) => p.plan_id !== 'ai-prioritized'));
+    setAllEvaluations((prev) => prev.filter((e) => e.plan_id !== 'ai-prioritized'));
+    if (allPlans.filter((p) => p.plan_id !== 'ai-prioritized').length === 0) {
       try {
         const plans = await generatePlans();
         setAllPlans(plans);
@@ -501,6 +521,20 @@ export default function MissionControl() {
       setAiPrioritizationError(resp.prioritization_error ?? null);
       setAiPrioritizationFallbackReason(resp.prioritization_fallback_reason ?? null);
       setAiRecommendationFallbackReason(resp.recommendation_fallback_reason ?? null);
+      // Merge ai-prioritized plan/evaluation into state (v2/v3 path).
+      // Deduplication: the stale entry was already removed above; just append.
+      if (resp.ai_plan) {
+        setAllPlans((prev) => {
+          const withoutAi = prev.filter((p) => p.plan_id !== resp.ai_plan!.plan_id);
+          return [...withoutAi, resp.ai_plan!];
+        });
+      }
+      if (resp.ai_evaluation) {
+        setAllEvaluations((prev) => {
+          const withoutAi = prev.filter((e) => e.plan_id !== resp.ai_evaluation!.plan_id);
+          return [...withoutAi, resp.ai_evaluation!];
+        });
+      }
       setAiLifecycle('ready');
       setApprovalPhase('ready');
     } catch (err) {

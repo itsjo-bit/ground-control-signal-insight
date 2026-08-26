@@ -45,30 +45,43 @@ GCSI is **not** an LLM directly controlling spacecraft transmission.
 The architecture separates three distinct responsibilities:
 
 ```
-Mission Data (150+ products, anomalies, geometry)
+150 Data Products
         ↓
-Deterministic Telecom Analysis
-(RF link, goodput, window capacity)
+Deterministic Candidate Screening
         ↓
-Candidate Screening
-(bounded, reproducible pre-filter)
+AI Stage 1 Semantic Prioritization
         ↓
-AI Stage 1: Semantic Prioritization     ← advisory
-(anomaly-aware, contextual product ranking)
-        ↓
-Deterministic Plan Generation + Evaluation
-(feasibility, risk, capacity — authoritative)
-        ↓
-AI Stage 2: Plan Recommendation         ← advisory
-(reviews evaluated plans, explains tradeoffs)
-        ↓
+AI-Prioritized Candidate Plan
+        │
+        ├─────────────────────────┐
+        │                         │
+4 Deterministic Baselines        │
+(baseline / deadline-first /     │
+ mission-critical-first /        │
+ value-per-cost)                 │
+        │                         │
+        └──────────┬──────────────┘
+                   ↓
+          Common PlanEvaluator
+          (identical metrics for all 5 plans)
+                   ↓
+       Objective 5-Plan Comparison
+                   ↓
+AI Stage 2 Recommendation        ← advisory
+(may recommend AI plan OR any deterministic plan)
+                   ↓
 Human Review
-        ↓
-Human Approval                          ← operator has final authority
-        ↓
+                   ↓
+Human Approval                   ← operator has final authority
+                   ↓
 Transmission Simulation
 (stochastic, seed-controlled)
 ```
+
+**Key principle**: The AI-prioritized plan is not trusted automatically.
+It competes against four deterministic baseline strategies under identical
+evaluation metrics. Stage 2 may recommend the AI plan or any deterministic
+plan based on objective evidence. The human operator retains final authority.
 
 AI operates in two advisory stages. Deterministic calculations remain
 authoritative throughout. Neither AI stage controls or overrides physical
@@ -85,15 +98,37 @@ feasibility, risk scoring, or transmission outcomes.
 ### AI Stage 1 — Semantic Prioritization
 
 AI receives the bounded candidate set (≤50 products) and performs anomaly-aware,
-mission-contextual ranking. The ranked order informs which products are scheduled
-first. AI does not determine feasibility or compute link metrics.
+mission-contextual ranking. The ranked products form the **AI-prioritized plan**:
+AI-ranked products appear first (in priority order); unranked products are appended
+in deterministic BaselineScheduler order. AI does not determine feasibility or compute
+link metrics.
+
+### Five-Plan Architecture
+
+The v2/v3 path generates **five** candidate plans:
+
+| Plan | Origin | Independent of AI? |
+|---|---|---|
+| `baseline` | BaselineScheduler weighted scoring | ✓ Yes |
+| `deadline-first` | Earliest deadline first | ✓ Yes |
+| `mission-critical-first` | Highest criticality first | ✓ Yes |
+| `value-per-cost` | Highest value/cost ratio first | ✓ Yes |
+| `ai-prioritized` | Stage-1 AI semantic ranking | ✗ Causal |
+
+The four deterministic baselines are generated from the **original** packet set,
+completely independent of the AI ranking. They form a scientific control group:
+changing the AI ranking changes the AI plan but must NOT change any baseline.
+
+All five plans are evaluated by the **same** `PlanEvaluator` instance under the
+same link state, mission state, and risk weights. No bonus metrics are added for
+the AI plan.
 
 ### AI Stage 2 — Plan Recommendation
 
-After deterministic plan generation and evaluation, AI reviews the evaluated
-plans and provides an advisory recommendation with evidence citations. It
-explains the tradeoffs between plans using the pre-computed metrics. It does
-not override or recalculate any deterministic result.
+After evaluation, AI receives all five evaluated plans and provides an advisory
+recommendation. It may recommend any plan — including `ai-prioritized` or any
+deterministic baseline. The recommendation is based solely on deterministic
+evaluation evidence. Stage 2 does not invent or modify metrics.
 
 ### Human operator — maintains final authority
 
@@ -102,7 +137,7 @@ No transmission occurs without explicit human approval.
 
 ---
 
-## The 150 → Candidate Screening → AI Ranking Pipeline
+## The 150 → Candidate Screening → AI Ranking → Five-Plan Pipeline
 
 This is the core architectural innovation for high-volume scenarios.
 
@@ -121,21 +156,41 @@ Deterministic candidate screening
         ↓
 Bounded candidate set (default max 50, configurable via GCSI_AI_MAX_CANDIDATES)
         ↓
-AI semantic prioritization
+AI Stage 1: semantic prioritization
 (only the screened candidates are sent to the AI provider)
         ↓
 Valid ranked products (typically 40–50)
         ↓
-AI-ordered plan → deterministic evaluation → recommendation
+Build ai-prioritized plan:
+  • AI-ranked products first (in priority order)
+  • Unranked products appended in BaselineScheduler order
+  • All 150 packets present exactly once
+        │
+        ├──── ALSO generate 4 deterministic baselines from ORIGINAL packet set
+        │     (independent of AI ranking — the scientific control group)
+        ↓
+All 5 plans → same PlanEvaluator → objective comparison
+        ↓
+AI Stage 2 recommendation (from evidence only, no invented metrics)
+        ↓
+Human operator review and approval
 ```
 
-**Why this matters:**
+**AI plan ordering policy:**
 
-- The AI is NOT given all 150 raw products directly
-- Token and context efficiency: bounded input keeps AI behavior predictable
-- Deterministic pre-screening: anomaly-linked and critical products are always included
-- The AI focuses on semantic reasoning across the most relevant candidates
-- Reduced irrelevant information leads to safer, more focused AI output
+The AI cannot legitimately determine the ordering of every unseen product (it only
+ranked ≤50 of 150). The hybrid policy gives AI authority over what it ranked:
+
+- **AI-ranked prefix**: products in `ranked_products` appear first, in priority order
+- **Deterministic tail**: all other products follow BaselineScheduler order
+
+This is a defensible, auditable policy. The provenance is recorded in the plan metadata.
+
+**Why the control group matters:**
+
+- The four deterministic baselines produce identical results regardless of AI ranking
+- If `deadline-first` is objectively better, Stage 2 recommends it
+- The comparison is scientifically fair: no AI bonus, same evaluator, same inputs
 
 The UI reflects this pipeline accurately:
 

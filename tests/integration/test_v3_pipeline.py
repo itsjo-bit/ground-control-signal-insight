@@ -215,6 +215,7 @@ class TestAgentRecommendV3:
 
     @pytest.mark.asyncio
     async def test_recommend_plan_id_is_valid_v3(self, loaded_v3):
+        """recommended_plan_id must be in the 5-plan set (including ai-prioritized)."""
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             resp = await c.post("/agent/recommend")
         rec = resp.json()["recommendation"]
@@ -223,6 +224,7 @@ class TestAgentRecommendV3:
             "deadline-first",
             "mission-critical-first",
             "value-per-cost",
+            "ai-prioritized",
         }
 
     @pytest.mark.asyncio
