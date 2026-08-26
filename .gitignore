@@ -1,4 +1,4 @@
-__pycache__/
+﻿__pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
@@ -6,3 +6,10 @@ venv/
 .env
 node_modules/
 dist/
+# Editor artifacts
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+# Bob AI workspace
+.bob/

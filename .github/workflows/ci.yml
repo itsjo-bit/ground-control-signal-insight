@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend — Python tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          pip install -e ".[dev]"
+
+      - name: Run backend tests (Local provider only — no live API calls)
+        env:
+          # Force Local provider; no external API credentials in CI
+          GCSI_AI_PROVIDER: local
+          GCSI_SCENARIO_PATH: data/scenarios/asteria7_thermal_priority_contact_v1.json
+        run: |
+          python -m pytest tests/ -q --tb=short -m "not granite"
+
+  frontend:
+    name: Frontend — TypeScript typecheck and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: TypeScript typecheck
+        run: npx tsc --noEmit
+
+      - name: Production build
+        run: npm run build

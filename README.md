@@ -511,6 +511,8 @@ GCSI_OLLAMA_ENABLED=true GCSI_OLLAMA_MODEL=llama3.2 uvicorn app.main:app ...
 
 ## Quick Start (Fresh Clone)
 
+**Supported versions**: Python 3.11+, Node.js 18+
+
 ### 1. Clone and navigate
 
 ```bash
@@ -538,16 +540,17 @@ pip install -e ".[dev]"
 cd ..
 ```
 
-### 4. Configure AI credentials (optional)
+### 4. Configure AI credentials (optional — skip for offline Local mode)
 
-Create a `.env` file in `ground-control-signal-insight/` (the project root, one level above `backend/`).
-The server loads it automatically. Skip this step to run with the **Local** provider (no credentials required).
+**No API key is required.** The default **Local** provider works offline.
+
+To use IBM Granite or Google Gemini, create a `.env` file in the project root:
 
 ```bash
 cp .env.example .env
 # Edit .env — set GCSI_GRANITE_API_KEY and GCSI_GRANITE_PROJECT_ID for IBM Granite,
 # or GCSI_GEMINI_API_KEY for Google Gemini.
-# Leave all keys blank to use the offline Local provider.
+# Leave all keys blank (or set GCSI_AI_PROVIDER=local) to use the offline Local provider.
 ```
 
 ### 5. Start the backend
