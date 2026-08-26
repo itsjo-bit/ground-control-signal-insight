@@ -1,4 +1,4 @@
-# GCSI Phase 4.1 — Trust, Safety & Authoritative Execution Boundaries
+# GCSI Phase 4.1a — Trust, Safety & Authoritative Execution Boundaries
 
 ## Overview
 
@@ -153,7 +153,10 @@ stored canonical_plan_sha256
 will have been computed with `plan_source = "unknown"` while the stored
 plan contains the actual value. This ordering bug is corrected in Phase 4.1.
 
-### What the Canonical Hash Covers
+### What the Canonical Fingerprint Covers
+
+The canonical fingerprint (SHA-256) is computed over the **stable execution
+identity** of a plan, not over every serialized field of the `CandidatePlan`.
 
 ```json
 {
@@ -167,8 +170,18 @@ plan contains the actual value. This ordering bug is corrected in Phase 4.1.
 }
 ```
 
-The hash does NOT cover `strategy`, `generated_by`, or arbitrary metadata keys
-other than `plan_source`. It covers the stable authoritative execution identity.
+The fingerprint covers:
+- `scenario_id` — binds the plan to the active session
+- `plan_id` — unique plan identifier
+- `plan_source` — backend-assigned trust classification
+- Ordered authoritative packet fields (`packet_id`, `packet_type`, `size_bits`,
+  `criticality`, `mission_relevance`, `deadline_s`, `retry_cost`,
+  `delivery_requirement`)
+
+The fingerprint does **not** cover `strategy`, `generated_by`, or arbitrary
+metadata keys other than `plan_source`.  It is a **canonical execution
+fingerprint** over the stable authoritative execution identity — not a hash
+of every field in the full `CandidatePlan` serialization.
 
 ---
 
@@ -245,13 +258,20 @@ Execute canonical server-issued facts/provenance.**
 
 ## 7. Recommendation Finalization
 
-Phase 4.1 introduces a single `finalize_recommendation()` layer that runs
-after **every** operator-facing recommendation path, including:
+Phase 4.1a strengthens the `finalize_recommendation()` layer to be
+**fail-closed**.  It runs after **every** operator-facing recommendation path,
+including:
 
 - External compact Stage-2 (Granite, Gemini, Ollama)
 - Local rule-based provider path
 - Legacy external/direct recommendation path
 - Fallback paths
+
+> **Every operator-facing recommendation must successfully bind to an
+> authoritative candidate plan and EvaluationResult before it is returned.**
+>
+> **Recommendations that cannot be authoritatively finalized are rejected and
+> routed through the deterministic Local fallback.**
 
 ### 7.1 Finalizer Responsibilities
 
@@ -259,12 +279,12 @@ Given a provider-produced recommendation plus authoritative plans/evaluations:
 
 | Step | What happens |
 |------|-------------|
-| 1 | Validate `recommended_plan_id` refers to a real candidate plan |
+| 1 | Validate `recommended_plan_id` refers to a real candidate plan — **RAISE** `RecommendationFinalizationError` if not found |
 | 2 | Locate authoritative `CandidatePlan` |
-| 3 | Locate authoritative `EvaluationResult` |
+| 3 | Locate authoritative `EvaluationResult` — **RAISE** `RecommendationFinalizationError` if not found |
 | 4 | **REPLACE** `risk_score` and `risk_level` with authoritative values |
 | 5 | **REBUILD** `packet_actions` from the authoritative plan ordering |
-| 6 | Validate `alternative_plan_id`; set to `null` if not a known plan |
+| 6 | Validate `alternative_plan_id`; silently set to `null` if not a known plan (soft drop — optional field) |
 | 7 | **ASSIGN** `confidence_semantics` from the ACTUAL provider category |
 | 8 | Preserve `reasoning` as advisory text |
 | 9 | Preserve `evidence` (already bound by Stage-2 evidence validation) |
@@ -282,7 +302,37 @@ Given a provider-produced recommendation plus authoritative plans/evaluations:
 | `confidence` | Advisory — provider self-report |
 | `evidence` | Advisory — provider evidence (source-whitelist validated) |
 
-### 7.3 Stage-2 Blinding Preserved
+### 7.3 Typed Finalization Error
+
+`RecommendationFinalizationError` is raised with a typed `reason` code:
+
+| Reason code | Condition |
+|-------------|-----------|
+| `UNKNOWN_RECOMMENDED_PLAN` | `recommended_plan_id` not in authoritative plan set |
+| `MISSING_EVALUATION` | Plan exists but no `EvaluationResult` for that plan |
+| `UNFINALIZABLE_RECOMMENDATION` | Generic — any other unfinalizable condition |
+
+The route layer catches this error and triggers the Local deterministic fallback.
+If Local fallback itself fails or fails finalization, HTTP 502 is returned.
+
+### 7.4 Fail-Closed Route Flow
+
+```
+External provider
+    → recommendation
+    → finalize_recommendation()
+    → if RecommendationFinalizationError:
+        → LocalRuleBasedProvider.recommend()
+        → finalize_recommendation() [Local result]
+        → if also fails: HTTP 502
+        → else: return Local result + recommendation_fallback_reason
+    → else: return finalized result
+```
+
+The operator-facing response always reflects the actual provider via
+`actual_provider`, `recommendation_provider`, and `recommendation_fallback_reason`.
+
+### 7.5 Stage-2 Blinding Preserved
 
 The existing compact Stage-2 architecture is preserved and unaffected:
 - Opaque OPTION aliases (OPTION-A … OPTION-E)
@@ -293,6 +343,11 @@ The existing compact Stage-2 architecture is preserved and unaffected:
 
 `finalize_recommendation()` runs **after** Stage-2 alias/evidence resolution
 and is idempotent for the risk fields already rebound in the blinded path.
+
+**The finalizer is a second safety net.**  For the blinded path, alias mapping
+already validates plan identity.  The finalizer still runs.  If it cannot bind
+the mapped plan and evaluation, it fails closed — prior validation does not
+make finalizer failure impossible.
 
 ---
 
@@ -331,18 +386,22 @@ It is advisory and must never be described as a calibrated probability.
 
 ### Assignment Policy
 
-The backend assigns `confidence_semantics` based on the actual provider
-instance. Provider-returned JSON cannot override this:
+The backend assigns `confidence_semantics` based on **explicit `isinstance`
+checks against known provider classes** — never by string matching.
+Provider-returned JSON cannot override this:
 
 | Provider | Assigned semantics |
 |----------|--------------------|
 | `LocalRuleBasedProvider` | `heuristic` |
-| Granite / Gemini / Ollama / any external LLM | `uncalibrated_llm` |
-| Unknown / `None` | `unspecified_uncalibrated` |
+| `GraniteProvider` | `uncalibrated_llm` |
+| `GeminiProvider` | `uncalibrated_llm` |
+| `OllamaProvider` | `uncalibrated_llm` |
+| Unknown class / `None` | `unspecified_uncalibrated` |
 
-**The fail-safe default is `unspecified_uncalibrated`, NOT `heuristic`.**
-This prevents an external LLM path that forgets to set semantics from
-incorrectly appearing as a deterministic heuristic.
+**The fail-safe default for unknown providers is `unspecified_uncalibrated`,
+NOT `uncalibrated_llm`.**  This prevents future deterministic optimizers,
+rules engines, or other non-LLM providers from being incorrectly labelled
+as uncalibrated LLMs.  An unknown provider class does not prove LLM identity.
 
 ### Frontend Advisory Wording
 
@@ -430,7 +489,21 @@ Use them for:
 
 ---
 
-## 14. Remaining Limitations
+## 14. Phase 4.1a Change Summary
+
+Phase 4.1a (fail-closed finalization) adds the following changes on top of Phase 4.1:
+
+| Area | Change |
+|------|--------|
+| `finalize_recommendation()` | Now raises `RecommendationFinalizationError` on unknown plan or missing eval (was: return unchanged) |
+| `RecommendationFinalizationError` | New typed error with `reason` attribute and typed reason codes |
+| Route fallback | `_finalize_or_fallback()` helper: finalization failure triggers Local fallback; Local failure returns 502 |
+| Confidence semantics | Explicit `isinstance` checks for `GraniteProvider`, `GeminiProvider`, `OllamaProvider`; unknown provider → `unspecified_uncalibrated` (was: `uncalibrated_llm`) |
+| Tests | New `tests/unit/test_phase4_1a.py` with targeted regression tests |
+
+---
+
+## 15. Remaining Limitations
 
 The following limitations are explicitly acknowledged:
 

@@ -80,6 +80,46 @@ class AIPrioritizationError(Exception):
     """
 
 
+class RecommendationFinalizationError(Exception):
+    """Raised when a provider recommendation cannot be authoritatively finalized.
+
+    This is a fail-closed error.  It is raised by ``finalize_recommendation()``
+    when the recommended plan ID cannot be bound to an authoritative
+    ``CandidatePlan`` and ``EvaluationResult``.
+
+    The route layer must NOT return the unfinalized recommendation.  It must
+    trigger the ``LocalRuleBasedProvider`` fallback or, if that also fails,
+    return HTTP 502.
+
+    Reason codes (``reason`` attribute)
+    ------------------------------------
+    UNKNOWN_RECOMMENDED_PLAN
+        ``recommended_plan_id`` does not exist in the authoritative plan set.
+
+    MISSING_EVALUATION
+        Plan exists but no ``EvaluationResult`` for that plan was found.
+
+    INVALID_ALTERNATIVE_PLAN
+        Internal use — alternative plan policy is soft-drop; not raised.
+
+    UNFINALIZABLE_RECOMMENDATION
+        Generic catch-all for any other condition that prevents finalization.
+    """
+
+    UNKNOWN_RECOMMENDED_PLAN = "UNKNOWN_RECOMMENDED_PLAN"
+    MISSING_EVALUATION = "MISSING_EVALUATION"
+    INVALID_ALTERNATIVE_PLAN = "INVALID_ALTERNATIVE_PLAN"
+    UNFINALIZABLE_RECOMMENDATION = "UNFINALIZABLE_RECOMMENDATION"
+
+    def __init__(self, reason: str, message: str) -> None:
+        super().__init__(message)
+        self.reason = reason
+        self.message = message
+
+    def __repr__(self) -> str:
+        return f"RecommendationFinalizationError(reason={self.reason!r}, message={self.message!r})"
+
+
 # ---------------------------------------------------------------------------
 # Abstract base
 # ---------------------------------------------------------------------------

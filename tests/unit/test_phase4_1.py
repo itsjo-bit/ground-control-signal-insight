@@ -694,8 +694,8 @@ class TestRecommendationFinalization:
         finalized = finalize_recommendation(rec, [plan], [eval_a], provider)
         assert finalized.confidence_semantics == ConfidenceSemantics.heuristic
 
-    def test_finalize_recommendation_assigns_uncalibrated_llm_for_external(self, loaded_nominal):
-        """External provider must receive uncalibrated_llm confidence_semantics."""
+    def test_finalize_recommendation_assigns_unspecified_for_unknown_external(self, loaded_nominal):
+        """Unknown external provider must receive unspecified_uncalibrated confidence_semantics (Phase 4.1a)."""
         from backend.app.api.routes_agent import finalize_recommendation
         from backend.app.models.recommendation import AIRecommendation, ConfidenceSemantics
         from backend.app.models.risk_level import RiskLevel
@@ -714,19 +714,19 @@ class TestRecommendationFinalization:
             evidence=[],
         )
 
-        # Fake external provider
+        # Fake provider that is not a known LLM provider — gets unspecified_uncalibrated
         fake_ext = MagicMock()
-        fake_ext.__class__ = type("FakeGraniteProvider", (), {})
-        # Make it NOT a LocalRuleBasedProvider
+        fake_ext.__class__ = type("FakeUnknownProvider", (), {})
         from backend.app.agent.local_provider import LocalRuleBasedProvider
         assert not isinstance(fake_ext, LocalRuleBasedProvider)
 
         finalized = finalize_recommendation(rec, [plan], [eval_a], fake_ext)
-        assert finalized.confidence_semantics == ConfidenceSemantics.uncalibrated_llm
+        assert finalized.confidence_semantics == ConfidenceSemantics.unspecified_uncalibrated
 
-    def test_finalize_recommendation_unknown_plan_id_returns_unchanged(self, loaded_nominal):
-        """Unknown plan_id must not crash; finalize returns rec unchanged."""
+    def test_finalize_recommendation_unknown_plan_id_raises(self, loaded_nominal):
+        """Unknown plan_id must now raise RecommendationFinalizationError (Phase 4.1a)."""
         from backend.app.api.routes_agent import finalize_recommendation
+        from backend.app.agent.base_provider import RecommendationFinalizationError
         from backend.app.agent.local_provider import LocalRuleBasedProvider
         from backend.app.models.recommendation import AIRecommendation
         from backend.app.models.risk_level import RiskLevel
@@ -745,10 +745,9 @@ class TestRecommendationFinalization:
             evidence=[],
         )
         provider = LocalRuleBasedProvider()
-        finalized = finalize_recommendation(rec, [plan], [eval_a], provider)
-        # Returns unchanged (caller must handle fallback)
-        assert finalized.recommended_plan_id == "NONEXISTENT_PLAN_ID"
-        assert finalized.risk_score == pytest.approx(0.99)
+        with pytest.raises(RecommendationFinalizationError) as exc_info:
+            finalize_recommendation(rec, [plan], [eval_a], provider)
+        assert exc_info.value.reason == RecommendationFinalizationError.UNKNOWN_RECOMMENDED_PLAN
 
     def test_finalize_recommendation_drops_invalid_alternative_plan_id(self, loaded_nominal):
         """Invalid alternative_plan_id must be set to None."""
@@ -802,11 +801,12 @@ class TestRecommendationFinalization:
 
 
 class TestInvalidRecommendedPlanId:
-    """Invalid plan_id from provider must not produce fake results."""
+    """Invalid plan_id from provider must cause typed finalization failure (Phase 4.1a)."""
 
-    def test_finalize_skips_invalid_plan_id(self, loaded_nominal):
-        """finalize_recommendation with unknown plan_id must return rec unchanged."""
+    def test_finalize_raises_on_invalid_plan_id(self, loaded_nominal):
+        """finalize_recommendation with unknown plan_id must raise RecommendationFinalizationError."""
         from backend.app.api.routes_agent import finalize_recommendation
+        from backend.app.agent.base_provider import RecommendationFinalizationError
         from backend.app.agent.local_provider import LocalRuleBasedProvider
         from backend.app.models.recommendation import AIRecommendation
         from backend.app.models.risk_level import RiskLevel
@@ -824,12 +824,9 @@ class TestInvalidRecommendedPlanId:
             evidence=[],
         )
         provider = LocalRuleBasedProvider()
-        result = finalize_recommendation(rec, plans, evals, provider)
-
-        # With unknown plan_id, returns unchanged — no invention
-        assert result.recommended_plan_id == "TOTALLY_FAKE_PLAN_ID"
-        # risk is not from the real plan's eval
-        assert result.risk_score == pytest.approx(0.5)
+        with pytest.raises(RecommendationFinalizationError) as exc_info:
+            finalize_recommendation(rec, plans, evals, provider)
+        assert exc_info.value.reason == RecommendationFinalizationError.UNKNOWN_RECOMMENDED_PLAN
 
 
 # ===========================================================================
@@ -867,15 +864,16 @@ class TestConfidenceSemanticsTyped:
         provider = LocalRuleBasedProvider()
         assert _confidence_semantics_for_provider(provider) == ConfidenceSemantics.heuristic
 
-    def test_external_provider_gets_uncalibrated_llm(self):
-        """Non-local provider must get uncalibrated_llm semantics."""
+    def test_unknown_provider_gets_unspecified_uncalibrated(self):
+        """Unknown provider (not Local/Granite/Gemini/Ollama) must get unspecified_uncalibrated (Phase 4.1a)."""
         from backend.app.api.routes_agent import _confidence_semantics_for_provider
         from backend.app.agent.local_provider import LocalRuleBasedProvider
         from backend.app.models.recommendation import ConfidenceSemantics
 
+        # A MagicMock is not a known provider class
         fake_provider = MagicMock()
         assert not isinstance(fake_provider, LocalRuleBasedProvider)
-        assert _confidence_semantics_for_provider(fake_provider) == ConfidenceSemantics.uncalibrated_llm
+        assert _confidence_semantics_for_provider(fake_provider) == ConfidenceSemantics.unspecified_uncalibrated
 
     def test_none_provider_gets_unspecified_uncalibrated(self):
         """None provider must get unspecified_uncalibrated (fail-safe)."""
@@ -958,18 +956,18 @@ class TestStageProviderIdentity:
         local = LocalRuleBasedProvider()
         assert _confidence_semantics_for_provider(local) == ConfidenceSemantics.heuristic
 
-    def test_confidence_semantics_assignment_external(self):
-        """External provider (non-Local): confidence_semantics == uncalibrated_llm."""
+    def test_confidence_semantics_assignment_external_unknown(self):
+        """Unknown provider (non-Local, non-known-LLM): confidence_semantics == unspecified_uncalibrated (Phase 4.1a)."""
         from backend.app.api.routes_agent import _confidence_semantics_for_provider
         from backend.app.agent.local_provider import LocalRuleBasedProvider
         from backend.app.models.recommendation import ConfidenceSemantics
 
-        class FakeGraniteProvider:
+        class UnknownProvider:
             pass
 
-        ext = FakeGraniteProvider()
+        ext = UnknownProvider()
         assert not isinstance(ext, LocalRuleBasedProvider)
-        assert _confidence_semantics_for_provider(ext) == ConfidenceSemantics.uncalibrated_llm
+        assert _confidence_semantics_for_provider(ext) == ConfidenceSemantics.unspecified_uncalibrated
 
 
 # ===========================================================================

@@ -73,9 +73,18 @@ from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException
 
 from .. import state
-from ..agent.base_provider import AIHallucinationError, AIPrioritizationError, AIProviderError, AIResponseError
+from ..agent.base_provider import (
+    AIHallucinationError,
+    AIPrioritizationError,
+    AIProviderError,
+    AIResponseError,
+    RecommendationFinalizationError,
+)
 from ..agent.candidate_prioritizer import CandidatePrioritizer
 from ..agent.local_provider import LocalRuleBasedProvider
+from ..agent.granite_provider import GraniteProvider
+from ..agent.gemini_provider import GeminiProvider
+from ..agent.ollama_provider import OllamaProvider
 from ..agent.provider_factory import get_provider
 from ..agent.stage2_blinding import (
     InvalidStage2AliasError,
@@ -206,17 +215,26 @@ def _confidence_semantics_for_provider(provider) -> ConfidenceSemantics:
     The backend assigns this classification; providers must NOT be able to
     declare their own confidence semantics.
 
-    Policy:
+    Policy (explicit isinstance checks — no string matching):
+        None                    → unspecified_uncalibrated  (fail-safe)
         LocalRuleBasedProvider  → heuristic
-        Any other provider      → uncalibrated_llm
-        Unknown/None            → unspecified_uncalibrated
+        GraniteProvider         → uncalibrated_llm
+        GeminiProvider          → uncalibrated_llm
+        OllamaProvider          → uncalibrated_llm
+        Unknown provider class  → unspecified_uncalibrated  (fail-safe)
+
+    An unknown provider class defaults to ``unspecified_uncalibrated``, NOT
+    ``uncalibrated_llm``.  This prevents a future deterministic optimizer or
+    rules engine from being mislabelled as an LLM.
     """
     if provider is None:
         return ConfidenceSemantics.unspecified_uncalibrated
     if isinstance(provider, LocalRuleBasedProvider):
         return ConfidenceSemantics.heuristic
-    # Any external LLM provider (Granite, Gemini, Ollama, etc.)
-    return ConfidenceSemantics.uncalibrated_llm
+    if isinstance(provider, (GraniteProvider, GeminiProvider, OllamaProvider)):
+        return ConfidenceSemantics.uncalibrated_llm
+    # Unknown provider class — fail safe.  Do NOT assume LLM identity.
+    return ConfidenceSemantics.unspecified_uncalibrated
 
 
 def finalize_recommendation(
@@ -233,17 +251,17 @@ def finalize_recommendation(
     Responsibilities
     ----------------
     1. Validate recommended_plan_id refers to a real candidate plan.
-       On invalid ID: return the recommendation unchanged so the caller can
-       apply existing fallback behavior.  (The caller already validated this
-       for the blinded path; this is a safety net for the local/legacy path.)
+       FAIL CLOSED: raise RecommendationFinalizationError if not found.
 
     2. Locate the authoritative EvaluationResult for the recommended plan.
+       FAIL CLOSED: raise RecommendationFinalizationError if not found.
 
     3. REPLACE risk_score and risk_level with authoritative PlanEvaluator values.
 
     4. REBUILD packet_actions from the authoritative recommended plan ordering.
 
     5. Validate alternative_plan_id; set to None if not a known plan.
+       (Soft drop — alternative is optional advisory; does not fail the recommendation.)
 
     6. Assign confidence_semantics from the ACTUAL provider category.
        Provider-returned value is NOT trusted for this classification.
@@ -260,23 +278,37 @@ def finalize_recommendation(
 
     Returns:
         A new AIRecommendation with authoritative fields replaced.
-        Returns the original recommendation unchanged if recommended_plan_id
-        is unknown (caller must handle fallback).
+
+    Raises:
+        RecommendationFinalizationError: If recommended_plan_id cannot be bound
+            to an authoritative CandidatePlan or EvaluationResult.  The caller
+            MUST NOT return the unfinalized recommendation; it must fall back to
+            LocalRuleBasedProvider or return HTTP 502.
     """
     plan_map = {p.plan_id: p for p in all_plans}
     eval_map = {e.plan_id: e for e in all_evals}
 
     real_plan = plan_map.get(recommendation.recommended_plan_id)
-    real_eval = eval_map.get(recommendation.recommended_plan_id)
-
-    if real_plan is None or real_eval is None:
-        # Unknown plan_id — return unchanged; caller must apply fallback.
-        logger.warning(
-            "finalize_recommendation: recommended_plan_id '%s' not found "
-            "in authoritative plans/evals — skipping finalization.",
-            recommendation.recommended_plan_id,
+    if real_plan is None:
+        raise RecommendationFinalizationError(
+            reason=RecommendationFinalizationError.UNKNOWN_RECOMMENDED_PLAN,
+            message=(
+                f"finalize_recommendation: recommended_plan_id "
+                f"'{recommendation.recommended_plan_id}' does not exist in the "
+                f"authoritative candidate plan set — cannot bind recommendation."
+            ),
         )
-        return recommendation
+
+    real_eval = eval_map.get(recommendation.recommended_plan_id)
+    if real_eval is None:
+        raise RecommendationFinalizationError(
+            reason=RecommendationFinalizationError.MISSING_EVALUATION,
+            message=(
+                f"finalize_recommendation: no EvaluationResult found for "
+                f"recommended_plan_id '{recommendation.recommended_plan_id}' "
+                f"— cannot bind authoritative risk values."
+            ),
+        )
 
     # Rebuild authoritative packet_actions from the real plan ordering.
     authoritative_packet_actions = [
@@ -305,6 +337,103 @@ def finalize_recommendation(
         evidence=recommendation.evidence,
         alternative_plan_id=alt_id,
     )
+
+
+def _finalize_or_fallback(
+    *,
+    recommendation: AIRecommendation,
+    provider_instance,
+    fallback_provider: LocalRuleBasedProvider,
+    all_plans: list[CandidatePlan],
+    all_evals: list[EvaluationResult],
+    link_state,
+    mission_state,
+    anomalies: list[AnomalyEvent],
+    current_fallback_reason: str | None,
+    current_actual_provider: str,
+    requested_provider_name: str,
+) -> tuple[AIRecommendation, str | None, str]:
+    """Attempt to finalize a recommendation; fall back to Local on failure.
+
+    This is the single post-recommendation finalization entry point for the
+    route layer.  It enforces the Phase 4.1a fail-closed guarantee:
+
+      1. Try finalize_recommendation() with the current recommendation.
+      2. If RecommendationFinalizationError is raised:
+         a. Generate a Local recommendation.
+         b. Finalize the Local recommendation.
+         c. Return the Local result with an updated fallback reason.
+      3. If Local fallback itself fails to finalize, raise HTTP 502.
+
+    Returns:
+        (finalized_recommendation, fallback_reason, actual_provider_name)
+    """
+    try:
+        finalized = finalize_recommendation(
+            recommendation,
+            all_plans,
+            all_evals,
+            provider_instance,
+        )
+        return finalized, current_fallback_reason, current_actual_provider
+    except RecommendationFinalizationError as exc:
+        logger.error(
+            "Recommendation finalization rejected '%s' from provider '%s': "
+            "%s (%s). Falling back to LocalRuleBasedProvider.",
+            recommendation.recommended_plan_id,
+            getattr(provider_instance, "provider_name", str(provider_instance)),
+            exc.reason,
+            exc.message,
+        )
+        # Build fallback reason for the operator.
+        fallback_reason = (
+            "Provider recommendation referenced a plan that could not be bound "
+            "to the authoritative candidate set. "
+            "Local deterministic recommendation is in use."
+        )
+        # Combine with any pre-existing fallback reason.
+        if current_fallback_reason:
+            fallback_reason = current_fallback_reason + "  " + fallback_reason
+
+        # ── Local fallback ────────────────────────────────────────────────────
+        try:
+            local_rec = fallback_provider.recommend(
+                link_state,
+                mission_state,
+                all_plans,
+                all_evals,
+                anomalies=anomalies,
+            )
+        except Exception as local_exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"Primary recommendation from '{requested_provider_name}' "
+                    f"failed finalization ({exc.reason}) and the authoritative "
+                    f"Local fallback also failed: {local_exc}"
+                ),
+            ) from local_exc
+
+        # ── Finalize the Local fallback result ────────────────────────────────
+        try:
+            finalized_local = finalize_recommendation(
+                local_rec,
+                all_plans,
+                all_evals,
+                fallback_provider,
+            )
+        except RecommendationFinalizationError as local_fin_exc:
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"Primary recommendation from '{requested_provider_name}' "
+                    f"failed finalization ({exc.reason}) and the Local fallback "
+                    f"recommendation also failed finalization "
+                    f"({local_fin_exc.reason}): {local_fin_exc.message}"
+                ),
+            ) from local_fin_exc
+
+        return finalized_local, fallback_reason, fallback_provider.provider_name
 
 
 def _build_blind_recommend(
@@ -803,7 +932,7 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
     # ── Determine the reported actual_provider ────────────────────────────────
     actual_provider_name = actual_recommendation_provider
 
-    # ── Issue E: Authoritative recommendation finalization ───────────────────
+    # ── Phase 4.1a: Authoritative recommendation finalization (fail-closed) ──
     # Apply the single finalization layer to EVERY operator-facing recommendation.
     # This guarantees:
     #   - risk_score / risk_level are ALWAYS from authoritative PlanEvaluator
@@ -811,20 +940,34 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
     #   - confidence_semantics is ALWAYS assigned from the actual provider category
     #   - alternative_plan_id is validated against known plans
     #
+    # If finalization rejects the current recommendation (unknown plan_id or
+    # missing EvaluationResult), fall back to LocalRuleBasedProvider and
+    # finalize the local result.  If that also fails, return HTTP 502.
+    #
     # For the blind Stage-2 path, risk rebinding was already done inside
     # _build_blind_recommend; finalize_recommendation is idempotent for those
     # fields and additionally enforces confidence_semantics + alt_id validation.
-    #
-    # Determine which provider instance produced the final recommendation.
     _final_provider_instance = (
         _fallback if recommendation_fallback_reason else provider
     )
-    recommendation = finalize_recommendation(
-        recommendation,
-        all_plans_for_stage2,
-        all_evals_for_stage2,
-        _final_provider_instance,
+    recommendation, recommendation_fallback_reason, actual_recommendation_provider = (
+        _finalize_or_fallback(
+            recommendation=recommendation,
+            provider_instance=_final_provider_instance,
+            fallback_provider=_fallback,
+            all_plans=all_plans_for_stage2,
+            all_evals=all_evals_for_stage2,
+            link_state=link_state,
+            mission_state=scenario.mission_state,
+            anomalies=anomalies,
+            current_fallback_reason=recommendation_fallback_reason,
+            current_actual_provider=actual_recommendation_provider,
+            requested_provider_name=requested_provider_name,
+        )
     )
+
+    # Update actual_provider_name after finalization (may have changed to Local on fallback).
+    actual_provider_name = actual_recommendation_provider
 
     # Stage-specific provider identity (Issue G).
     # prioritization_provider: actual Stage-1 provider; null for legacy path.
