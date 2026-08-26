@@ -609,6 +609,8 @@ class TestExperienceEndpoint:
         assert "ingest_replay" in manifest
         assert "ground_information_objectives" in manifest
         assert "curated_candidate_ids" in manifest
+        # Phase 4.2F: validate Pydantic response structure
+        assert "playback" in manifest
 
     @pytest.mark.asyncio
     async def test_experience_manifest_curated_count(self, reset_state):

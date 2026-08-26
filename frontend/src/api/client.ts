@@ -14,6 +14,7 @@ import type {
   StateResponse,
   WhatIfEvalResponse,
 } from '../types/domain';
+import type { ExperienceResponse } from '../types/experience';
 
 // Re-exported for convenience
 export type AssessManualPlanResponse = {
@@ -144,8 +145,8 @@ export async function assessManualPlan(
 }
 
 // GET /experience — experience manifest for the active scenario
-export async function getExperience(): Promise<{ available: boolean; manifest: unknown | null }> {
-  return fetchJson(`${BASE}/experience`);
+export async function getExperience(): Promise<ExperienceResponse> {
+  return fetchJson<ExperienceResponse>(`${BASE}/experience`);
 }
 
 // Scenario management

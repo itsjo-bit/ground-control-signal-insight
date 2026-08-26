@@ -20,6 +20,8 @@ import {
   getDataProducts,
   listScenarios,
   switchScenario,
+  getExperience,
+  assessManualPlan,
 } from './api/client';
 import type {
   AIRecommendation,
@@ -36,12 +38,14 @@ import type {
   ScenarioInfo,
   WhatIfEvalResponse,
 } from './types/domain';
+import type { ExperienceManifest } from './types/experience';
 import type { ApprovalPhase } from './components/ApprovalBar';
 import { NavigationSidebar, type NavSection } from './components/NavigationSidebar';
 import { MissionViewport } from './components/MissionViewport';
 import { RightPanel } from './components/RightPanel';
 import { useResizablePanel } from './hooks/useResizablePanel';
 import { useViewSettings } from './hooks/useViewSettings';
+import type { ManualAssessmentResult } from './experience/missionExperienceReducer';
 
 // ── Workspace mode ─────────────────────────────────────────────────────────────
 
@@ -333,8 +337,60 @@ export default function MissionControl() {
   const [manualSelectedIds, setManualSelectedIds] = useState<Set<string>>(new Set());
   const [manualOrder, setManualOrder] = useState<string[]>([]);
 
+  // ── Phase 4.2F: Experience manifest ───────────────────────────────────────
+  const [experienceManifest, setExperienceManifest] = useState<ExperienceManifest | null>(null);
+  const [experienceAvailable, setExperienceAvailable] = useState<boolean>(false);
+  const [_experienceLoading, setExperienceLoading] = useState<boolean>(false);
+
+  // ── Phase 4.2F: Manual assessment ─────────────────────────────────────────
+  const [manualAssessment, setManualAssessment] = useState<ManualAssessmentResult | null>(null);
+  const [manualAssessmentLoading, setManualAssessmentLoading] = useState<boolean>(false);
+  const [manualAssessmentError, setManualAssessmentError] = useState<string | null>(null);
+  const [manualAssessmentStale, setManualAssessmentStale] = useState<boolean>(false);
+  const [_manualAssessmentOrderFingerprint, setManualAssessmentOrderFingerprint] = useState<string | null>(null);
+
   // ── Navigation ─────────────────────────────────────────────────────────────
   const [activeSection, setActiveSection] = useState<NavSection>('mission');
+
+  // ── Phase 4.2F: Load experience manifest ──────────────────────────────────
+  const loadExperience = useCallback(async () => {
+    setExperienceLoading(true);
+    try {
+      const resp = await getExperience();
+      setExperienceAvailable(resp.available);
+      setExperienceManifest(resp.manifest);
+    } catch {
+      setExperienceAvailable(false);
+      setExperienceManifest(null);
+    } finally {
+      setExperienceLoading(false);
+    }
+  }, []);
+
+  // ── Phase 4.2F: Manual plan assessment ────────────────────────────────────
+  const handleManualEvaluate = useCallback(async () => {
+    if (manualOrder.length === 0) return;
+    const fingerprint = manualOrder.join(',');
+    setManualAssessmentLoading(true);
+    setManualAssessmentError(null);
+    setManualAssessmentOrderFingerprint(fingerprint);
+    try {
+      const resp = await assessManualPlan(manualOrder);
+      const result: ManualAssessmentResult = {
+        plan: resp.plan,
+        evaluation: resp.evaluation,
+        mission_outcome: resp.mission_outcome,
+        capacity_summary: resp.capacity_summary,
+        orderFingerprint: fingerprint,
+      };
+      setManualAssessment(result);
+      setManualAssessmentStale(false);
+    } catch (err) {
+      setManualAssessmentError(String(err));
+    } finally {
+      setManualAssessmentLoading(false);
+    }
+  }, [manualOrder]);
 
   // ── V3.4: Load mission data — NO AI ───────────────────────────────────────
   const loadMissionData = useCallback(async (markStale = false) => {
@@ -400,7 +456,17 @@ export default function MissionControl() {
   // ── V3.4: Refresh — mission data only, never AI ────────────────────────────
   const refresh = useCallback(async () => {
     await loadMissionData(true);
-  }, [loadMissionData]);
+    await loadExperience();  // re-fetch experience on refresh (no intro replay restart)
+  }, [loadMissionData, loadExperience]);
+
+  // ── Phase 4.2F: Clear manual-specific state ───────────────────────────────
+  const clearManualAssessmentState = useCallback(() => {
+    setManualAssessment(null);
+    setManualAssessmentLoading(false);
+    setManualAssessmentError(null);
+    setManualAssessmentStale(false);
+    setManualAssessmentOrderFingerprint(null);
+  }, []);
 
   // ── V3.4: Reset scenario ──────────────────────────────────────────────────
   const handleReset = useCallback(async () => {
@@ -423,6 +489,7 @@ export default function MissionControl() {
     setAllEvaluations((prev) => prev.filter((e) => e.plan_id !== 'ai-prioritized'));
     setManualSelectedIds(new Set());
     setManualOrder([]);
+    clearManualAssessmentState();
     aiRequestInFlight.current = false;
     // V3.5: workspace mode is NOT reset on mission reset
     try {
@@ -433,7 +500,8 @@ export default function MissionControl() {
       setResetting(false);
     }
     await loadMissionData(false);
-  }, [loadMissionData]);
+    await loadExperience();  // re-fetch experience manifest after reset
+  }, [loadMissionData, loadExperience, clearManualAssessmentState]);
 
   // ── V3.4: Initial load — NO AI ────────────────────────────────────────────
   useEffect(() => {
@@ -445,6 +513,7 @@ export default function MissionControl() {
         setActiveScenarioPath(scenList.active_scenario_path);
       } catch { /* informational */ }
       await loadMissionData(false);
+      await loadExperience();  // load experience on initial page load
     };
     init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -470,6 +539,10 @@ export default function MissionControl() {
     setAllEvaluations((prev) => prev.filter((e) => e.plan_id !== 'ai-prioritized'));
     setManualSelectedIds(new Set());
     setManualOrder([]);
+    clearManualAssessmentState();
+    // Clear scenario-specific experience state on switch
+    setExperienceManifest(null);
+    setExperienceAvailable(false);
     aiRequestInFlight.current = false;
     totalWindowRef.current = null;
     try {
@@ -478,12 +551,13 @@ export default function MissionControl() {
       setAvailableScenarios(scenList.scenarios);
       setActiveScenarioPath(scenList.active_scenario_path);
       await loadMissionData(false);
+      await loadExperience();  // load new scenario's experience (may be unavailable)
     } catch (err) {
       setError(`Failed to switch scenario: ${err}`);
     } finally {
       setScenarioSwitching(false);
     }
-  }, [loadMissionData]);
+  }, [loadMissionData, loadExperience, clearManualAssessmentState]);
 
   // ── V3.4: Explicit AI analysis — ONLY called by operator action ───────────
   const runAiAnalysis = useCallback(async () => {
@@ -575,10 +649,22 @@ export default function MissionControl() {
       const next = new Set(prev);
       if (next.has(productId)) {
         next.delete(productId);
-        setManualOrder((o) => o.filter((id) => id !== productId));
+        setManualOrder((o) => {
+          const newOrder = o.filter((id) => id !== productId);
+          // Invalidate assessment when selection changes
+          if (manualAssessment !== null) setManualAssessmentStale(true);
+          setManualAssessmentOrderFingerprint(newOrder.join(','));
+          return newOrder;
+        });
       } else {
         next.add(productId);
-        setManualOrder((o) => [...o, productId]);
+        setManualOrder((o) => {
+          const newOrder = [...o, productId];
+          // Invalidate assessment when selection changes
+          if (manualAssessment !== null) setManualAssessmentStale(true);
+          setManualAssessmentOrderFingerprint(newOrder.join(','));
+          return newOrder;
+        });
       }
       return next;
     });
@@ -587,10 +673,27 @@ export default function MissionControl() {
   function handleClearManualSelection() {
     setManualSelectedIds(new Set());
     setManualOrder([]);
+    clearManualAssessmentState();
   }
 
   function handleManualReorder(newOrder: string[]) {
     setManualOrder(newOrder);
+    // Invalidate assessment when order changes
+    if (manualAssessment !== null) setManualAssessmentStale(true);
+    setManualAssessmentOrderFingerprint(newOrder.join(','));
+  }
+
+  // ── Phase 4.2F: Manual transmit — enters plan_uplink phase ───────────────
+  function handleManualTransmit() {
+    if (manualOrder.length === 0) return;
+    // Use the assessed plan if available and not stale, otherwise build from selection
+    const planToExecute = (manualAssessment && !manualAssessmentStale)
+      ? manualAssessment.plan
+      : manualPlan;
+    if (!planToExecute) return;
+    // Signal to approval: execute this custom plan via /approve/custom
+    // Phase will be set by parent on completion
+    setApprovalPhase('transmitting');
   }
 
   // ── Derived values ─────────────────────────────────────────────────────────
@@ -1021,6 +1124,14 @@ export default function MissionControl() {
             activeScenarioPath={activeScenarioPath}
             scenarioSwitching={scenarioSwitching}
             onSwitchScenario={handleSwitchScenario}
+            experienceManifest={experienceManifest}
+            experienceAvailable={experienceAvailable}
+            manualAssessment={manualAssessment}
+            manualAssessmentLoading={manualAssessmentLoading}
+            manualAssessmentError={manualAssessmentError}
+            manualAssessmentStale={manualAssessmentStale}
+            onManualEvaluate={handleManualEvaluate}
+            onManualTransmit={handleManualTransmit}
           />
         </div>
       )}

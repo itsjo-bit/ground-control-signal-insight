@@ -79,12 +79,7 @@ const RISK_BORDER: Record<RiskLevel, string> = {
 
 // ─── Formatting helpers ────────────────────────────────────────────────────────
 
-function fmtBits(bits: number): string {
-  if (bits >= 1e9) return `${(bits / 1e9).toFixed(2)} Gb`;
-  if (bits >= 1e6) return `${(bits / 1e6).toFixed(1)} Mb`;
-  if (bits >= 1e3) return `${(bits / 1e3).toFixed(1)} kb`;
-  return `${bits} b`;
-}
+import { formatBitsAsDataVolume } from '../utils/formatters';
 
 function fmtSeconds(s: number): string {
   if (s >= 3600) return `${(s / 3600).toFixed(1)} h`;
@@ -307,7 +302,7 @@ function ProductRow({ row }: { row: RankedRow }) {
         {/* Size (when we have the packet) */}
         {packet && (
           <span style={{ fontSize: 10, color: DIM, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
-            {fmtBits(packet.size_bits)}
+            {formatBitsAsDataVolume(packet.size_bits)}
           </span>
         )}
 
@@ -576,7 +571,7 @@ export function MissionDecisionPanel({
             <span style={{ color: DIM, fontFamily: 'var(--font-mono)', fontSize: 10 }}>PACKETS IN PLAN  </span>
             <strong style={{ color: TEXT }}>{recPlan.packets.length}</strong>
             <span style={{ color: DIM, marginLeft: 12, fontFamily: 'var(--font-mono)', fontSize: 10 }}>PAYLOAD  </span>
-            <strong style={{ color: TEXT }}>{fmtBits(selectedBits)}</strong>
+            <strong style={{ color: TEXT }}>{formatBitsAsDataVolume(selectedBits)}</strong>
           </div>
         )}
         {recEval && (
@@ -678,7 +673,7 @@ export function MissionDecisionPanel({
         />
         <Stat
           label="Payload"
-          value={selectedBits > 0 ? fmtBits(selectedBits) : '—'}
+          value={selectedBits > 0 ? formatBitsAsDataVolume(selectedBits) : '—'}
           sub="to transmit"
         />
         <Stat

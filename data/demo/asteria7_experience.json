@@ -90,7 +90,8 @@
       {"offset_ms": 3600, "products": [{"type": "experiment", "count": 64}, {"type": "telemetry",  "count": 48}, {"type": "command_ack","count": 12}]},
       {"offset_ms": 4200, "products": [{"type": "science",    "count": 80}, {"type": "diagnostic", "count": 36}, {"type": "engineering","count": 24}]},
       {"offset_ms": 4800, "products": [{"type": "telemetry",  "count": 74}, {"type": "science",    "count": 52}, {"type": "navigation", "count": 20}]},
-      {"offset_ms": 5400, "products": [{"type": "experiment", "count": 88}, {"type": "diagnostic", "count": 28}, {"type": "telemetry",  "count": 30}]}
+      {"offset_ms": 5400, "products": [{"type": "experiment", "count": 88}, {"type": "diagnostic", "count": 28}, {"type": "telemetry",  "count": 30}]},
+      {"offset_ms": 6000, "products": [{"type": "science",    "count": 42}, {"type": "telemetry",  "count": 32}, {"type": "experiment", "count": 23}]}
     ]
   },
   "ground_information_objectives": {
@@ -153,5 +154,13 @@
     "BG-CMD_ACK_-1170",
     "BG-ROUTINE_-0159",
     "SCI-DIST-413"
-  ]
+  ],
+  "playback": {
+    "ingest_duration_ms": 7200,
+    "uplink_duration_ms": 1500,
+    "contact_acquisition_ms": 2000,
+    "transmission_min_duration_ms": 2000,
+    "propagation_duration_ms": 3000,
+    "ground_receive_interval_ms": 400
+  }
 }

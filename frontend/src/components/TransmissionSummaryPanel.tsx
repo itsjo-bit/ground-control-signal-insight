@@ -13,15 +13,9 @@
  */
 
 import type { CandidatePlan, EvaluationResult, RiskLevel } from '../types/domain';
+import { formatBitsAsDataVolume } from '../utils/formatters';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
-
-function fmtBits(bits: number): string {
-  if (bits >= 1e9) return `${(bits / 1e9).toFixed(2)} Gb`;
-  if (bits >= 1e6) return `${(bits / 1e6).toFixed(2)} Mb`;
-  if (bits >= 1e3) return `${(bits / 1e3).toFixed(1)} kb`;
-  return `${bits} b`;
-}
 
 function fmtSeconds(s: number): string {
   if (s >= 3600) return `${(s / 3600).toFixed(1)} h`;
@@ -195,7 +189,7 @@ export function TransmissionSummaryPanel({ plan, evaluation, availableCapacityBi
             />
             <Stat
               label="Payload"
-              value={fmtBits(totalBits)}
+              value={formatBitsAsDataVolume(totalBits)}
               sub="total selected"
             />
           </>
@@ -248,7 +242,7 @@ export function TransmissionSummaryPanel({ plan, evaluation, availableCapacityBi
           }}>
             <span>Window Budget</span>
             <span style={{ color: isOverBudget ? 'var(--critical, #ff4d5e)' : 'var(--text-muted)' }}>
-              {fmtBits(totalBits)} / {fmtBits(availableCapacityBits)}
+              {formatBitsAsDataVolume(totalBits)} / {formatBitsAsDataVolume(availableCapacityBits)}
               {isOverBudget && ' ⚠ EXCEEDS WINDOW'}
             </span>
           </div>

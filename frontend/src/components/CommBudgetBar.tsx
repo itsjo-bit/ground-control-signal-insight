@@ -17,17 +17,13 @@
  * from GET /state (Phase 2E-C1) and renders them.
  */
 
+import { formatBitsAsDataVolume } from '../utils/formatters';
+
 const DETERM_COLOR = 'var(--signal, #35e7b7)';
 const WARN_COLOR   = 'var(--warn,   #ffb648)';
 const CRIT_COLOR   = 'var(--critical, #ff4d5e)';
 const DIM          = 'var(--text-dim,  #57606a)';
 const MUTED        = 'var(--text-muted, #8b949e)';
-
-function humanBits(bits: number): string {
-  if (bits >= 1_000_000) return `${(bits / 1_000_000).toFixed(1)} Mb`;
-  if (bits >= 1_000)     return `${(bits / 1_000).toFixed(1)} kb`;
-  return `${bits} b`;
-}
 
 interface Props {
   availableCapacityBits: number;
@@ -67,8 +63,8 @@ export function CommBudgetBar({
     ratioColor  = DETERM_COLOR;
   }
 
-  const capacityLabel = humanBits(availableCapacityBits);
-  const queuedLabel   = humanBits(queuedDataBits);
+  const capacityLabel = formatBitsAsDataVolume(availableCapacityBits);
+  const queuedLabel   = formatBitsAsDataVolume(queuedDataBits);
 
   return (
     <div style={{ marginTop: 10 }}>

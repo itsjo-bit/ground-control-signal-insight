@@ -3,6 +3,7 @@ import { approvePlan, approveCustomPlan } from '../api/client';
 import type { ApproveResponse, CandidatePlan, DataProduct, EvaluationResult, Packet } from '../types/domain';
 import type { DecisionMode } from '../types/domain';
 import { formatBitsAsDataVolume } from '../utils/formatters';
+// formatBitsAsDataVolume is used for payload display
 
 
 /** Phase 2E-D4: operator approval state machine phases. */
@@ -542,7 +543,7 @@ export function ApprovalBar({
                   {pkt.packet_type}
                 </span>
                 <span className="drag-crit">crit {pkt.criticality.toFixed(2)}</span>
-                <span className="drag-size">{(pkt.size_bits / 1024).toFixed(1)} kb</span>
+                <span className="drag-size">{formatBitsAsDataVolume(pkt.size_bits)}</span>
               </div>
             ))}
           </div>

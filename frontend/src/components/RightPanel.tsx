@@ -27,9 +27,13 @@ import type {
   ScenarioInfo,
   WhatIfEvalResponse,
 } from '../types/domain';
+import type { ExperienceManifest } from '../types/experience';
+import type { ManualAssessmentResult } from '../experience/missionExperienceReducer';
 import type { ApprovalPhase } from './ApprovalBar';
 import type { ViewSettings } from '../hooks/useViewSettings';
 import type { WorkspaceMode } from '../MissionControl';
+import { formatBitsAsDataVolume, formatDuration } from '../utils/formatters';
+import { presentationLinkStatus, presentationSnrTrend } from '../experience/linkPresentation';
 
 // Import existing panels (preserved as-is)
 import { MissionStatePanel } from './MissionStatePanel';
@@ -145,6 +149,15 @@ interface CommonProps {
   // ── V3.5 props ───────────────────────────────────────────────────────────────
   workspaceMode: WorkspaceMode;
   onSetWorkspaceMode: (mode: WorkspaceMode) => void;
+  // ── Phase 4.2F props ─────────────────────────────────────────────────────────
+  experienceManifest: ExperienceManifest | null;
+  experienceAvailable: boolean;
+  manualAssessment: ManualAssessmentResult | null;
+  manualAssessmentLoading: boolean;
+  manualAssessmentError: string | null;
+  manualAssessmentStale: boolean;
+  onManualEvaluate: () => void;
+  onManualTransmit: () => void;
 }
 
 // ── StatGrid ──────────────────────────────────────────────────────────────────
@@ -247,6 +260,172 @@ function TabBar<T extends string>({
   );
 }
 
+// ── ASTERIA Mission Hero ──────────────────────────────────────────────────────
+
+function AsteriaMissionHero(props: CommonProps) {
+  const { experienceManifest: m, linkState: ls, propagationDelayS, queuedDataBits, availableCapacityBits, anomalies } = props;
+  if (!m || !ls) return null;
+
+  const queuedVolume = formatBitsAsDataVolume(queuedDataBits);
+  const capacityVolume = formatBitsAsDataVolume(availableCapacityBits);
+  const queuePressure = availableCapacityBits > 0 ? (queuedDataBits / availableCapacityBits).toFixed(2) : '—';
+  const fitFraction = availableCapacityBits > 0 && queuedDataBits > 0
+    ? ((availableCapacityBits / queuedDataBits) * 100).toFixed(2)
+    : '—';
+  const uplink = m.schedule.plan_uplink_margin_s;
+  const uplinkLabel = formatDuration(uplink);
+  const oneWayLabel = propagationDelayS !== null ? formatDuration(propagationDelayS) : '—';
+  const contactLabel = formatDuration(m.schedule.contact_duration_s);
+
+  const snrTrend = presentationSnrTrend(ls.snr_db, m.snr_history);
+  const linkStatus = presentationLinkStatus(ls);
+  const linkColor = linkStatus === 'CRITICAL' ? '#f87171' : linkStatus === 'DEGRADED' ? '#f59e0b' : '#34d399';
+
+  const thermalAnomaly = anomalies.find((a) => a.anomaly_id === 'ANOM-THERM-017') ?? anomalies[0] ?? null;
+  const detectedMinutesAgo = thermalAnomaly ? Math.round(thermalAnomaly.detected_at_s / 60) : null;
+
+  const heroMetrics: Array<{ label: string; value: string; color?: string }> = [
+    { label: 'PLAN UPLINK MARGIN', value: uplinkLabel },
+    { label: 'QUEUED DATA', value: queuedVolume, color: '#f59e0b' },
+    { label: 'CONTACT CAPACITY', value: capacityVolume },
+    { label: 'QUEUE PRESSURE', value: `~${queuePressure}×`, color: '#f87171' },
+    { label: 'FIT FRACTION', value: `~${fitFraction}%`, color: '#f87171' },
+    { label: 'ONE-WAY SIGNAL', value: oneWayLabel },
+    { label: 'CONTACT DURATION', value: contactLabel },
+    { label: 'ACTIVE EVENT', value: thermalAnomaly?.anomaly_id ?? 'NONE', color: thermalAnomaly ? '#f87171' : undefined },
+  ];
+
+  return (
+    <div style={{ marginBottom: 12 }}>
+      {/* Hero title */}
+      <div style={{
+        background: 'rgba(8,12,22,0.95)',
+        border: '1px solid rgba(76,141,255,0.22)',
+        borderRadius: 8,
+        padding: '12px 14px',
+        marginBottom: 8,
+      }}>
+        <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 9, color: 'rgba(76,141,255,0.7)', letterSpacing: '0.12em', marginBottom: 4 }}>
+          MISSION
+        </div>
+        <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 18, fontWeight: 700, color: '#e2e8f4', letterSpacing: '0.04em' }}>
+          {m.display.mission_name}
+        </div>
+        <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 10, color: '#f59e0b', letterSpacing: '0.1em', marginTop: 2 }}>
+          {m.display.scenario_name}
+        </div>
+        <div style={{ fontFamily: '"IBM Plex Sans", system-ui', fontSize: 10, color: 'rgba(147,160,180,0.45)', marginTop: 4 }}>
+          {m.display.disclaimer}
+        </div>
+      </div>
+
+      {/* Mission situation metrics grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 8 }}>
+        {heroMetrics.map(({ label, value, color }) => (
+          <div key={label} style={{
+            background: 'rgba(18,24,34,0.7)',
+            border: '1px solid rgba(46,58,79,0.8)',
+            borderRadius: 6,
+            padding: '7px 9px',
+          }}>
+            <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 8, color: 'rgba(147,160,180,0.55)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 2 }}>
+              {label}
+            </div>
+            <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 13, fontWeight: 700, color: color ?? '#e2e8f4' }}>
+              {value}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Spacecraft Health */}
+      <div style={{ ...CARD, marginBottom: 8 }}>
+        <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 9, color: 'rgba(147,160,180,0.55)', letterSpacing: '0.1em', marginBottom: 8 }}>
+          SPACECRAFT HEALTH
+        </div>
+        {Object.entries(m.subsystem_status).map(([key, ss]) => {
+          const isGood = ss.status === 'nominal' || ss.status === 'stable';
+          const color = ss.status === 'degraded' ? '#f59e0b' : ss.status === 'critical' ? '#f87171' : '#34d399';
+          return (
+            <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: '1px solid rgba(46,58,79,0.3)' }}>
+              <span style={{ fontFamily: '"IBM Plex Sans", system-ui', fontSize: 11, color: 'rgba(147,160,180,0.7)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                {key.replace('_', ' ')}
+              </span>
+              <div style={{ textAlign: 'right' }}>
+                <span style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 11, fontWeight: 600, color, display: 'block' }}>
+                  {ss.label}
+                </span>
+                {ss.note && (
+                  <span style={{ fontFamily: '"IBM Plex Sans", system-ui', fontSize: 10, color: 'rgba(147,160,180,0.45)' }}>
+                    {ss.note}
+                  </span>
+                )}
+              </div>
+              {isGood}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Active Thermal Event */}
+      {thermalAnomaly && (
+        <div style={{
+          ...CARD,
+          border: '1px solid rgba(248,113,113,0.30)',
+          background: 'rgba(248,113,113,0.06)',
+          marginBottom: 8,
+        }}>
+          <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 9, color: 'rgba(248,113,113,0.7)', letterSpacing: '0.1em', marginBottom: 6 }}>
+            DETECTED EVENT
+          </div>
+          <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 13, fontWeight: 700, color: '#f87171', marginBottom: 2 }}>
+            THERMAL ANOMALY
+          </div>
+          <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 10, color: '#f59e0b', marginBottom: 6 }}>
+            {thermalAnomaly.anomaly_id}
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+            <span style={{ background: 'rgba(248,113,113,0.15)', color: '#f87171', fontFamily: '"IBM Plex Mono", ui-monospace', fontSize: 9, padding: '2px 7px', borderRadius: 3, border: '1px solid rgba(248,113,113,0.35)' }}>
+              ACTIVE
+            </span>
+            <span style={{ color: 'rgba(147,160,180,0.7)', fontFamily: '"IBM Plex Mono", ui-monospace', fontSize: 9 }}>
+              SEVERITY {(thermalAnomaly.severity * 100).toFixed(0)}%
+            </span>
+            {detectedMinutesAgo !== null && (
+              <span style={{ color: 'rgba(147,160,180,0.7)', fontFamily: '"IBM Plex Mono", ui-monospace', fontSize: 9 }}>
+                DETECTED ~{detectedMinutesAgo}m AGO
+              </span>
+            )}
+          </div>
+          <div style={{ fontFamily: '"IBM Plex Sans", system-ui', fontSize: 11, color: 'rgba(147,160,180,0.7)', lineHeight: 1.5 }}>
+            {thermalAnomaly.description.slice(0, 200)}{thermalAnomaly.description.length > 200 ? '…' : ''}
+          </div>
+        </div>
+      )}
+
+      {/* Link Health summary */}
+      <div style={{ ...CARD, marginBottom: 8 }}>
+        <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 9, color: 'rgba(147,160,180,0.55)', letterSpacing: '0.1em', marginBottom: 6 }}>
+          COMMUNICATION LINK
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 4 }}>
+          {[
+            { label: 'CURRENT SNR', value: `${ls.snr_db.toFixed(1)} dB` },
+            { label: 'TREND', value: snrTrend },
+            { label: 'STABILITY', value: `${(ls.link_stability * 100).toFixed(0)}%` },
+            { label: 'LINK STATE', value: linkStatus, color: linkColor },
+          ].map(({ label, value, color }) => (
+            <div key={label} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 4, padding: '4px 6px' }}>
+              <div style={{ color: 'rgba(147,160,180,0.55)', fontSize: 8, fontFamily: '"IBM Plex Mono", ui-monospace', marginBottom: 2 }}>{label}</div>
+              <div style={{ color: color ?? '#e2e8f4', fontSize: 10, fontFamily: '"IBM Plex Mono", ui-monospace', fontWeight: 600 }}>{value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Mission section ───────────────────────────────────────────────────────────
 
 function MissionSection(props: CommonProps) {
@@ -255,6 +434,35 @@ function MissionSection(props: CommonProps) {
   const dpCount = props.dataProductsCount;
   const anomCount = props.anomalies.length;
 
+  // When ASTERIA experience is available, show the hero panel instead of the generic context
+  if (props.experienceAvailable && props.experienceManifest) {
+    return (
+      <>
+        <AsteriaMissionHero {...props} />
+        <ResizableSection title="Mission State" icon="◉" accent="#4C8DFF">
+          {ms ? (
+            <TableScroll>
+              <MissionStatePanel missionState={ms} />
+            </TableScroll>
+          ) : (
+            <div style={{ color: 'rgba(147,160,180,0.5)', fontSize: 12 }}>No mission data</div>
+          )}
+        </ResizableSection>
+        {ls && (
+          <ResizableSection title="Comm Budget" icon="⌾" accent="#4C8DFF">
+            <CommBudgetBar
+              availableCapacityBits={props.availableCapacityBits}
+              queuedDataBits={props.queuedDataBits}
+              dataProductsCount={props.dataProductsCount}
+              remainingWindowS={ls.remaining_window_s}
+            />
+          </ResizableSection>
+        )}
+      </>
+    );
+  }
+
+  // Generic scenario fallback
   return (
     <>
       {ms && ls && (
@@ -383,6 +591,7 @@ function CommsSection(props: CommonProps) {
       <div style={{ minWidth: 0 }}>
         <LinkHealthPanel
           linkState={props.linkState}
+          snrHistory={props.experienceManifest?.snr_history}
           onWhatIfResult={props.onWhatIfResult}
         />
       </div>
@@ -1111,8 +1320,61 @@ function TransmissionSection(props: CommonProps) {
             decisionMode={props.decisionMode}
             manualOrder={props.manualOrder}
             rawDataProducts={props.rawDataProducts}
+            manualEvaluation={props.manualAssessment?.evaluation ?? null}
+            onManualEvaluate={props.onManualEvaluate}
+            onManualTransmit={props.onManualTransmit}
             availableCapacityBits={props.availableCapacityBits}
           />
+          {/* Show manual assessment details when available */}
+          {props.decisionMode === 'manual' && props.manualAssessment && (
+            <div style={{
+              marginTop: 8,
+              background: props.manualAssessmentStale ? 'rgba(245,158,11,0.05)' : 'rgba(52,211,153,0.04)',
+              border: `1px solid ${props.manualAssessmentStale ? 'rgba(245,158,11,0.25)' : 'rgba(52,211,153,0.18)'}`,
+              borderRadius: 4, padding: '8px 12px',
+              fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 11,
+            }}>
+              {props.manualAssessmentStale && (
+                <div style={{ color: '#f59e0b', marginBottom: 4, fontSize: 10 }}>⚠ STALE — Re-evaluate to update</div>
+              )}
+              <div style={{ color: 'rgba(147,160,180,0.8)', marginBottom: 4, fontSize: 10 }}>MANUAL PLAN ASSESSMENT</div>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ color: 'rgba(147,160,180,0.55)', fontSize: 8, textTransform: 'uppercase', marginBottom: 2 }}>SELECTED</div>
+                  <div style={{ color: '#e2e8f4', fontSize: 12, fontWeight: 700 }}>{props.manualAssessment.capacity_summary.selected_count}</div>
+                </div>
+                <div>
+                  <div style={{ color: 'rgba(147,160,180,0.55)', fontSize: 8, textTransform: 'uppercase', marginBottom: 2 }}>PAYLOAD</div>
+                  <div style={{ color: '#e2e8f4', fontSize: 12, fontWeight: 700 }}>{formatBitsAsDataVolume(props.manualAssessment.capacity_summary.selected_bits)}</div>
+                </div>
+                <div>
+                  <div style={{ color: 'rgba(147,160,180,0.55)', fontSize: 8, textTransform: 'uppercase', marginBottom: 2 }}>RISK</div>
+                  <div style={{
+                    fontSize: 12, fontWeight: 700,
+                    color: props.manualAssessment.evaluation.risk_level === 'LOW' ? '#34d399' :
+                           props.manualAssessment.evaluation.risk_level === 'MEDIUM' ? '#f59e0b' :
+                           props.manualAssessment.evaluation.risk_level === 'HIGH' ? '#fb923c' : '#f87171',
+                  }}>
+                    {props.manualAssessment.evaluation.risk_level}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ color: 'rgba(147,160,180,0.55)', fontSize: 8, textTransform: 'uppercase', marginBottom: 2 }}>DEFERRED</div>
+                  <div style={{ color: '#e2e8f4', fontSize: 12, fontWeight: 700 }}>{props.manualAssessment.evaluation.deferred_packets.length}</div>
+                </div>
+              </div>
+            </div>
+          )}
+          {props.decisionMode === 'manual' && props.manualAssessmentLoading && (
+            <div style={{ marginTop: 6, color: 'rgba(147,160,180,0.55)', fontFamily: '"IBM Plex Mono", ui-monospace', fontSize: 11 }}>
+              Evaluating…
+            </div>
+          )}
+          {props.decisionMode === 'manual' && props.manualAssessmentError && (
+            <div style={{ marginTop: 6, color: '#f87171', fontFamily: '"IBM Plex Mono", ui-monospace', fontSize: 11 }}>
+              Assessment error: {props.manualAssessmentError}
+            </div>
+          )}
         </div>
       </ResizableSection>
 

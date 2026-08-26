@@ -292,16 +292,16 @@ class TestBenchmarkFreeze:
         from backend.app.api.routes_experience import get_experience
         app_state.load_scenario(_V3_SCENARIO)
         result = get_experience()
-        assert result["available"] is False
-        assert result["manifest"] is None
+        assert result.available is False
+        assert result.manifest is None
 
     def test_experience_endpoint_available_for_asteria(self):
         """GET /experience returns available=True for ASTERIA-7."""
         from backend.app.api.routes_experience import get_experience
         app_state.load_scenario(_ASTERIA_SCENARIO)
         result = get_experience()
-        assert result["available"] is True
-        assert result["manifest"] is not None
+        assert result.available is True
+        assert result.manifest is not None
 
 
 class TestGroundObjectivesAllIdsValid:

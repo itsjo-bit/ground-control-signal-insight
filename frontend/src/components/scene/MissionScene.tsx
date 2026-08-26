@@ -26,6 +26,7 @@ import { Spacecraft } from './Spacecraft';
 import { CommunicationLink, type LinkHealthStatus } from './CommunicationLink';
 import type { LinkState, MissionState } from '../../types/domain';
 import type { ApprovalPhase } from '../ApprovalBar';
+import { presentationLinkStatus, type PresentationLinkStatus } from '../../experience/linkPresentation';
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 // V3.1: Increased separation between Earth and spacecraft for better visual
@@ -48,7 +49,7 @@ export const CAMERA_PRESETS = {
 
 export type CameraPreset = keyof typeof CAMERA_PRESETS;
 
-// ── Link health derivation ────────────────────────────────────────────────────
+// ── Link health derivation using production presentation helper ───────────────
 
 function deriveLinkStatus(
   linkState: LinkState | null,
@@ -56,8 +57,9 @@ function deriveLinkStatus(
 ): LinkHealthStatus {
   if (approvalPhase === 'transmitting') return 'transmitting';
   if (!linkState) return 'good';
-  if (linkState.snr_db < 5 || linkState.link_stability < 0.5) return 'critical';
-  if (linkState.snr_db < 10 || linkState.link_stability < 0.75) return 'warning';
+  const status: PresentationLinkStatus = presentationLinkStatus(linkState);
+  if (status === 'CRITICAL') return 'critical';
+  if (status === 'DEGRADED') return 'warning';
   return 'good';
 }
 

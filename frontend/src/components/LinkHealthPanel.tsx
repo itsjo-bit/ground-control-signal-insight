@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EvaluationResult, LinkState, WhatIfEvalResponse } from '../types/domain';
+import type { HistoricalSnrPoint } from '../types/experience';
 import { whatIfEvaluate } from '../api/client';
+import { presentationLinkStatus, presentationSnrTrend } from '../experience/linkPresentation';
 
 // ── Inner SVG paths helper (renders inside our own <svg>) ─────────────────────
 const POINTS = 90;
@@ -39,6 +41,8 @@ function SignalWaveformPaths({ snrDb, width, height }: { snrDb: number; width: n
 
 interface Props {
   linkState: LinkState;
+  /** Optional historical SNR data from experience manifest for ASTERIA scenarios. */
+  snrHistory?: HistoricalSnrPoint[];
   /** Called when what-if evals arrive so PlanSwitcher can reflect them. */
   onWhatIfResult?: (result: WhatIfEvalResponse, snrDb: number) => void;
 }
@@ -47,7 +51,7 @@ const SNR_MIN = -15;
 const SNR_MAX = 25;
 const DEBOUNCE_MS = 350;
 
-export function LinkHealthPanel({ linkState: ls, onWhatIfResult }: Props) {
+export function LinkHealthPanel({ linkState: ls, snrHistory, onWhatIfResult }: Props) {
   // Feature 5: what-if SNR slider state
   const [sliderSnr, setSliderSnr] = useState<number>(ls.snr_db);
   const [isPreview, setIsPreview] = useState(false);
@@ -112,13 +116,16 @@ export function LinkHealthPanel({ linkState: ls, onWhatIfResult }: Props) {
     );
   }
 
-  // Compact link status summary
+  // Compact link status summary — use production presentation helpers
   const snr = ls.snr_db;
-  const snrTrend = snr < 5 ? '↓ declining' : snr > 15 ? '↑ strong' : '→ stable';
   const stability = (ls.link_stability * 100).toFixed(0);
-  const linkStatus = ls.ber > 1e-3 ? 'DEGRADED' : ls.ber > 1e-5 ? 'MARGINAL' : 'NOMINAL';
+  // Use historical SNR for trend if available (ASTERIA)
+  const snrTrend = presentationSnrTrend(snr, snrHistory);
+  // Use production link status (does not let low BER mask degraded SNR)
+  const presStatus = presentationLinkStatus(ls);
+  const linkStatus = presStatus;
   const linkStatusColor =
-    linkStatus === 'DEGRADED' ? 'var(--critical)' : linkStatus === 'MARGINAL' ? 'var(--warn)' : 'var(--signal)';
+    linkStatus === 'CRITICAL' ? 'var(--critical)' : linkStatus === 'DEGRADED' ? 'var(--warn)' : 'var(--signal)';
 
   return (
     <section className="panel">
