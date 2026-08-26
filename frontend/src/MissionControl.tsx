@@ -22,6 +22,8 @@ import {
   switchScenario,
   getExperience,
   assessManualPlan,
+  approvePlan,
+  approveCustomPlan,
 } from './api/client';
 import type {
   AIRecommendation,
@@ -337,6 +339,14 @@ export default function MissionControl() {
   const [manualSelectedIds, setManualSelectedIds] = useState<Set<string>>(new Set());
   const [manualOrder, setManualOrder] = useState<string[]>([]);
 
+  // ── Phase 4.2F4: Transmission choreography ────────────────────────────────
+  /** When true, TransmissionSequencePanel is active in TransmissionSection. */
+  const [choreographyActive, setChoreographyActive] = useState<boolean>(false);
+  /** Plan to execute when backend approval is called during choreography. */
+  const [pendingExecutionPlan, setPendingExecutionPlan] = useState<CandidatePlan | null>(null);
+  /** Whether to use /approve (ai) or /approve/custom (manual/modified). */
+  const [pendingExecutionMode, setPendingExecutionMode] = useState<'ai' | 'custom'>('custom');
+
   // ── Phase 4.2F: Experience manifest ───────────────────────────────────────
   const [experienceManifest, setExperienceManifest] = useState<ExperienceManifest | null>(null);
   const [experienceAvailable, setExperienceAvailable] = useState<boolean>(false);
@@ -491,6 +501,8 @@ export default function MissionControl() {
     setManualOrder([]);
     clearManualAssessmentState();
     setAiRecommendationRejected(false);
+    setChoreographyActive(false);
+    setPendingExecutionPlan(null);
     aiRequestInFlight.current = false;
     // V3.5: workspace mode is NOT reset on mission reset
     try {
@@ -542,6 +554,8 @@ export default function MissionControl() {
     setManualOrder([]);
     clearManualAssessmentState();
     setAiRecommendationRejected(false);
+    setChoreographyActive(false);
+    setPendingExecutionPlan(null);
     // Clear scenario-specific experience state on switch
     setExperienceManifest(null);
     setExperienceAvailable(false);
@@ -685,12 +699,11 @@ export default function MissionControl() {
     setManualAssessmentOrderFingerprint(newOrder.join(','));
   }
 
-  // ── Phase 4.2F: Manual transmit — actually executes approveCustomPlan ────
-  const handleManualTransmit = useCallback(async () => {
+  // ── Phase 4.2F4: Manual transmit — enters choreography ───────────────────
+  const handleManualTransmit = useCallback(() => {
     if (manualOrder.length === 0) return;
-    // If we have a fresh assessed plan, use it (authoritative backend facts).
-    // Otherwise build a local plan from the current selection.
-    const localPlan: CandidatePlan | null = manualOrder.length > 0 ? {
+    // Build execution plan — prefer assessed plan (authoritative facts) if fresh
+    const localPlan: CandidatePlan = {
       plan_id: 'operator-manual',
       strategy: 'manual',
       generated_by: 'operator',
@@ -708,23 +721,16 @@ export default function MissionControl() {
           delivery_requirement: dp.delivery_requirement,
         } : null;
       }).filter(Boolean) as import('./types/domain').Packet[],
-    } : null;
-
+    };
     const planToExecute = (manualAssessment && !manualAssessmentStale)
       ? manualAssessment.plan
       : localPlan;
-    if (!planToExecute) return;
 
+    setPendingExecutionPlan(planToExecute);
+    setPendingExecutionMode('custom');
+    setChoreographyActive(true);
     setApprovalPhase('transmitting');
-    setError(null);
-    try {
-      const { approveCustomPlan } = await import('./api/client');
-      const result = await approveCustomPlan(planToExecute, 'manual selection');
-      handleApproved(result);
-    } catch (err) {
-      setError(`Manual transmission failed: ${err}`);
-      setApprovalPhase('ready');
-    }
+    setActiveSection('transmission');
   }, [manualAssessment, manualAssessmentStale, manualOrder, rawDataProducts]);
 
   // ── Derived values ─────────────────────────────────────────────────────────
@@ -744,12 +750,16 @@ export default function MissionControl() {
   // These are placed after recPlan to avoid forward-reference.
   const [aiRecommendationRejected, setAiRecommendationRejected] = useState<boolean>(false);
 
-  /** Approve: authorization only — actual execution happens through existing ApprovalBar. */
+  /** Approve: start choreography with AI plan. Backend approval executes during choreography. */
   const handleApproveAiPlan = useCallback(() => {
-    setApprovalPhase('ready');
+    if (!recPlan) return;
     setAiRecommendationRejected(false);
+    setPendingExecutionPlan(recPlan);
+    setPendingExecutionMode('ai');
+    setChoreographyActive(true);
+    setApprovalPhase('transmitting');
     setActiveSection('transmission');
-  }, []);
+  }, [recPlan]);
 
   /** Modify: seed manual mode with AI plan packet IDs, switch to manual planning. */
   const handleModifyAiPlan = useCallback(() => {
@@ -768,6 +778,24 @@ export default function MissionControl() {
     setAiRecommendationRejected(true);
     setApprovalPhase('idle');
   }, []);
+
+  /**
+   * Execute the actual backend approval during choreography.
+   * Called by TransmissionSequencePanel when contact is acquired.
+   */
+  const handleExecuteApproval = useCallback(async () => {
+    if (!pendingExecutionPlan) throw new Error('No pending execution plan');
+    if (pendingExecutionMode === 'ai' && recommendation) {
+      return await approvePlan(recommendation.recommended_plan_id, pendingExecutionPlan);
+    }
+    return await approveCustomPlan(pendingExecutionPlan, 'operator transmission');
+  }, [pendingExecutionPlan, pendingExecutionMode, recommendation]);
+
+  /** Called when TransmissionSequencePanel completes the full sequence. */
+  const handleChoreographyComplete = useCallback((result: ApproveResponse) => {
+    setChoreographyActive(false);
+    handleApproved(result);
+  }, []); // handleApproved is not in deps because it's defined below as a function
 
   const manualPlan: CandidatePlan | null = manualOrder.length > 0 ? {
     plan_id: 'operator-manual',
@@ -1197,6 +1225,11 @@ export default function MissionControl() {
             onModifyAiPlan={handleModifyAiPlan}
             onRejectAiPlan={handleRejectAiPlan}
             aiRecommendationRejected={aiRecommendationRejected}
+            choreographyActive={choreographyActive}
+            pendingExecutionPlan={pendingExecutionPlan}
+            onExecuteApproval={handleExecuteApproval}
+            onChoreographyComplete={handleChoreographyComplete}
+            onChoreographyError={(msg) => { setError(msg); setChoreographyActive(false); setApprovalPhase('ready'); }}
           />
         </div>
       )}

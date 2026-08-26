@@ -52,6 +52,7 @@ import { TransmissionQueuePanel } from './TransmissionQueuePanel';
 import { SimulationPanel } from './SimulationPanel';
 import { TransmissionNarrativePanel } from './TransmissionNarrativePanel';
 import { MissionReportPanel } from './MissionReportPanel';
+import { TransmissionSequencePanel } from './TransmissionSequencePanel';
 import { ResizableSection } from './ResizableSection';
 import { ConfigPanel } from './ConfigPanel';
 
@@ -160,6 +161,17 @@ interface CommonProps {
   manualAssessmentStale: boolean;
   onManualEvaluate: () => void;
   onManualTransmit: () => void;
+  // ── Phase 4.2F4 props ─────────────────────────────────────────────────────────
+  /** When true, TransmissionSequencePanel is active (choreography in progress). */
+  choreographyActive: boolean;
+  /** Plan queued for execution during choreography. */
+  pendingExecutionPlan: CandidatePlan | null;
+  /** Execute the actual backend approval call. */
+  onExecuteApproval: () => Promise<import('../types/domain').ApproveResponse>;
+  /** Called when choreography sequence fully completes. */
+  onChoreographyComplete: (result: import('../types/domain').ApproveResponse) => void;
+  /** Called when choreography encounters an error. */
+  onChoreographyError: (msg: string) => void;
   // ── Phase 4.2F3 props ─────────────────────────────────────────────────────────
   /** Called when operator approves AI recommendation — does NOT execute transmission. */
   onApproveAiPlan: () => void;
@@ -1751,6 +1763,22 @@ function TransmissionSection(props: CommonProps) {
   const activeTxEval = props.decisionMode === 'manual'
     ? null
     : (props.recEval ?? props.activeEval);
+
+  // Show choreography sequence panel when active
+  if (props.choreographyActive) {
+    return (
+      <TransmissionSequencePanel
+        initialPhase="plan_uplink"
+        pendingPlan={props.pendingExecutionPlan}
+        playbackConfig={props.experienceManifest?.playback ?? null}
+        propagationDelayS={props.propagationDelayS}
+        availableCapacityBits={props.availableCapacityBits}
+        onExecuteApproval={props.onExecuteApproval}
+        onComplete={props.onChoreographyComplete}
+        onError={props.onChoreographyError}
+      />
+    );
+  }
 
   return (
     <>
