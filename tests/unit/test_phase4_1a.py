@@ -730,13 +730,20 @@ class TestStageProviderIdentityAfterFallback:
 
     @pytest.mark.asyncio
     async def test_no_fallback_when_valid(self, app, loaded_nominal):
-        """Valid local recommendation must NOT trigger fallback."""
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-            resp = await c.post("/agent/recommend")
+        """Valid local recommendation must NOT trigger fallback.
+
+        Uses LocalRuleBasedProvider explicitly so this test is not affected by
+        any live API credentials present in the environment.
+        """
+        from backend.app.agent.local_provider import LocalRuleBasedProvider
+
+        with patch("backend.app.api.routes_agent.get_provider", return_value=LocalRuleBasedProvider()):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                resp = await c.post("/agent/recommend")
 
         assert resp.status_code == 200
         body = resp.json()
-        # No fallback triggered
+        # No fallback triggered — Local always produces a valid recommendation
         assert body["recommendation_fallback_reason"] is None
         # actual_provider matches requested
         assert body["actual_provider"] == body["requested_provider"]
@@ -829,9 +836,16 @@ class TestNoFallbackWhenValid:
 
     @pytest.mark.asyncio
     async def test_valid_result_retained(self, app, loaded_nominal):
-        """Valid recommendation must be returned unchanged (no fallback)."""
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-            resp = await c.post("/agent/recommend")
+        """Valid recommendation must be returned unchanged (no fallback).
+
+        Uses LocalRuleBasedProvider explicitly so this test is not affected by
+        any live API credentials present in the environment.
+        """
+        from backend.app.agent.local_provider import LocalRuleBasedProvider
+
+        with patch("backend.app.api.routes_agent.get_provider", return_value=LocalRuleBasedProvider()):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                resp = await c.post("/agent/recommend")
 
         assert resp.status_code == 200
         body = resp.json()

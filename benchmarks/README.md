@@ -84,4 +84,13 @@ benchmarks/results/<run-id>/
 ## See Also
 
 - `docs/benchmark_methodology.md` — Full methodology documentation
-- `docs/benchmark_results.md` — Generated after real execution
+- `benchmarks/results/` — Existing runs (see README in each run directory for status)
+
+## Benchmark Status
+
+The official core benchmark (`gcsi_benchmark_v1`, Granite `ibm/granite-4-h-small`) has not yet
+been executed. A 2-trial IAM authentication pilot was attempted on 2026-08-26 — both trials failed
+before any model inference was completed. See `results/run-20260826-110706-530179c2/README.md`.
+
+The benchmark infrastructure is implemented and the methodology is frozen. Execution requires
+valid IBM Cloud IAM credentials with watsonx.ai project access.

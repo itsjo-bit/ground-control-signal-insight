@@ -2,39 +2,37 @@
 
 **Version 1.0.0**
 
-> When bandwidth becomes a mission constraint, GCSI helps operators determine what matters most.
+> When a spacecraft can't send everything, GCSI helps mission operators decide what Earth needs to hear first.
 
 GCSI is an AI-assisted communication decision-support system for spacecraft ground operations.
-A spacecraft generates many mission data products, but communication windows are limited.
+A spacecraft generates far more mission data than a single contact window can carry.
 GCSI combines deterministic telecom analysis with AI semantic reasoning to help operators prioritize
 what gets transmitted first — while keeping the human in control of every final decision.
 
 ---
 
-## The Problem
+## The Problem — ASTERIA-7 Canonical Demo
 
-A spacecraft in deep space generates a continuous stream of mission data products:
-telemetry, science observations, engineering diagnostics, anomaly responses, and more.
-Each product has a size, a criticality, a deadline, a scientific value, and relationships
-to other products. The communication window is finite, the downlink capacity is limited,
-and link conditions may be degraded.
-
-**Transmitting everything immediately is not always possible.**
-
-The high-volume demo scenario (`mission_data_v3.json`) illustrates this:
+The canonical demonstration mission, **ASTERIA-7**, illustrates the scale of the challenge:
 
 | Constraint | Value |
 |---|---|
-| Data products queued | 150 |
-| Active anomalies | 3 |
-| Spacecraft distance | ~54,000,000 km |
-| Propagation delay | ~3 minutes one-way |
-| Communication window | Limited |
-| Link conditions | Variable / potentially degraded |
+| Data products queued | **1,284** |
+| Total queued volume | **2.74 GB** |
+| Contact window capacity | **~85.7 MB** (~3.1% of the queue) |
+| Queue-to-contact ratio | **31.98×** |
+| Active thermal anomaly | **ANOM-THERM-017** (severity 0.94) |
+| Spacecraft distance | 182,273,814 km |
+| One-way signal propagation | **10 min 08 s** |
+| Communication window | **4 min 32 s** of high-rate contact |
+| Link SNR | 2.8 dB (degraded) |
 
-The operator must decide what to transmit first, what to defer, and what risk that creates.
-Without decision support, prioritizing 150 products manually under anomaly conditions is
-impractical at mission pace.
+The spacecraft has an active unresolved thermal anomaly. The operator has less than five minutes
+of contact time. Only 3.1% of the queued data can fit. The cause of the anomaly is unknown —
+and the diagnostic data is somewhere in those 1,284 products.
+
+Without decision support, triaging 1,284 products under anomaly conditions at mission pace is
+not a tractable problem.
 
 ---
 
@@ -45,11 +43,15 @@ GCSI is **not** an LLM directly controlling spacecraft transmission.
 The architecture separates three distinct responsibilities:
 
 ```
-150 Data Products
+1,284 queued data products
         ↓
-Deterministic Candidate Screening
+Deterministic candidate screening
+(anomaly-linked → critical → deadline → relevance)
         ↓
-AI Stage 1 Semantic Prioritization
+50 semantic candidates (bounded set)
+        ↓
+AI Stage 1: semantic prioritization
+(only the 50 screened candidates are sent to the AI provider)
         ↓
 AI-Prioritized Candidate Plan
         │
@@ -275,12 +277,16 @@ No transmission occurs without explicit human approval.
 
 ---
 
-## The 150 → Candidate Screening → AI Ranking → Five-Plan Pipeline
+## The Queue → Candidate Screening → AI Ranking → Five-Plan Pipeline
 
 This is the core architectural innovation for high-volume scenarios.
 
+GCSI **deterministically screens** the full queued product set into a bounded semantic
+candidate set **before** any AI reasoning. This is a design strength: the AI sees only
+the most operationally relevant candidates, reducing noise and prompt size.
+
 ```
-150 mission data products (full queued set)
+All queued data products (e.g. 1,284 in ASTERIA-7)
         ↓
 Deterministic candidate screening
   • anomaly-linked products (highest priority)
@@ -302,7 +308,7 @@ Valid ranked products (typically 40–50)
 Build ai-prioritized plan:
   • AI-ranked products first (in priority order)
   • Unranked products appended in BaselineScheduler order
-  • All 150 packets present exactly once
+  • All products from the full queue present exactly once
         │
         ├──── ALSO generate 4 deterministic baselines from ORIGINAL packet set
         │     (independent of AI ranking — the scientific control group)
@@ -317,7 +323,8 @@ Human operator review and approval
 **AI plan ordering policy:**
 
 The AI cannot legitimately determine the ordering of every unseen product (it only
-ranked ≤50 of 150). The hybrid policy gives AI authority over what it ranked:
+ranked the ≤50 screened candidates). The hybrid policy gives AI authority over what
+it ranked:
 
 - **AI-ranked prefix**: products in `ranked_products` appear first, in priority order
 - **Deterministic tail**: all other products follow BaselineScheduler order
@@ -334,7 +341,7 @@ The UI reflects this pipeline accurately:
 
 | Label | Meaning |
 |---|---|
-| **Total Products** | All 150 raw data products in the queued set |
+| **Total Products** | All queued data products (1,284 in ASTERIA-7; 150 in mission_data_v3) |
 | **AI Candidates** | The screened subset sent to the AI provider (≤50) |
 | **Ranked** | Products the AI successfully ranked |
 
@@ -349,7 +356,7 @@ This is intentional architecture, not a limitation.
 The operator does not need AI. They can:
 
 ```
-Browse all 150 raw mission products
+Browse all queued mission products
 → Search / filter / sort by criticality, deadline, subsystem, etc.
 → Select individual products
 → Build a manual priority list
@@ -383,17 +390,28 @@ AI starts in STANDBY (does NOT run automatically at application open)
 
 ## Scenario System
 
-### Primary demo scenario: `mission_data_v3.json`
+### Default demo scenario: `asteria7_thermal_priority_contact_v1.json`
 
-The intended demo and primary hackathon scenario. Capabilities:
+The canonical ASTERIA-7 mission — the primary hackathon demo. Capabilities:
 
-- 150 data products with heterogeneous criticality, size, deadline, and scientific value
-- 3 active anomalies linked to specific data products
-- Real spacecraft-Earth geometry: ~54,000,000 km distance, ~3-minute propagation delay
-- Full AI product prioritization pipeline
+- **1,284** data products across 10 product families
+- Active thermal anomaly (ANOM-THERM-017, severity 0.94)
+- 182M km spacecraft distance — 10 min 08 s one-way signal propagation
+- Contact window: 4 min 32 s, ~85.7 MB capacity
+- Full AI product prioritization pipeline (50-candidate screening from 1,284)
 - Manual planning support
-- Communication window constraints
+- Severely constrained: 31.98× queue-to-contact ratio
+- Mission state: `GCSI-ASTERIA-7 / pre_contact_anomaly_triage`
+
+See [`docs/asteria7_demo.md`](docs/asteria7_demo.md) for full mission parameters.
+
+### Alternative scenario: `mission_data_v3.json`
+
+A medium-scale scenario (150 products, 3 anomalies, ~54M km, ~3-min propagation).
+Useful for testing the same pipeline with a smaller dataset.
+
 - Mission state: `GCSI-MISSION-003 / high_volume_pass`
+- 150 data products, 3 active anomalies
 
 ### Legacy scenarios
 
@@ -567,12 +585,14 @@ uvicorn app.main:app --reload --port 8000
 The startup banner confirms the active scenario:
 
 ```
-[GCSI] Active scenario : data/scenarios/mission_data_v3.json
-[GCSI] Mission         : GCSI-MISSION-003
-[GCSI] Data products   : 150
-[GCSI] Active anomalies: 3
-[GCSI] Geometry        : available (54000000 km)
-[GCSI] Mode            : High-volume data products (V3+ full experience)
+  [GCSI] Active scenario : .../asteria7_thermal_priority_contact_v1.json
+  [GCSI] Mission         : GCSI-ASTERIA-7
+  [GCSI] ASTERIA-7       : THERMAL PRIORITY CONTACT
+  [GCSI] 1,284 data products
+  [GCSI] Thermal anomaly : ACTIVE
+  [GCSI] Geometry        : 182273814 km
+  [GCSI] One-way signal  : 608.000 s
+  [GCSI] Canonical mission experience : READY
 ```
 
 ### 6. Start the frontend
@@ -609,29 +629,33 @@ npm run build         # production build
 
 This is the recommended flow for evaluating GCSI in a hackathon setting.
 
-1. **Start GCSI** using the default scenario (`mission_data_v3.json`).
-2. **Observe the startup banner** confirming 150 products, 3 anomalies, geometry available.
+The default scenario is **ASTERIA-7**: 1,284 products, active thermal anomaly, 10m08s propagation.
+
+1. **Start GCSI** — the default ASTERIA-7 scenario loads automatically.
+2. **Observe the startup banner** confirming 1,284 products, thermal anomaly, geometry available.
 3. **Open the browser** at `http://localhost:5173`.
-4. **Inspect the 3D visualization** — Earth, spacecraft, and communication link at ~54 million km.
-5. **Open Data Products** — browse all 150 raw products. Filter by criticality or anomaly.
-   Notice the complexity: different sizes, deadlines, subsystems, and 3 active anomalies.
+4. **Inspect the 3D visualization** — Earth, spacecraft at 182M km, and the communication link.
+   The distance is to scale: the one-way signal delay is 10 minutes 8 seconds.
+5. **Open Data Products** — browse all 1,284 products. Filter by criticality or anomaly.
+   Notice: 1,284 products, 2.74 GB total, only ~85.7 MB fits in the contact window.
 6. **Choose a workflow:**
    - **Manual Decision**: Select products manually, build a priority list, review deterministic
-     feasibility, approve, and simulate transmission.
+     feasibility, approve, and simulate transmission. No AI required.
    - **AI Assisted**: Click **Analyze**. Watch the AI lifecycle: STANDBY → ANALYZING → READY.
-     Review the AI Prioritization panel — see which 50 candidates were screened, how they
-     were ranked, and the anomaly-aware reasoning.
+     The backend screens 1,284 products to the 50 most relevant candidates before AI reasoning.
+     Review the AI Prioritization panel — see which 50 were screened, how they were ranked,
+     and the anomaly-aware reasoning.
 7. **Accept or modify** the AI recommendation.
 8. **Simulate transmission** — observe delivered, deferred, and failed products.
 9. **Open Mission Report** — review the full outcome with timing, risk, and product-level detail.
-10. **Switch scenarios** — try a legacy scenario from Config to see the difference.
+10. **Switch scenarios** — try `mission_data_v3.json` for a lighter 150-product version.
 
 ---
 
 ## Architecture Reference
 
 ```
-Raw scenario JSON (mission_data_v3.json)
+Raw scenario JSON (asteria7_thermal_priority_contact_v1.json)
         ↓
 TelecomEngine  ←  formulas.py  (single source of truth for RF math)
         ↓
@@ -739,7 +763,8 @@ ground-control-signal-insight/
 │   └── pyproject.toml
 ├── data/
 │   └── scenarios/
-│       ├── mission_data_v3.json  # PRIMARY DEMO — 150 products, 3 anomalies
+│       ├── asteria7_thermal_priority_contact_v1.json  # DEFAULT — 1,284 products, thermal anomaly
+│       ├── mission_data_v3.json  # Alternative — 150 products, 3 anomalies
 │       ├── mission_data_v2.json  # Intermediate data-product scenario
 │       ├── nominal_pass.json     # Legacy packet scenario
 │       └── degraded_link.json    # Legacy packet scenario (degraded link)
