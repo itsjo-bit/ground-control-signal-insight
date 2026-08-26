@@ -10,7 +10,9 @@ from ..evaluator.plan_evaluator import PlanEvaluator
 from ..models.bridge import data_products_to_packets
 from ..models.candidate_plan import CandidatePlan
 from ..models.evaluation_result import EvaluationResult
+from ..models.link_state import LinkState
 from ..models.packet import Packet
+from ..telecom.what_if import WhatIfLinkContext, apply_link_what_if
 
 router = APIRouter()
 
@@ -75,45 +77,89 @@ def evaluate_plan(plan: CandidatePlan) -> EvaluationResult:
 
 
 class WhatIfEvalRequest(BaseModel):
-    """Request body for the what-if evaluation endpoint."""
+    """Request body for the what-if evaluation endpoint.
+
+    BER validation (Phase 3):
+        When ``ber`` is supplied it must be in [0, 0.5].  Values outside
+        this range have no physical meaning for BPSK/AWGN and are rejected
+        with HTTP 422.  NaN and ±infinity are also rejected.
+
+    SNR validation (Phase 3):
+        ``snr_db`` must be finite when supplied.
+    """
+
     snr_db: float | None = None
     ber: float | None = None
 
 
 class WhatIfEvalResponse(BaseModel):
+    """Response body for ``POST /plans/what-if``.
+
+    Phase 3 additions (backwards-compatible):
+
+    ``what_if_context``
+        A :class:`~backend.app.telecom.what_if.WhatIfLinkContext` record that
+        explains exactly what the backend evaluated.  Operators and reviewers
+        can inspect this to confirm which overrides were applied and what
+        effective values were used.
+
+    ``hypothetical_link_state``
+        The :class:`~backend.app.models.link_state.LinkState` that was passed
+        to ``PlanEvaluator``.  This is the authoritative evaluated link state
+        for this what-if request.  The frontend must use this value rather than
+        recalculating link metrics client-side.
+
+    ``evaluations``
+        One ``EvaluationResult`` per candidate strategy.
+
+    ``risk_weights``
+        The ``RiskWeights`` scalars used in ``PlanEvaluator.risk_score``.
+    """
+
+    what_if_context: WhatIfLinkContext
+    hypothetical_link_state: LinkState
     evaluations: list[EvaluationResult]
     risk_weights: dict
 
 
 @router.post("/plans/what-if", response_model=WhatIfEvalResponse)
 def what_if_evaluate(req: WhatIfEvalRequest) -> WhatIfEvalResponse:
-    """Evaluate all 4 candidate plans under hypothetical link conditions.
+    """Evaluate all candidate plans under hypothetical link conditions.
 
-    Accepts optional overrides for snr_db and/or ber.  Returns 4 EvaluationResult
-    objects — one per strategy — computed against the overridden link state.
-    Does NOT mutate the active scenario or link state (pure read-only preview).
+    Accepts optional overrides for ``snr_db`` and/or ``ber``.  Returns
+    EvaluationResults for all strategies computed against the overridden link
+    state.
+
+    **Override precedence (Phase 3):**
+
+    1. No override → normal baseline LinkState.
+    2. SNR only → TelecomEngine re-derives Eb/N0 and BER from new SNR.
+    3. BER only → baseline SNR/Eb/N0 unchanged; only ``ber`` replaced.
+    4. SNR + BER → SNR applied first (Eb/N0 re-derived); then ``ber``
+       replaces the derived BER.  **Explicit BER has final precedence.**
+
+    **Non-mutating:**
+    ``state.active_link_state`` and ``state.active_scenario`` are never
+    modified.  This endpoint is a pure read-only preview.
+
     Raises 503 if no scenario has been loaded.
+    Raises 422 if supplied ``ber`` is outside [0, 0.5] or non-finite.
+    Raises 422 if supplied ``snr_db`` is non-finite.
     """
     if state.active_scenario is None or state.active_link_state is None:
         raise HTTPException(status_code=503, detail="No active scenario loaded")
 
-    from ..telecom.engine import TelecomEngine
-    from ..config import GCSIConfig
-
-    # Build a modified link_inputs dict to re-derive the link state.
-    cfg = GCSIConfig()
-    link_inputs = dict(state.active_scenario.link_inputs)
-    if req.snr_db is not None:
-        link_inputs["snr_db"] = req.snr_db
-    if req.ber is not None:
-        link_inputs["ber"] = req.ber
-
-    # Re-derive the link state from the (potentially overridden) inputs.
-    engine = TelecomEngine(cfg)
+    # Build hypothetical link state via the dedicated what-if helper.
+    # This is the ONLY valid path for what-if evaluation; do NOT call
+    # TelecomEngine.compute() directly with a raw BER in the link_inputs dict.
     try:
-        hypothetical_link = engine.compute(link_inputs)
-    except Exception as exc:
-        raise HTTPException(status_code=422, detail=f"Invalid link inputs: {exc}") from exc
+        hypothetical_link, what_if_context = apply_link_what_if(
+            dict(state.active_scenario.link_inputs),
+            snr_db=req.snr_db,
+            ber=req.ber,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     # Generate the 4 candidate plans against the ACTUAL scenario packets
     # (packet list doesn't change, only link quality changes).
@@ -134,6 +180,8 @@ def what_if_evaluate(req: WhatIfEvalRequest) -> WhatIfEvalResponse:
 
     rw = RiskWeights()
     return WhatIfEvalResponse(
+        what_if_context=what_if_context,
+        hypothetical_link_state=hypothetical_link,
         evaluations=evals,
         risk_weights={
             "w_deadline_miss": rw.w_deadline_miss,

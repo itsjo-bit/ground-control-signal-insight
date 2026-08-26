@@ -20,7 +20,15 @@ class EvaluationResult(BaseModel):
     deadline_misses: int = Field(ge=0, description="Count of packets whose expected delivery time exceeds their deadline")
     avg_packet_delay_s: float = Field(ge=0.0, description="Mean expected delivery timestamp across non-deferred packets")
     bandwidth_utilization: float = Field(ge=0.0, le=1.0, description="Fraction of available window capacity used [0, 1]")
-    retransmission_overhead: float = Field(ge=0.0, description="Expected total retransmission cost, analytically derived")
+    retransmission_overhead: float = Field(
+        ge=0.0,
+        description=(
+            "Expected total retransmission overhead in SECONDS, analytically derived.  "
+            "Formula: sum over delivered packets of (1/p_success - 1) × tx_time_s.  "
+            "This is the expected extra transmission time beyond single-attempt baselines.  "
+            "It is NOT a dimensionless attempt-count ratio."
+        ),
+    )
     risk_score: float = Field(ge=0.0, le=1.0, description="Plan risk scalar [0, 1]")
     risk_level: RiskLevel
     deferred_packets: list[str] = Field(

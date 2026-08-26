@@ -47,15 +47,15 @@ from ..models.candidate_prioritization import CandidatePrioritization, RankedPro
 from ..models.candidate_summary import CandidateSummary
 from ..models.link_state import LinkState
 from ..models.mission_state import MissionState
+from ..telecom.geometry import compute_communication_geometry
 
 # ---------------------------------------------------------------------------
-# Physical constant
+# Physical constant — re-exported from the authoritative geometry module.
 # ---------------------------------------------------------------------------
 
-# Speed of light in m/s — exact SI value, same as routes_state._SPEED_OF_LIGHT_M_S.
-# Defined here as a module-level constant so all three providers use an
-# identical value without importing from the routes layer.
-_SPEED_OF_LIGHT_M_S: float = 299_792_458.0
+# Speed of light in m/s — sourced from telecom/geometry.py (Phase 3 authority).
+# Kept here as a module-level name for any code that may reference it directly.
+from ..telecom.geometry import SPEED_OF_LIGHT_M_S as _SPEED_OF_LIGHT_M_S  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -94,12 +94,14 @@ def build_prioritization_message(
         JSON string suitable for use as an LLM user message.
     """
     if distance_km is not None:
-        propagation_delay_s = (distance_km * 1_000.0) / _SPEED_OF_LIGHT_M_S
+        # Derive full-precision geometry from the shared authoritative helper.
+        _geom = compute_communication_geometry(distance_km)
         # Round to 3 dp — intentional token optimisation; see module docstring.
+        # Full-precision values remain available via GET /state.
         geometry: dict[str, Any] | None = {
             "distance_km": distance_km,
-            "propagation_delay_s": round(propagation_delay_s, 3),
-            "round_trip_time_s": round(2.0 * propagation_delay_s, 3),
+            "propagation_delay_s": round(_geom["propagation_delay_s"], 3),
+            "round_trip_time_s": round(_geom["round_trip_time_s"], 3),
         }
     else:
         geometry = None

@@ -1,0 +1,262 @@
+{
+  "benchmark_version": "gcsi_benchmark_v1",
+  "provider": "Granite",
+  "model": "ibm/granite-4-h-small",
+  "run_type": "unknown",
+  "total_trials": 2,
+  "successful_trials": 0,
+  "failed_trials": 2,
+  "success_rate": 0.0,
+  "total_provider_attempts": 2,
+  "trials_requiring_retry": 0,
+  "mean_attempts_per_trial": 1.0,
+  "pareto_analysis": {
+    "total_trials": 0,
+    "on_frontier": 0,
+    "dominated_by_semantic_rule": 0,
+    "dominates_semantic_rule": 0,
+    "neither_dominates": 0,
+    "frontier_rate": 0.0
+  },
+  "ai_metric_stats": {
+    "mission_value": {
+      "metric": "mission_value",
+      "values": [],
+      "median": null,
+      "minimum": null,
+      "maximum": null,
+      "iqr": null,
+      "na_count": 0
+    },
+    "critical_delivery_rate": {
+      "metric": "critical_delivery_rate",
+      "values": [],
+      "median": null,
+      "minimum": null,
+      "maximum": null,
+      "iqr": null,
+      "na_count": 0
+    },
+    "scientific_value_capture_rate": {
+      "metric": "scientific_value_capture_rate",
+      "values": [],
+      "median": null,
+      "minimum": null,
+      "maximum": null,
+      "iqr": null,
+      "na_count": 0
+    },
+    "required_delivery_rate": {
+      "metric": "required_delivery_rate",
+      "values": [],
+      "median": null,
+      "minimum": null,
+      "maximum": null,
+      "iqr": null,
+      "na_count": 0
+    },
+    "active_anomaly_delivery_rate": {
+      "metric": "active_anomaly_delivery_rate",
+      "values": [],
+      "median": null,
+      "minimum": null,
+      "maximum": null,
+      "iqr": null,
+      "na_count": 0
+    },
+    "high_severity_anomaly_coverage_rate": {
+      "metric": "high_severity_anomaly_coverage_rate",
+      "values": [],
+      "median": null,
+      "minimum": null,
+      "maximum": null,
+      "iqr": null,
+      "na_count": 0
+    },
+    "anomaly_weighted_coverage": {
+      "metric": "anomaly_weighted_coverage",
+      "values": [],
+      "median": null,
+      "minimum": null,
+      "maximum": null,
+      "iqr": null,
+      "na_count": 0
+    },
+    "risk_score": {
+      "metric": "risk_score",
+      "values": [],
+      "median": null,
+      "minimum": null,
+      "maximum": null,
+      "iqr": null,
+      "na_count": 0
+    },
+    "deadline_miss_rate": {
+      "metric": "deadline_miss_rate",
+      "values": [],
+      "median": null,
+      "minimum": null,
+      "maximum": null,
+      "iqr": null,
+      "na_count": 0
+    }
+  },
+  "ai_vs_semantic_rule_wtl": {},
+  "all_comparator_wtl": {
+    "semantic-rule-based": {},
+    "baseline": {},
+    "deadline-first": {},
+    "mission-critical-first": {},
+    "value-per-cost": {}
+  },
+  "capacity_analysis": {
+    "CAP035": {
+      "valid_trials": 0,
+      "pareto": {
+        "total_trials": 0,
+        "on_frontier": 0,
+        "dominated_by_semantic_rule": 0,
+        "dominates_semantic_rule": 0,
+        "neither_dominates": 0,
+        "frontier_rate": 0.0
+      },
+      "ai_metric_stats": {
+        "mission_value": {
+          "median": null,
+          "min": null,
+          "max": null
+        },
+        "critical_delivery_rate": {
+          "median": null,
+          "min": null,
+          "max": null
+        },
+        "scientific_value_capture_rate": {
+          "median": null,
+          "min": null,
+          "max": null
+        },
+        "required_delivery_rate": {
+          "median": null,
+          "min": null,
+          "max": null
+        },
+        "active_anomaly_delivery_rate": {
+          "median": null,
+          "min": null,
+          "max": null
+        },
+        "high_severity_anomaly_coverage_rate": {
+          "median": null,
+          "min": null,
+          "max": null
+        },
+        "anomaly_weighted_coverage": {
+          "median": null,
+          "min": null,
+          "max": null
+        },
+        "risk_score": {
+          "median": null,
+          "min": null,
+          "max": null
+        },
+        "deadline_miss_rate": {
+          "median": null,
+          "min": null,
+          "max": null
+        }
+      },
+      "ai_vs_sr_wtl_count": {}
+    },
+    "CAP090": {
+      "valid_trials": 0,
+      "pareto": {
+        "total_trials": 0,
+        "on_frontier": 0,
+        "dominated_by_semantic_rule": 0,
+        "dominates_semantic_rule": 0,
+        "neither_dominates": 0,
+        "frontier_rate": 0.0
+      },
+      "ai_metric_stats": {
+        "mission_value": {
+          "median": null,
+          "min": null,
+          "max": null
+        },
+        "critical_delivery_rate": {
+          "median": null,
+          "min": null,
+          "max": null
+        },
+        "scientific_value_capture_rate": {
+          "median": null,
+          "min": null,
+          "max": null
+        },
+        "required_delivery_rate": {
+          "median": null,
+          "min": null,
+          "max": null
+        },
+        "active_anomaly_delivery_rate": {
+          "median": null,
+          "min": null,
+          "max": null
+        },
+        "high_severity_anomaly_coverage_rate": {
+          "median": null,
+          "min": null,
+          "max": null
+        },
+        "anomaly_weighted_coverage": {
+          "median": null,
+          "min": null,
+          "max": null
+        },
+        "risk_score": {
+          "median": null,
+          "min": null,
+          "max": null
+        },
+        "deadline_miss_rate": {
+          "median": null,
+          "min": null,
+          "max": null
+        }
+      },
+      "ai_vs_sr_wtl_count": {}
+    }
+  },
+  "anomaly_analysis": {
+    "ORIGINAL": {
+      "valid_trials": 0,
+      "pareto": {
+        "total_trials": 0,
+        "on_frontier": 0,
+        "dominated_by_semantic_rule": 0,
+        "dominates_semantic_rule": 0,
+        "neither_dominates": 0,
+        "frontier_rate": 0.0
+      },
+      "ai_vs_sr_wtl_count": {}
+    }
+  },
+  "per_scenario_variability": {},
+  "ablation_analysis": {},
+  "comparison_tolerance": 1e-09,
+  "primary_metrics_maximize": [
+    "mission_value",
+    "critical_delivery_rate",
+    "scientific_value_capture_rate",
+    "required_delivery_rate",
+    "active_anomaly_delivery_rate",
+    "high_severity_anomaly_coverage_rate",
+    "anomaly_weighted_coverage"
+  ],
+  "primary_metrics_minimize": [
+    "risk_score",
+    "deadline_miss_rate"
+  ]
+}

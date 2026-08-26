@@ -3,16 +3,16 @@
 from fastapi import APIRouter, HTTPException
 
 from .. import state
+from ..telecom.geometry import compute_communication_geometry
 
 router = APIRouter()
 
 # ---------------------------------------------------------------------------
-# Physical constant — speed of light in m/s (exact SI value).
-# Used only to derive one-way propagation delay from scenario distance_km.
-# This constant must NOT be used in any RF/telecom formula; those remain
-# in backend/app/telecom/formulas.py and are independent of distance.
+# Phase 3: speed-of-light authority is now telecom/geometry.py.
+# This re-export preserves backwards compatibility for any test that imports
+# _SPEED_OF_LIGHT_M_S directly from this module.
 # ---------------------------------------------------------------------------
-_SPEED_OF_LIGHT_M_S: float = 299_792_458.0
+from ..telecom.geometry import SPEED_OF_LIGHT_M_S as _SPEED_OF_LIGHT_M_S  # noqa: E402
 
 
 class StateResponse:
@@ -98,8 +98,9 @@ def get_state() -> dict:
     # TelecomEngine, PlanEvaluator, and TransmissionSimulator are unchanged.
     distance_km: float | None = scenario.distance_km
     if distance_km is not None:
-        propagation_delay_s: float | None = distance_km * 1_000.0 / _SPEED_OF_LIGHT_M_S
-        round_trip_time_s: float | None = propagation_delay_s * 2.0
+        _geom = compute_communication_geometry(distance_km)
+        propagation_delay_s: float | None = _geom["propagation_delay_s"]
+        round_trip_time_s: float | None = _geom["round_trip_time_s"]
     else:
         propagation_delay_s = None
         round_trip_time_s = None

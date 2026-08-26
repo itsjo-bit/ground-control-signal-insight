@@ -1,0 +1,67 @@
+{
+  "suite": "quick",
+  "run_type": "pilot",
+  "preregistered": false,
+  "executed_scenario_ids": [
+    "CAP035_ORIGINAL",
+    "CAP090_ORIGINAL"
+  ],
+  "executed_values": {
+    "capacity_ratios": [
+      0.35,
+      0.9
+    ],
+    "anomaly_modes": [
+      "ORIGINAL"
+    ],
+    "deadline_scales": [
+      1.0
+    ],
+    "repetitions": 1,
+    "candidate_limit": 50,
+    "provider": "Granite",
+    "model": "ibm/granite-4-h-small",
+    "retry_policy": {
+      "max_attempts": 2,
+      "delay_between_attempts_s": 1.0
+    },
+    "comparison_tolerance": 1e-09,
+    "primary_metrics": {
+      "maximize": [
+        "mission_value",
+        "critical_delivery_rate",
+        "scientific_value_capture_rate",
+        "required_delivery_rate",
+        "active_anomaly_delivery_rate",
+        "high_severity_anomaly_coverage_rate",
+        "anomaly_weighted_coverage"
+      ],
+      "minimize": [
+        "risk_score",
+        "deadline_miss_rate"
+      ]
+    },
+    "ablation_scenarios": [
+      "CAP035_ORIGINAL",
+      "CAP060_ORIGINAL",
+      "CAP035_NOANOM",
+      "CAP060_DECOY"
+    ]
+  },
+  "config_overrides": {
+    "repetitions": {
+      "configured": 5,
+      "executed": 1
+    },
+    "scenario_matrix": {
+      "configured_count": 12,
+      "executed": [
+        "CAP035_ORIGINAL",
+        "CAP090_ORIGINAL"
+      ]
+    }
+  },
+  "source_config_version": "gcsi_benchmark_v1",
+  "source_config_sha256": "8f8830678a9e6ff5596a20ea3087dc3694fc1c64ec6c1fffe7f30c8d7a60b7a2",
+  "effective_config_sha256": "45b2a1a5d609db28013fe68574cb24f4d3f773dca7aa105bb97bfd911ddf185b"
+}

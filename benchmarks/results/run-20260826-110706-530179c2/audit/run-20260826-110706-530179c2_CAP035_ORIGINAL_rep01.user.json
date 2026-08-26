@@ -1,0 +1,959 @@
+{
+  "mission_context": {
+    "mission_phase": "science_downlink_anomaly",
+    "current_event": "high_volume_pass",
+    "comm_window_remaining_s": 1072.1655466666666,
+    "risk_score": 0.71,
+    "risk_level": "HIGH"
+  },
+  "link_context": {
+    "remaining_window_s": 1072.1655466666666,
+    "ber": 6.976161395645432e-31,
+    "link_goodput_bps": 90000.0
+  },
+  "communication_geometry": {
+    "distance_km": 54000000.0,
+    "propagation_delay_s": 180.125,
+    "round_trip_time_s": 360.249
+  },
+  "candidates": [
+    {
+      "product_id": "CMD-ACK-PROP-001",
+      "product_type": "diagnostic",
+      "description": "Command acknowledgment record for the last 15 thruster-2 control commands sent during the ANOM-017 window. Three commands show timeout, six show unexpected partial execution. Confirms ground command uplink was received but spacecraft execution was anomalous. Collected 50 seconds ago.",
+      "subsystem": "propulsion",
+      "size_bits": 2048,
+      "criticality": 0.86,
+      "mission_relevance": 0.91,
+      "scientific_value": 0.0,
+      "deadline_s": 110.0,
+      "age_s": 50.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "FAU-PROP-001",
+        "DIAG-PROP-004"
+      ]
+    },
+    {
+      "product_id": "DIAG-ANOM-001",
+      "product_type": "diagnostic",
+      "description": "Onboard anomaly detection system event record for ANOM-017: includes the algorithm that triggered the alert, the parameter threshold that was exceeded, and the response action table that was executed. Generated automatically 5 seconds after ANOM-017 was first detected. Age: 375 seconds.",
+      "subsystem": "flight_computer",
+      "size_bits": 4096,
+      "criticality": 0.88,
+      "mission_relevance": 0.92,
+      "scientific_value": 0.0,
+      "deadline_s": 185.0,
+      "age_s": 375.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "FAU-PROP-001",
+        "DIAG-PROP-001"
+      ]
+    },
+    {
+      "product_id": "DIAG-ANOM-004",
+      "product_type": "diagnostic",
+      "description": "Propulsion subsystem built-in-test (BIT) diagnostic run automatically when ANOM-017 was detected. Tests each valve, sensor, and actuator in the propulsion assembly. Thruster-2 valve actuation test shows 340 ms response latency against a 50 ms specification. All other components nominal. Age: 360 seconds.",
+      "subsystem": "propulsion",
+      "size_bits": 8192,
+      "criticality": 0.92,
+      "mission_relevance": 0.95,
+      "scientific_value": 0.0,
+      "deadline_s": 135.0,
+      "age_s": 360.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "FAU-PROP-001",
+        "FAU-PROP-002",
+        "DIAG-PROP-001"
+      ]
+    },
+    {
+      "product_id": "DIAG-ANOM-005",
+      "product_type": "diagnostic",
+      "description": "Cross-subsystem impact assessment for ANOM-017: automated report documenting which spacecraft functions depend on thruster-2, including attitude control authority with reduced propulsion, delta-V budget impact, and mission timeline effects. Collected 280 seconds ago. Needed for contingency planning.",
+      "subsystem": "flight_computer",
+      "size_bits": 6144,
+      "criticality": 0.85,
+      "mission_relevance": 0.89,
+      "scientific_value": 0.0,
+      "deadline_s": 240.0,
+      "age_s": 280.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "DIAG-PROP-001",
+        "NAV-002",
+        "ATT-003"
+      ]
+    },
+    {
+      "product_id": "DIAG-ANOM-006",
+      "product_type": "diagnostic",
+      "description": "Correlation analysis record from the flight computer: computed Pearson correlation between ANOM-017 chamber pressure readings and the most recent thruster-2 fuel line temperature samples. Correlation coefficient 0.87, strongly supporting the blockage hypothesis. Collected 200 seconds ago.",
+      "subsystem": "flight_computer",
+      "size_bits": 2048,
+      "criticality": 0.82,
+      "mission_relevance": 0.86,
+      "scientific_value": 0.0,
+      "deadline_s": 280.0,
+      "age_s": 200.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "DIAG-PROP-002",
+        "TEL-THERM-PROP-001"
+      ]
+    },
+    {
+      "product_id": "DIAG-ANOM-007",
+      "product_type": "diagnostic",
+      "description": "Flight software fault handler execution log for ANOM-017: documents every exception raised, recovery action taken, and final disposition of the thruster-2 control loop. The handler disabled autonomous thruster-2 firing and switched to manual ground command mode. Collected 300 seconds ago.",
+      "subsystem": "flight_computer",
+      "size_bits": 4096,
+      "criticality": 0.87,
+      "mission_relevance": 0.91,
+      "scientific_value": 0.0,
+      "deadline_s": 170.0,
+      "age_s": 300.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "FAU-PROP-001",
+        "CMD-ACK-PROP-001",
+        "DIAG-ANOM-001"
+      ]
+    },
+    {
+      "product_id": "DIAG-ANOM-010",
+      "product_type": "diagnostic",
+      "description": "Comprehensive anomaly interaction analysis: assesses whether ANOM-017, ANOM-021, and ANOM-034 are independent or causally linked. Propulsion anomaly heat may be contributing to avionics thermal load. Generated 150 seconds ago by the onboard diagnostic correlation engine.",
+      "subsystem": "flight_computer",
+      "size_bits": 5120,
+      "criticality": 0.83,
+      "mission_relevance": 0.87,
+      "scientific_value": 0.0,
+      "deadline_s": 210.0,
+      "age_s": 150.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "DIAG-PROP-001",
+        "DIAG-THERM-001",
+        "TEL-PWR-001"
+      ]
+    },
+    {
+      "product_id": "DIAG-ANOM-011",
+      "product_type": "diagnostic",
+      "description": "Ground commanding capability assessment generated in response to ANOM-017: documents which thruster-2 parameters can be adjusted via ground command, what command time delays are acceptable, and what autonomous safing limits are still active. Collected 260 seconds ago.",
+      "subsystem": "propulsion",
+      "size_bits": 4096,
+      "criticality": 0.84,
+      "mission_relevance": 0.88,
+      "scientific_value": 0.0,
+      "deadline_s": 195.0,
+      "age_s": 260.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "CMD-ACK-PROP-001",
+        "DIAG-ANOM-007"
+      ]
+    },
+    {
+      "product_id": "DIAG-ANOM-012",
+      "product_type": "diagnostic",
+      "description": "ANOM-017 comparative telemetry: historical thruster-2 performance data from the last 30 operating days for baseline comparison. Shows that current chamber pressure is 18% below the mean of 2100 prior measurements. Strong statistical evidence the anomaly is real and not a sensor drift. Collected 320 seconds ago.",
+      "subsystem": "propulsion",
+      "size_bits": 12288,
+      "criticality": 0.79,
+      "mission_relevance": 0.83,
+      "scientific_value": 0.0,
+      "deadline_s": 340.0,
+      "age_s": 320.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "DIAG-PROP-001",
+        "TEL-PROP-001"
+      ]
+    },
+    {
+      "product_id": "DIAG-ANOM-013",
+      "product_type": "diagnostic",
+      "description": "Thruster-2 historical anomaly lookup: search of the onboard anomaly history database for any prior events with similar signatures to ANOM-017. Found two similar events 347 and 891 days ago, both of which resolved after thermal cycling. This context may inform the ground recovery strategy. Collected 330 seconds ago.",
+      "subsystem": "propulsion",
+      "size_bits": 6144,
+      "criticality": 0.76,
+      "mission_relevance": 0.8,
+      "scientific_value": 0.0,
+      "deadline_s": 360.0,
+      "age_s": 330.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "DIAG-PROP-001",
+        "FAU-PROP-001"
+      ]
+    },
+    {
+      "product_id": "DIAG-ANOM-014",
+      "product_type": "diagnostic",
+      "description": "Real-time propulsion anomaly trend extrapolation: onboard model projecting how thruster-2 chamber pressure will evolve over the next 30 minutes if no corrective action is taken. Projection shows possible complete loss of thrust at T+18 min. High value for ground decision support. Collected 15 seconds ago.",
+      "subsystem": "propulsion",
+      "size_bits": 3072,
+      "criticality": 0.94,
+      "mission_relevance": 0.97,
+      "scientific_value": 0.0,
+      "deadline_s": 80.0,
+      "age_s": 15.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "DIAG-PROP-001",
+        "TEL-PROP-001",
+        "FAU-PROP-001"
+      ]
+    },
+    {
+      "product_id": "DIAG-ANOM-016",
+      "product_type": "diagnostic",
+      "description": "Cross-anomaly timeline reconciliation: precise timestamps correlating the onset of ANOM-017 (propulsion), ANOM-021 (thermal), and ANOM-034 (power) with the spacecraft activity timeline. Documents that ANOM-017 preceded the others by 170 seconds. Supports causal relationship analysis. Collected 130 seconds ago.",
+      "subsystem": "flight_computer",
+      "size_bits": 4096,
+      "criticality": 0.8,
+      "mission_relevance": 0.84,
+      "scientific_value": 0.0,
+      "deadline_s": 230.0,
+      "age_s": 130.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "DIAG-ANOM-001",
+        "DIAG-ANOM-002",
+        "DIAG-ANOM-003"
+      ]
+    },
+    {
+      "product_id": "DIAG-ANOM-017",
+      "product_type": "diagnostic",
+      "description": "Propulsion system configuration state at the time of ANOM-017 onset: records every valve position, latch state, and mode register in the propulsion controller at the exact timestamp when the pressure anomaly was first detected. Forensic evidence for ground reconstruction of the fault sequence. Collected 370 seconds ago.",
+      "subsystem": "propulsion",
+      "size_bits": 4096,
+      "criticality": 0.9,
+      "mission_relevance": 0.93,
+      "scientific_value": 0.0,
+      "deadline_s": 125.0,
+      "age_s": 370.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "FAU-PROP-001",
+        "DIAG-PROP-001",
+        "DIAG-ANOM-001"
+      ]
+    },
+    {
+      "product_id": "DIAG-PROP-001",
+      "product_type": "diagnostic",
+      "description": "Thruster-2 chamber pressure telemetry snapshot captured during the active ANOM-017 anomaly window, 45 seconds ago. Pressure trace shows a step-down event followed by oscillation. Essential for understanding whether the fault is a sensor failure or a real fluid system event.",
+      "subsystem": "propulsion",
+      "size_bits": 8192,
+      "criticality": 0.95,
+      "mission_relevance": 0.97,
+      "scientific_value": 0.0,
+      "deadline_s": 100.0,
+      "age_s": 45.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "DIAG-PROP-002",
+        "FAU-PROP-001",
+        "TEL-PROP-001"
+      ]
+    },
+    {
+      "product_id": "DIAG-PROP-002",
+      "product_type": "diagnostic",
+      "description": "Thruster-2 fuel line pressure and temperature diagnostic collected 70 seconds ago. Covers the fuel inlet, combustion chamber, and nozzle throat sensor array. Allows ground team to distinguish a blockage scenario from a valve actuator fault in ANOM-017.",
+      "subsystem": "propulsion",
+      "size_bits": 12288,
+      "criticality": 0.93,
+      "mission_relevance": 0.95,
+      "scientific_value": 0.0,
+      "deadline_s": 130.0,
+      "age_s": 70.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "DIAG-PROP-001",
+        "DIAG-PROP-003",
+        "TEL-PROP-002"
+      ]
+    },
+    {
+      "product_id": "DIAG-PROP-003",
+      "product_type": "diagnostic",
+      "description": "Propulsion system vibration envelope diagnostic from the inertial sensor suite, sampled during the ANOM-017 event window. Vibration amplitude at thruster-2 is 3.4x nominal. Data required to assess structural stress accumulation. Collected 90 seconds ago.",
+      "subsystem": "propulsion",
+      "size_bits": 10240,
+      "criticality": 0.91,
+      "mission_relevance": 0.93,
+      "scientific_value": 0.0,
+      "deadline_s": 160.0,
+      "age_s": 90.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "DIAG-PROP-001",
+        "DIAG-PROP-004"
+      ]
+    },
+    {
+      "product_id": "DIAG-PROP-004",
+      "product_type": "diagnostic",
+      "description": "Complete thruster controller diagnostic log for the 10-minute window spanning the ANOM-017 detection event. Includes command sequences, telemetry polling intervals, watchdog resets, and internal state machine transitions. Collected 110 seconds ago.",
+      "subsystem": "propulsion",
+      "size_bits": 16384,
+      "criticality": 0.89,
+      "mission_relevance": 0.91,
+      "scientific_value": 0.0,
+      "deadline_s": 200.0,
+      "age_s": 110.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "DIAG-PROP-003",
+        "CMD-ACK-PROP-001"
+      ]
+    },
+    {
+      "product_id": "DIAG-PROP-005",
+      "product_type": "diagnostic",
+      "description": "Propulsion system isolation valve status diagnostic: documents whether the isolation valves between the fuel tank and thruster-2 are in the correct closed position following the ANOM-017 automatic safing response. Confirms the propulsion system is in a safe configuration. Collected 190 seconds ago.",
+      "subsystem": "propulsion",
+      "size_bits": 2048,
+      "criticality": 0.91,
+      "mission_relevance": 0.94,
+      "scientific_value": 0.0,
+      "deadline_s": 155.0,
+      "age_s": 190.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "FAU-PROP-001",
+        "DIAG-ANOM-007"
+      ]
+    },
+    {
+      "product_id": "DIAG-PWR-004",
+      "product_type": "diagnostic",
+      "description": "Power subsystem load transient diagnostic captured during the ANOM-017 propulsion fault event: records the instantaneous current spike on the power bus when the thruster-2 valve actuator attempted multiple rapid command executions. Spike was 14% above steady-state draw. Provides evidence for the actuator-jam hypothesis. Collected 55 seconds ago.",
+      "subsystem": "power",
+      "size_bits": 3072,
+      "criticality": 0.73,
+      "mission_relevance": 0.77,
+      "scientific_value": 0.0,
+      "deadline_s": 165.0,
+      "age_s": 55.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "TEL-PROP-003",
+        "FAU-PROP-002",
+        "DIAG-PROP-001"
+      ]
+    },
+    {
+      "product_id": "FAU-PROP-001",
+      "product_type": "diagnostic",
+      "description": "Thruster-2 fault log captured 8 seconds ago at the moment chamber pressure first fell below the safety threshold. Contains valve command history, pressure sensor timestamps, and actuator response latencies. Direct evidence for the active ANOM-017 propulsion anomaly.",
+      "subsystem": "propulsion",
+      "size_bits": 4096,
+      "criticality": 0.98,
+      "mission_relevance": 1.0,
+      "scientific_value": 0.0,
+      "deadline_s": 75.0,
+      "age_s": 8.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "DIAG-PROP-001",
+        "TEL-PROP-001",
+        "FAU-PROP-002"
+      ]
+    },
+    {
+      "product_id": "FAU-PROP-002",
+      "product_type": "diagnostic",
+      "description": "Thruster-2 valve actuator fault record, collected 22 seconds ago. Documents three consecutive failed valve position commands during the anomaly window. Includes actuator drive current waveform and motor temperature readings. Critical for root-cause determination of ANOM-017.",
+      "subsystem": "propulsion",
+      "size_bits": 5120,
+      "criticality": 0.96,
+      "mission_relevance": 0.98,
+      "scientific_value": 0.0,
+      "deadline_s": 95.0,
+      "age_s": 22.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "FAU-PROP-001",
+        "DIAG-PROP-001",
+        "TEL-PROP-002"
+      ]
+    },
+    {
+      "product_id": "HK-GENERAL-015",
+      "product_type": "housekeeping",
+      "description": "Consumables status: propellant mass remaining (82.4 kg, 67% of initial), pressurant, and on-board cryogenics. The ANOM-017 anomalous thruster-2 behavior may have resulted in unintended propellant consumption. Collected 240 seconds ago.",
+      "subsystem": "propulsion",
+      "size_bits": 2048,
+      "criticality": 0.72,
+      "mission_relevance": 0.76,
+      "scientific_value": 0.0,
+      "deadline_s": 380.0,
+      "age_s": 240.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "TEL-PROP-005",
+        "DIAG-PROP-002"
+      ]
+    },
+    {
+      "product_id": "HK-GENERAL-022",
+      "product_type": "housekeeping",
+      "description": "Ground command queue status: 12 commands pending execution on the spacecraft, including 3 related to ANOM-017 response. All commands have been acknowledged at the uplink layer. Status of command execution needed by ground team to confirm anomaly response is progressing. Collected 8 seconds ago.",
+      "subsystem": "flight_computer",
+      "size_bits": 2048,
+      "criticality": 0.75,
+      "mission_relevance": 0.79,
+      "scientific_value": 0.0,
+      "deadline_s": 195.0,
+      "age_s": 8.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "CMD-ACK-PROP-001",
+        "DIAG-ANOM-007"
+      ]
+    },
+    {
+      "product_id": "NAV-006",
+      "product_type": "navigation",
+      "description": "Trajectory deviation estimate from the ANOM-017 uncontrolled thrust event: delta-V imparted to the spacecraft due to the anomalous thruster-2 behavior. Estimate is 0.8 mm/s, within station-keeping budget but needs ground confirmation. Collected 240 seconds ago.",
+      "subsystem": "navigation",
+      "size_bits": 3072,
+      "criticality": 0.76,
+      "mission_relevance": 0.8,
+      "scientific_value": 0.0,
+      "deadline_s": 300.0,
+      "age_s": 240.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "NAV-002",
+        "TEL-PROP-001"
+      ]
+    },
+    {
+      "product_id": "TEL-PROP-001",
+      "product_type": "telemetry",
+      "description": "Thruster-2 chamber pressure telemetry stream for the 5-minute period immediately before and during the ANOM-017 onset. Sampled at 10 Hz. Provides the ground team with full pressure history needed to assess anomaly progression. Collected 55 seconds ago.",
+      "subsystem": "propulsion",
+      "size_bits": 6144,
+      "criticality": 0.9,
+      "mission_relevance": 0.94,
+      "scientific_value": 0.0,
+      "deadline_s": 115.0,
+      "age_s": 55.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "TEL-PROP-002",
+        "DIAG-PROP-001",
+        "FAU-PROP-001"
+      ]
+    },
+    {
+      "product_id": "TEL-PROP-002",
+      "product_type": "telemetry",
+      "description": "Thruster-2 valve position telemetry during the ANOM-017 anomaly window. Position readings oscillate between 14% and 67% commanded open instead of holding at 40%. Shows the valve is responding but with severe hysteresis. Collected 80 seconds ago.",
+      "subsystem": "propulsion",
+      "size_bits": 4096,
+      "criticality": 0.88,
+      "mission_relevance": 0.92,
+      "scientific_value": 0.0,
+      "deadline_s": 145.0,
+      "age_s": 80.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "TEL-PROP-001",
+        "DIAG-PROP-002"
+      ]
+    },
+    {
+      "product_id": "TEL-PROP-003",
+      "product_type": "telemetry",
+      "description": "Thruster power draw telemetry during and after the ANOM-017 event. Power draw is 22% higher than predicted for the observed thrust output, consistent with actuator working against a mechanical obstruction. Collected 105 seconds ago.",
+      "subsystem": "propulsion",
+      "size_bits": 3072,
+      "criticality": 0.85,
+      "mission_relevance": 0.89,
+      "scientific_value": 0.0,
+      "deadline_s": 190.0,
+      "age_s": 105.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "TEL-PROP-001",
+        "TEL-PROP-002"
+      ]
+    },
+    {
+      "product_id": "TEL-THERM-PROP-001",
+      "product_type": "telemetry",
+      "description": "Thruster-2 fuel line temperature telemetry collected during ANOM-017. Inlet temperature 11 degrees above nominal, consistent with a partial blockage causing localized heating. This is a key diagnostic discriminator between a blockage and a valve fault. Collected 60 seconds ago.",
+      "subsystem": "propulsion",
+      "size_bits": 2048,
+      "criticality": 0.87,
+      "mission_relevance": 0.9,
+      "scientific_value": 0.0,
+      "deadline_s": 120.0,
+      "age_s": 60.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "DIAG-PROP-002",
+        "TEL-PROP-001"
+      ]
+    },
+    {
+      "product_id": "TEL-THERM-PROP-002",
+      "product_type": "telemetry",
+      "description": "Thruster-2 nozzle and combustion chamber thermal profile snapshot taken 30 seconds ago during the active anomaly. Chamber wall temperature nominal. Nozzle throat temperature 4% elevated. Indicates the pressure drop is upstream of the nozzle.",
+      "subsystem": "propulsion",
+      "size_bits": 2048,
+      "criticality": 0.84,
+      "mission_relevance": 0.88,
+      "scientific_value": 0.0,
+      "deadline_s": 150.0,
+      "age_s": 30.0,
+      "anomaly_id": "ANOM-017",
+      "experiment_id": null,
+      "related_ids": [
+        "TEL-THERM-PROP-001",
+        "DIAG-PROP-002"
+      ]
+    },
+    {
+      "product_id": "DIAG-ANOM-002",
+      "product_type": "diagnostic",
+      "description": "Onboard anomaly detection system event record for ANOM-021: temperature threshold crossing alert with the full sensor reading history, anomaly classification result, and automatic response action log. Generated 205 seconds after ANOM-021 detection. Age: 210 seconds.",
+      "subsystem": "flight_computer",
+      "size_bits": 3072,
+      "criticality": 0.75,
+      "mission_relevance": 0.79,
+      "scientific_value": 0.0,
+      "deadline_s": 270.0,
+      "age_s": 210.0,
+      "anomaly_id": "ANOM-021",
+      "experiment_id": null,
+      "related_ids": [
+        "TEL-THERM-001",
+        "DIAG-THERM-001"
+      ]
+    },
+    {
+      "product_id": "DIAG-ANOM-008",
+      "product_type": "diagnostic",
+      "description": "Thermal management system response log for ANOM-021: documents every thermal control action taken since detection, including heater duty cycle adjustments, cooling loop setpoint changes, and instrument thermal derating commands. Collected 60 seconds ago.",
+      "subsystem": "thermal",
+      "size_bits": 4096,
+      "criticality": 0.73,
+      "mission_relevance": 0.77,
+      "scientific_value": 0.0,
+      "deadline_s": 320.0,
+      "age_s": 60.0,
+      "anomaly_id": "ANOM-021",
+      "experiment_id": null,
+      "related_ids": [
+        "DIAG-THERM-001",
+        "TEL-THERM-002"
+      ]
+    },
+    {
+      "product_id": "DIAG-ANOM-009",
+      "product_type": "diagnostic",
+      "description": "Avionics bay power dissipation map collected 75 seconds ago during ANOM-021: per-card power draw measurements from all 16 avionics bay circuit cards. One card shows 8 W above expected dissipation, which matches the unaccounted heat source identified in DIAG-THERM-002.",
+      "subsystem": "avionics",
+      "size_bits": 3072,
+      "criticality": 0.76,
+      "mission_relevance": 0.8,
+      "scientific_value": 0.0,
+      "deadline_s": 290.0,
+      "age_s": 75.0,
+      "anomaly_id": "ANOM-021",
+      "experiment_id": null,
+      "related_ids": [
+        "DIAG-THERM-002",
+        "HK-AVION-001"
+      ]
+    },
+    {
+      "product_id": "DIAG-ANOM-015",
+      "product_type": "diagnostic",
+      "description": "Avionics bay thermal anomaly trend extrapolation: onboard model projecting avionics bay temperature evolution over the next 20 minutes. Projection shows the ANOM-021 safe-mode threshold will be reached at T+14 min if secondary loop throughput does not improve. High value for ground thermal operations. Collected 25 seconds ago.",
+      "subsystem": "thermal",
+      "size_bits": 2048,
+      "criticality": 0.79,
+      "mission_relevance": 0.83,
+      "scientific_value": 0.0,
+      "deadline_s": 145.0,
+      "age_s": 25.0,
+      "anomaly_id": "ANOM-021",
+      "experiment_id": null,
+      "related_ids": [
+        "TEL-THERM-001",
+        "DIAG-THERM-001"
+      ]
+    },
+    {
+      "product_id": "DIAG-THERM-001",
+      "product_type": "diagnostic",
+      "description": "Thermal control system diagnostic report for the secondary cooling loop, generated 120 seconds ago in response to ANOM-021. Includes pump speed logs, valve states, and bypass configuration. Needed to determine whether ground intervention can restore normal loop throughput before safe-mode threshold is reached.",
+      "subsystem": "thermal",
+      "size_bits": 8192,
+      "criticality": 0.78,
+      "mission_relevance": 0.82,
+      "scientific_value": 0.0,
+      "deadline_s": 220.0,
+      "age_s": 120.0,
+      "anomaly_id": "ANOM-021",
+      "experiment_id": null,
+      "related_ids": [
+        "TEL-THERM-002",
+        "DIAG-THERM-002"
+      ]
+    },
+    {
+      "product_id": "DIAG-THERM-002",
+      "product_type": "diagnostic",
+      "description": "Avionics bay thermal model residuals diagnostic: comparison of measured temperatures against the predicted values from the spacecraft thermal model. Residuals indicate an unexpected 31 W heat source in the avionics bay that is not accounted for. Collected 95 seconds ago during ANOM-021 investigation.",
+      "subsystem": "thermal",
+      "size_bits": 6144,
+      "criticality": 0.75,
+      "mission_relevance": 0.79,
+      "scientific_value": 0.0,
+      "deadline_s": 280.0,
+      "age_s": 95.0,
+      "anomaly_id": "ANOM-021",
+      "experiment_id": null,
+      "related_ids": [
+        "DIAG-THERM-001",
+        "HK-AVION-001"
+      ]
+    },
+    {
+      "product_id": "DIAG-THERM-003",
+      "product_type": "diagnostic",
+      "description": "Avionics bay power dissipation trending report: 48-hour history of power draw per circuit card compared to nominal. Identifies that an avionics card that handles propulsion telemetry processing increased its power dissipation by 11 W two hours ago, coinciding with the start of high-rate ANOM-017 logging. Collected 170 seconds ago.",
+      "subsystem": "avionics",
+      "size_bits": 6144,
+      "criticality": 0.74,
+      "mission_relevance": 0.78,
+      "scientific_value": 0.0,
+      "deadline_s": 310.0,
+      "age_s": 170.0,
+      "anomaly_id": "ANOM-021",
+      "experiment_id": null,
+      "related_ids": [
+        "DIAG-ANOM-009",
+        "TEL-THERM-001",
+        "DIAG-ANOM-010"
+      ]
+    },
+    {
+      "product_id": "HK-AVION-001",
+      "product_type": "housekeeping",
+      "description": "Avionics bay housekeeping snapshot: processor load (74%), memory usage (61%), storage I/O, watchdog timer state, and internal bus health. Collected 28 seconds ago during the ANOM-021 elevated-temperature condition. Provides system context for ground assessment of current operational margins.",
+      "subsystem": "avionics",
+      "size_bits": 4096,
+      "criticality": 0.72,
+      "mission_relevance": 0.76,
+      "scientific_value": 0.0,
+      "deadline_s": 250.0,
+      "age_s": 28.0,
+      "anomaly_id": "ANOM-021",
+      "experiment_id": null,
+      "related_ids": [
+        "TEL-THERM-001",
+        "TEL-THERM-003"
+      ]
+    },
+    {
+      "product_id": "TEL-THERM-001",
+      "product_type": "telemetry",
+      "description": "Avionics bay temperature telemetry for the past 30 minutes, sampled at 1 Hz. Shows the steady upward trend associated with ANOM-021. Current reading is 6.8 degrees above nominal upper limit. Trend analysis needed to predict when automatic safe-mode threshold will be reached. Collected 18 seconds ago.",
+      "subsystem": "thermal",
+      "size_bits": 3072,
+      "criticality": 0.82,
+      "mission_relevance": 0.85,
+      "scientific_value": 0.0,
+      "deadline_s": 140.0,
+      "age_s": 18.0,
+      "anomaly_id": "ANOM-021",
+      "experiment_id": null,
+      "related_ids": [
+        "TEL-THERM-002",
+        "DIAG-THERM-001"
+      ]
+    },
+    {
+      "product_id": "TEL-THERM-002",
+      "product_type": "telemetry",
+      "description": "Secondary cooling loop flow rate and inlet/outlet temperature differential for the avionics bay, collected 35 seconds ago. Flow rate is 28% below nominal, explaining the reduced heat removal capacity driving ANOM-021. Key diagnostic for assessing whether the fault is a pump degradation or a flow restriction.",
+      "subsystem": "thermal",
+      "size_bits": 2048,
+      "criticality": 0.8,
+      "mission_relevance": 0.83,
+      "scientific_value": 0.0,
+      "deadline_s": 160.0,
+      "age_s": 35.0,
+      "anomaly_id": "ANOM-021",
+      "experiment_id": null,
+      "related_ids": [
+        "TEL-THERM-001",
+        "DIAG-THERM-002"
+      ]
+    },
+    {
+      "product_id": "TEL-THERM-003",
+      "product_type": "telemetry",
+      "description": "Flight computer processor die temperature telemetry during the ANOM-021 avionics heating event. Processor temperature 4.1 degrees above baseline. If the trend continues, automatic thermal throttling will reduce computing capacity within approximately 12 minutes. Collected 42 seconds ago.",
+      "subsystem": "thermal",
+      "size_bits": 1024,
+      "criticality": 0.77,
+      "mission_relevance": 0.8,
+      "scientific_value": 0.0,
+      "deadline_s": 175.0,
+      "age_s": 42.0,
+      "anomaly_id": "ANOM-021",
+      "experiment_id": null,
+      "related_ids": [
+        "TEL-THERM-001",
+        "HK-AVION-001"
+      ]
+    },
+    {
+      "product_id": "DIAG-ANOM-003",
+      "product_type": "diagnostic",
+      "description": "Onboard anomaly detection system record for ANOM-034: battery cell voltage divergence first flagged, balancing current commanded, response timeline. Collected 90 seconds after ANOM-034 detection. Provides the complete automatic response context for ground review. Age: 185 seconds.",
+      "subsystem": "flight_computer",
+      "size_bits": 2048,
+      "criticality": 0.65,
+      "mission_relevance": 0.69,
+      "scientific_value": 0.0,
+      "deadline_s": 480.0,
+      "age_s": 185.0,
+      "anomaly_id": "ANOM-034",
+      "experiment_id": null,
+      "related_ids": [
+        "TEL-PWR-001",
+        "DIAG-PWR-001"
+      ]
+    },
+    {
+      "product_id": "DIAG-PWR-001",
+      "product_type": "diagnostic",
+      "description": "Power subsystem diagnostic report triggered by ANOM-034: full battery pack health assessment including capacity fade estimate, cycle count, and projected remaining lifetime. Collected 140 seconds ago. Large dataset but contains trending information needed for mission planning.",
+      "subsystem": "power",
+      "size_bits": 12288,
+      "criticality": 0.71,
+      "mission_relevance": 0.74,
+      "scientific_value": 0.0,
+      "deadline_s": 480.0,
+      "age_s": 140.0,
+      "anomaly_id": "ANOM-034",
+      "experiment_id": null,
+      "related_ids": [
+        "TEL-PWR-001",
+        "DIAG-PWR-002"
+      ]
+    },
+    {
+      "product_id": "DIAG-PWR-002",
+      "product_type": "diagnostic",
+      "description": "Solar array power generation telemetry cross-referenced with battery state-of-charge during the ANOM-034 window. Solar harvest nominal. The imbalance is therefore isolated to the cell group itself and is not a charging input issue. Collected 180 seconds ago.",
+      "subsystem": "power",
+      "size_bits": 6144,
+      "criticality": 0.68,
+      "mission_relevance": 0.71,
+      "scientific_value": 0.0,
+      "deadline_s": 520.0,
+      "age_s": 180.0,
+      "anomaly_id": "ANOM-034",
+      "experiment_id": null,
+      "related_ids": [
+        "TEL-PWR-003",
+        "DIAG-PWR-001"
+      ]
+    },
+    {
+      "product_id": "DIAG-PWR-003",
+      "product_type": "diagnostic",
+      "description": "Battery cell group C electrochemical impedance spectroscopy data collected 3600 seconds ago: frequency-domain impedance measurements for characterizing the internal state of each cell. This is the most detailed available indicator of cell health and can confirm or refute the early degradation hypothesis for ANOM-034.",
+      "subsystem": "power",
+      "size_bits": 8192,
+      "criticality": 0.62,
+      "mission_relevance": 0.66,
+      "scientific_value": 0.0,
+      "deadline_s": 7200.0,
+      "age_s": 3600.0,
+      "anomaly_id": "ANOM-034",
+      "experiment_id": null,
+      "related_ids": [
+        "TEL-PWR-002",
+        "DIAG-PWR-001"
+      ]
+    },
+    {
+      "product_id": "HK-PWR-001",
+      "product_type": "housekeeping",
+      "description": "Power subsystem housekeeping snapshot: total bus voltage, load currents by subsystem, battery state-of-charge (87%), solar array output, and regulator health. Collected 15 seconds ago. Routine context for ground power management; ANOM-034 cell imbalance is flagged in this record.",
+      "subsystem": "power",
+      "size_bits": 3072,
+      "criticality": 0.66,
+      "mission_relevance": 0.69,
+      "scientific_value": 0.0,
+      "deadline_s": 360.0,
+      "age_s": 15.0,
+      "anomaly_id": "ANOM-034",
+      "experiment_id": null,
+      "related_ids": [
+        "TEL-PWR-001",
+        "TEL-PWR-002"
+      ]
+    },
+    {
+      "product_id": "TEL-PWR-001",
+      "product_type": "telemetry",
+      "description": "Battery cell group C voltage telemetry for the past 2 hours, sampled every 30 seconds. Shows the progressive imbalance growth associated with ANOM-034. The 0.31 V differential is visible as a slow divergence over time. Useful for characterizing degradation rate. Collected 40 seconds ago.",
+      "subsystem": "power",
+      "size_bits": 4096,
+      "criticality": 0.74,
+      "mission_relevance": 0.77,
+      "scientific_value": 0.0,
+      "deadline_s": 300.0,
+      "age_s": 40.0,
+      "anomaly_id": "ANOM-034",
+      "experiment_id": null,
+      "related_ids": [
+        "TEL-PWR-002",
+        "DIAG-PWR-001"
+      ]
+    },
+    {
+      "product_id": "TEL-PWR-002",
+      "product_type": "telemetry",
+      "description": "Battery cell group C temperature and internal resistance measurements collected 55 seconds ago. Cell resistance elevated by 8% relative to initial calibration, consistent with the cell degradation hypothesis for ANOM-034. Resistance increase correlates with temperature cycling history.",
+      "subsystem": "power",
+      "size_bits": 2048,
+      "criticality": 0.72,
+      "mission_relevance": 0.75,
+      "scientific_value": 0.0,
+      "deadline_s": 350.0,
+      "age_s": 55.0,
+      "anomaly_id": "ANOM-034",
+      "experiment_id": null,
+      "related_ids": [
+        "TEL-PWR-001",
+        "DIAG-PWR-002"
+      ]
+    },
+    {
+      "product_id": "TEL-PWR-003",
+      "product_type": "telemetry",
+      "description": "Battery charge controller output telemetry during the ANOM-034 balancing operation. Shows the applied balancing current and its effect on cell voltages over the last 25 minutes. Balancing is active but voltages have not converged. Collected 70 seconds ago.",
+      "subsystem": "power",
+      "size_bits": 2048,
+      "criticality": 0.7,
+      "mission_relevance": 0.73,
+      "scientific_value": 0.0,
+      "deadline_s": 400.0,
+      "age_s": 70.0,
+      "anomaly_id": "ANOM-034",
+      "experiment_id": null,
+      "related_ids": [
+        "TEL-PWR-001",
+        "HK-PWR-001"
+      ]
+    },
+    {
+      "product_id": "NAV-001",
+      "product_type": "navigation",
+      "description": "Current spacecraft state vector from onboard orbit determination: position, velocity, and covariance matrix for the navigation epoch 45 seconds ago. Required for planning the next maneuver sequence. Accuracy is within 120 m radial, which is within mission requirements but at the upper tolerance boundary.",
+      "subsystem": "navigation",
+      "size_bits": 4096,
+      "criticality": 0.8,
+      "mission_relevance": 0.85,
+      "scientific_value": 0.05,
+      "deadline_s": 180.0,
+      "age_s": 45.0,
+      "anomaly_id": null,
+      "experiment_id": null,
+      "related_ids": [
+        "NAV-002",
+        "ATT-001"
+      ]
+    },
+    {
+      "product_id": "HK-GENERAL-017",
+      "product_type": "housekeeping",
+      "description": "Spacecraft-wide FDIR (fault detection, isolation, and recovery) status: three active monitors tripped since last ground contact \u2014 all corresponding to ANOM-017, ANOM-021, and ANOM-034. All recovery actions completed. No additional autonomous actions pending. Collected 20 seconds ago.",
+      "subsystem": "flight_computer",
+      "size_bits": 3072,
+      "criticality": 0.78,
+      "mission_relevance": 0.82,
+      "scientific_value": 0.0,
+      "deadline_s": 220.0,
+      "age_s": 20.0,
+      "anomaly_id": null,
+      "experiment_id": null,
+      "related_ids": [
+        "DIAG-ANOM-001",
+        "DIAG-ANOM-002",
+        "DIAG-ANOM-003"
+      ]
+    }
+  ],
+  "active_anomalies": [
+    {
+      "anomaly_id": "ANOM-017",
+      "subsystem": "propulsion",
+      "severity": 0.91,
+      "status": "active",
+      "description": "Thruster-2 chamber pressure dropped 18% below nominal during the last burn sequence and has not recovered. Valve position sensor shows erratic readings. Fuel line temperature is elevated. Possible partial blockage or valve actuator failure. Situation is active and unresolved."
+    },
+    {
+      "anomaly_id": "ANOM-021",
+      "subsystem": "thermal",
+      "severity": 0.62,
+      "status": "monitoring",
+      "description": "Avionics bay temperature has been rising steadily for the past 25 minutes, now 6.8 degrees above the upper nominal operating limit. Primary cooling loop flow rate nominal. Secondary loop appears to have reduced throughput. No automatic fault has triggered yet but trend is continuing upward."
+    },
+    {
+      "anomaly_id": "ANOM-034",
+      "subsystem": "power",
+      "severity": 0.48,
+      "status": "monitoring",
+      "description": "Battery cell group C shows a voltage imbalance of 0.31 V between the highest and lowest cells. Charge controller has applied a balancing current but imbalance persists. State of charge is nominal. Pattern consistent with early cell degradation; not yet safety-critical but warrants ground review."
+    }
+  ]
+}

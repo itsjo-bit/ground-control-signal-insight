@@ -1,0 +1,80 @@
+{
+  "benchmark_version": "gcsi_benchmark_v1",
+  "run_id": "run-20260826-110706-530179c2",
+  "benchmark_run_id": "run-20260826-110706-530179c2",
+  "timestamp_utc": "2026-08-26T11:07:06.540286+00:00",
+  "started_at": "2026-08-26T11:07:06.540296+00:00",
+  "completed_at": "2026-08-26T11:07:07.686031+00:00",
+  "run_status": "completed",
+  "run_type": "pilot",
+  "git_commit_sha": "unknown",
+  "git_dirty": true,
+  "base_scenario_sha256": "de43388647287c3b99849c0fc9b940ce7234acd4be6ae9d212befa5b6eac3b08",
+  "provider": "Granite",
+  "model": "ibm/granite-4-h-small",
+  "actual_model_id": "ibm/granite-4-h-small",
+  "generation_config": {
+    "decoding_method": "greedy",
+    "max_new_tokens": 2048,
+    "stop_sequences": [
+      "<|user|>"
+    ]
+  },
+  "candidate_limit": 50,
+  "scenario_matrix": [
+    "CAP035_ORIGINAL",
+    "CAP090_ORIGINAL"
+  ],
+  "repetitions": 1,
+  "retry_policy": {
+    "max_attempts": 2,
+    "delay_between_attempts_s": 1.0
+  },
+  "primary_metrics": [
+    "mission_value",
+    "critical_delivery_rate",
+    "scientific_value_capture_rate",
+    "required_delivery_rate",
+    "active_anomaly_delivery_rate",
+    "high_severity_anomaly_coverage_rate",
+    "anomaly_weighted_coverage",
+    "risk_score",
+    "deadline_miss_rate"
+  ],
+  "comparison_tolerance": 1e-09,
+  "python_version": "3.14.7 (tags/v3.14.7:823f032, Aug  5 2026, 10:51:32) [MSC v.1944 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "gcsi_benchmark_version": "2b.1",
+  "config_id": "gcsi_benchmark_v1",
+  "config_sha256": "8f8830678a9e6ff5596a20ea3087dc3694fc1c64ec6c1fffe7f30c8d7a60b7a2",
+  "preregistered": false,
+  "config_overrides": {
+    "repetitions": {
+      "configured": 5,
+      "executed": 1
+    },
+    "scenario_matrix": {
+      "configured_count": 12,
+      "executed": [
+        "CAP035_ORIGINAL",
+        "CAP090_ORIGINAL"
+      ]
+    }
+  },
+  "executed_capacity_ratios": [
+    0.35,
+    0.9
+  ],
+  "executed_anomaly_modes": [
+    "ORIGINAL"
+  ],
+  "executed_deadline_scales": [
+    1.0
+  ],
+  "executed_candidate_limit": 50,
+  "executed_repetitions": 1,
+  "executed_retry_policy": {
+    "max_attempts": 2,
+    "delay_between_attempts_s": 1.0
+  }
+}
