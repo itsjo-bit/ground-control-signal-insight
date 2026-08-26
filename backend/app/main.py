@@ -34,6 +34,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api.routes_agent import router as agent_router
 from .api.routes_approve import router as approve_router
 from .api.routes_data_products import router as data_products_router
+from .api.routes_experience import router as experience_router
 from .api.routes_plans import router as plans_router
 from .api.routes_queue import router as queue_router
 from .api.routes_simulate import router as simulate_router
@@ -58,9 +59,9 @@ _BACKEND_APP_DIR: Path = Path(__file__).resolve().parent   # .../backend/app/
 _PROJECT_ROOT: Path = _BACKEND_APP_DIR.parent.parent       # .../ground-control-signal-insight/
 _SCENARIOS_DIR: Path = _PROJECT_ROOT / "data" / "scenarios"
 
-# Default to the high-volume v3 demo scenario when no explicit path is configured.
+# Default to the ASTERIA-7 canonical mission scenario when no explicit path is configured.
 # Resolved as an absolute path so it is independent of cwd.
-_DEFAULT_SCENARIO_PATH: str = str(_SCENARIOS_DIR / "mission_data_v3.json")
+_DEFAULT_SCENARIO_PATH: str = str(_SCENARIOS_DIR / "asteria7_thermal_priority_contact_v1.json")
 
 
 def _log_active_scenario() -> None:
@@ -81,18 +82,35 @@ def _log_active_scenario() -> None:
     has_geometry = scenario.distance_km is not None
 
     if dp_count > 0:
-        # ── High-volume V3+ scenario ─────────────────────────────────────────
-        print(  # noqa: T201
-            f"\n"
-            f"  [GCSI] Active scenario : {path}\n"
-            f"  [GCSI] Mission         : {ms.mission_id}\n"
-            f"  [GCSI] Event           : {ms.current_event}\n"
-            f"  [GCSI] Data products   : {dp_count}\n"
-            f"  [GCSI] Active anomalies: {anom_count}\n"
-            f"  [GCSI] Geometry        : {'available (' + str(int(scenario.distance_km)) + ' km)' if has_geometry else 'unavailable'}\n"
-            f"  [GCSI] Mode            : High-volume data products (V3+ full experience)\n",
-            file=sys.stderr,
-        )
+        if scenario.scenario_id == "asteria7_thermal_priority_contact_v1":
+            # ── ASTERIA-7 canonical mission banner ────────────────────────────
+            from .telecom.geometry import compute_propagation_delay
+            one_way_s = round(compute_propagation_delay(scenario.distance_km), 3) if has_geometry else None
+            print(  # noqa: T201
+                f"\n"
+                f"  [GCSI] Active scenario : {path}\n"
+                f"  [GCSI] Mission         : {ms.mission_id}\n"
+                f"  [GCSI] ASTERIA-7       : THERMAL PRIORITY CONTACT\n"
+                f"  [GCSI] {dp_count:,} data products\n"
+                f"  [GCSI] Thermal anomaly : ACTIVE\n"
+                f"  [GCSI] Geometry        : {int(scenario.distance_km):,} km\n"
+                f"  [GCSI] One-way signal  : {one_way_s:.3f} s\n"
+                f"  [GCSI] Canonical mission experience : READY\n",
+                file=sys.stderr,
+            )
+        else:
+            # ── High-volume V3+ scenario ──────────────────────────────────────
+            print(  # noqa: T201
+                f"\n"
+                f"  [GCSI] Active scenario : {path}\n"
+                f"  [GCSI] Mission         : {ms.mission_id}\n"
+                f"  [GCSI] Event           : {ms.current_event}\n"
+                f"  [GCSI] Data products   : {dp_count}\n"
+                f"  [GCSI] Active anomalies: {anom_count}\n"
+                f"  [GCSI] Geometry        : {'available (' + str(int(scenario.distance_km)) + ' km)' if has_geometry else 'unavailable'}\n"
+                f"  [GCSI] Mode            : High-volume data products (V3+ full experience)\n",
+                file=sys.stderr,
+            )
     else:
         # ── Legacy packet scenario ────────────────────────────────────────────
         pkt_count = len(scenario.packets)
@@ -189,6 +207,7 @@ app.include_router(simulate_router)
 app.include_router(approve_router)
 app.include_router(agent_router)
 app.include_router(data_products_router)
+app.include_router(experience_router)
 
 
 # ---------------------------------------------------------------------------
