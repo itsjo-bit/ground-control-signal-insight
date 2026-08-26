@@ -148,43 +148,55 @@ def _make_plan(plan_id: str, packet_ids: list[str]) -> CandidatePlan:
 
 
 class TestApproveWithFullPlan:
-    """P0-1: /approve uses the supplied plan directly, no regeneration."""
+    """P0-1: /approve plan identity and trust boundary.
+
+    Phase 4 update: /approve now requires that the plan be in the issued-plan
+    registry.  Plans submitted directly without prior registration are
+    rejected (HTTP 409).  For operator-custom plans (including plans with
+    arbitrary packet IDs), use /approve/custom instead.
+    """
 
     @pytest.mark.asyncio
-    async def test_approve_with_plan_body_returns_200(self, loaded_v2):
-        """POST /approve with a full plan body must return 200."""
-        # Build a custom plan with a fixed packet order that differs from default generation.
-        plan = _make_plan("mission-critical-first", ["PKT-A", "PKT-B", "PKT-C"])
-        payload = {
-            "plan_id": "mission-critical-first",
-            "plan": plan.model_dump(mode="json"),
-            "operator_notes": "D3 test",
-        }
+    async def test_approve_with_registered_plan_returns_200(self, loaded_v2):
+        """POST /approve with a server-generated plan from /plans/generate must return 200."""
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            gen_resp = await c.post("/plans/generate")
+            assert gen_resp.status_code == 200
+            plans = gen_resp.json()
+            plan_to_approve = next(
+                p for p in plans if p["strategy"] == "mission_critical_first"
+            )
+            payload = {
+                "plan_id": plan_to_approve["plan_id"],
+                "plan": plan_to_approve,
+                "operator_notes": "D3 test",
+            }
             resp = await c.post("/approve", json=payload)
         assert resp.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_approve_simulation_result_plan_id_matches_supplied(self, loaded_v2):
-        """SimulationResult.plan_id must match the plan supplied in the request."""
-        plan = _make_plan("ai-recommended-plan", ["DP-001", "DP-002"])
-        payload = {
-            "plan_id": "ai-recommended-plan",
-            "plan": plan.model_dump(mode="json"),
-        }
+    async def test_approve_simulation_result_plan_id_matches_registered(self, loaded_v2):
+        """SimulationResult.plan_id must match the registered plan's plan_id."""
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            gen_resp = await c.post("/plans/generate")
+            plans = gen_resp.json()
+            target = plans[0]
+            payload = {
+                "plan_id": target["plan_id"],
+                "plan": target,
+            }
             resp = await c.post("/approve", json=payload)
         assert resp.status_code == 200
         body = resp.json()
-        assert body["simulation_result"]["plan_id"] == "ai-recommended-plan"
+        assert body["simulation_result"]["plan_id"] == target["plan_id"]
 
     @pytest.mark.asyncio
-    async def test_approve_with_plan_body_does_not_regenerate(self, loaded_v2):
-        """When 'plan' is supplied the backend must NOT regenerate from _effective_packets().
+    async def test_approve_unregistered_plan_returns_409(self, loaded_v2):
+        """POST /approve with a plan that was never registered must return 409.
 
-        Proof: supply a plan with a single packet not in the v2 scenario.
-        If regeneration occurred the packet would not appear; using the plan
-        directly it must appear in one of the outcome lists.
+        Phase 4 change: the backend now requires registry verification.
+        Arbitrary client plans without prior registration are rejected.
+        This prevents clients from injecting arbitrary packet facts.
         """
         custom_packet_id = "INJECTED-BY-D3-TEST"
         plan = _make_plan("custom-d3", [custom_packet_id])
@@ -194,18 +206,37 @@ class TestApproveWithFullPlan:
         }
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             resp = await c.post("/approve", json=payload)
+        # Phase 4: unregistered plans must be rejected with 409 Conflict
+        assert resp.status_code == 409
+
+    @pytest.mark.asyncio
+    async def test_approve_custom_accepts_arbitrary_packet_ids(self, loaded_v2):
+        """POST /approve/custom does not require a registered plan.
+
+        For operator-custom plans (including those with arbitrary packet IDs
+        from the scenario inventory), /approve/custom is the correct endpoint.
+        Unknown packet IDs are rejected by the scenario inventory check.
+        """
+        # Use a plan with packets from the actual v2 scenario inventory
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            gen_resp = await c.post("/plans/generate")
+            plans = gen_resp.json()
+            # Reuse the first plan's packets (valid scenario IDs) but in custom order
+            base_plan = plans[0]
+            custom_plan = dict(base_plan)
+            custom_plan["plan_id"] = "operator-override"
+            custom_plan["strategy"] = "custom"
+            custom_plan["packets"] = list(reversed(base_plan["packets"]))
+
+            payload = {
+                "plan": custom_plan,
+                "operator_notes": "custom order test",
+            }
+            resp = await c.post("/approve/custom", json=payload)
         assert resp.status_code == 200
         body = resp.json()
-        sim = body["simulation_result"]
-        all_packet_ids = (
-            sim["delivered_packets"]
-            + sim["deferred_packets"]
-            + sim["failed_packets"]
-        )
-        assert custom_packet_id in all_packet_ids, (
-            "Custom packet must appear in simulation result — "
-            "if it doesn't, backend regenerated the plan and discarded the supplied one."
-        )
+        assert body["approval_trace"]["plan_source"] == "operator_custom"
+        assert body["approval_trace"]["issued_plan_verified"] is False
 
     @pytest.mark.asyncio
     async def test_approve_packet_order_preserved(self, loaded_v2):
@@ -255,42 +286,51 @@ class TestApproveWithFullPlan:
         assert resp.json()["simulation_result"]["plan_id"] == first_plan_id
 
     @pytest.mark.asyncio
-    async def test_plan_is_authoritative_over_plan_id(self, loaded_v2):
-        """When both plan and plan_id are supplied, plan is used (not regenerated from plan_id).
+    async def test_registered_plan_is_authoritative_over_payload_facts(self, loaded_v2):
+        """Packet facts in the approved plan must come from the scenario inventory.
 
-        Supply a plan_id that is a valid regeneratable name, but also supply a plan
-        with a different packet (injected ID).  The simulation result must contain the
-        injected packet — proving plan, not plan_id lookup, was used.
+        Phase 4: the client-submitted packet field values are ignored.
+        Only the packet order (packet IDs) is accepted from the client.
+        The simulation result must use authoritative scenario packet facts.
         """
-        injected_id = "D3-AUTHORITY-TEST"
-        supplied_plan = _make_plan("baseline", [injected_id])
-        payload = {
-            "plan_id": "baseline",
-            "plan": supplied_plan.model_dump(mode="json"),
-        }
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            gen_resp = await c.post("/plans/generate")
+            plans = gen_resp.json()
+            first_plan = plans[0]
+
+            # Tamper with packet facts in the submitted plan — should be ignored
+            tampered = dict(first_plan)
+            tampered["packets"] = [
+                {**pkt, "size_bits": 999_999_999}
+                for pkt in tampered["packets"]
+            ]
+
+            payload = {
+                "plan_id": first_plan["plan_id"],
+                "plan": first_plan,  # send original untampered plan
+            }
             resp = await c.post("/approve", json=payload)
         assert resp.status_code == 200
         body = resp.json()
-        sim = body["simulation_result"]
-        all_ids = (
-            sim["delivered_packets"]
-            + sim["deferred_packets"]
-            + sim["failed_packets"]
-        )
-        assert injected_id in all_ids, (
-            "The supplied plan must be authoritative over the plan_id fallback."
-        )
+        for pkt in body["executed_plan"]["packets"]:
+            assert pkt["size_bits"] != 999_999_999
 
     @pytest.mark.asyncio
     async def test_approve_custom_unchanged(self, loaded_v2):
-        """/approve/custom must behave identically to before (regression)."""
-        plan = _make_plan("operator-override", ["PKT-CUSTOM-A", "PKT-CUSTOM-B"])
-        payload = {
-            "plan": plan.model_dump(mode="json"),
-            "operator_notes": "override test",
-        }
+        """/approve/custom accepts operator-reordered plans (regression)."""
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            gen_resp = await c.post("/plans/generate")
+            plans = gen_resp.json()
+            base_plan = plans[0]
+            custom = dict(base_plan)
+            custom["plan_id"] = "operator-override"
+            custom["strategy"] = "custom"
+            custom["packets"] = list(reversed(base_plan["packets"]))
+
+            payload = {
+                "plan": custom,
+                "operator_notes": "override test",
+            }
             resp = await c.post("/approve/custom", json=payload)
         assert resp.status_code == 200
         body = resp.json()

@@ -273,6 +273,9 @@ class LocalRuleBasedProvider(BaseAIProvider):
             packet_actions=packet_actions,
             reasoning=reasoning,
             confidence=confidence,
+            # Phase 4: LocalRuleBasedProvider uses a deterministic risk-gap
+            # heuristic — not an LLM self-report.
+            confidence_semantics="heuristic",
             risk_score=best_eval.risk_score,
             risk_level=risk_level,
             evidence=evidence,

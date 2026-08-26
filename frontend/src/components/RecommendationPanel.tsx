@@ -126,7 +126,7 @@ export function RecommendationPanel({
           {requestedProviderName && (
             <div style={{ color: 'var(--text-dim, #57606a)', fontSize: 11 }}>
               Requested: {requestedProviderName} · Actual: {providerName ?? 'Local'}.
-              Mission safety is unaffected.
+              Risk assessment uses the deterministic evaluator regardless of provider.
             </div>
           )}
         </div>
@@ -140,7 +140,13 @@ export function RecommendationPanel({
         )}
       </p>
 <p>
-<strong>Confidence:</strong> {(rec.confidence * 100).toFixed(0)}%
+        <strong>Confidence:</strong>{' '}
+        {(rec.confidence * 100).toFixed(0)}%{' '}
+        <span style={{ fontSize: 10, color: 'var(--text-dim, #57606a)', fontStyle: 'italic' }}>
+          ({rec.confidence_semantics === 'uncalibrated_llm'
+            ? 'advisory — uncalibrated LLM estimate'
+            : 'advisory — heuristic estimate'})
+        </span>
         &nbsp;
         <strong>Plan risk:</strong>{' '}
         {rec.risk_score.toFixed(3)}{' '}

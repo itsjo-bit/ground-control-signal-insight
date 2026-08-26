@@ -173,9 +173,19 @@ export interface EvidenceItem {
 export interface AIRecommendation {
   recommended_plan_id: string;
   packet_actions: Array<{ packet_id: string; action: string; rank: number }>;
+  /** Deterministic risk score from PlanEvaluator — always authoritative. */
   risk_score: number;
+  /** Categorical risk level from PlanEvaluator — always authoritative. */
   risk_level: RiskLevel;
+  /** Provider self-reported confidence. Advisory only — see confidence_semantics. */
   confidence: number;
+  /**
+   * How confidence was produced:
+   *   'uncalibrated_llm'  — LLM self-report, not a calibrated probability
+   *   'heuristic'         — deterministic risk-gap (LocalRuleBasedProvider)
+   * Always present from Phase 4+; default 'heuristic' for older responses.
+   */
+  confidence_semantics: string;
   reasoning: string;
   evidence: EvidenceItem[];
   alternative_plan_id: string | null;
@@ -233,13 +243,54 @@ export interface RecommendResponse {
   ai_evaluation: EvaluationResult | null;
 }
 
+/** Approval provenance trace returned by POST /approve and POST /approve/custom. */
+export interface ApprovalTrace {
+  approval_id: string;
+  timestamp_utc: string;
+  scenario_id: string;
+  plan_id: string;
+  decision: string;
+  /** Trust source: deterministic_generated | ai_generated | operator_custom | legacy_regenerated | client_intent */
+  plan_source: string;
+  operator_notes: string;
+  /** True when all packet facts were rebound from the authoritative scenario. */
+  authoritative_reconstruction: boolean;
+  /** True when the plan matched a server-issued plan in the registry. */
+  issued_plan_verified: boolean;
+  packet_count: number;
+  packet_order_sha256: string;
+  canonical_plan_sha256: string;
+}
+
 export interface ApproveResponse {
   status: string;
   simulation_result: SimulationResult;
+  /** Phase 4: approval provenance record. */
+  approval_trace: ApprovalTrace;
+  /** Phase 4: the authoritative CandidatePlan that was actually simulated. */
+  executed_plan: CandidatePlan;
 }
 
-// What-if evaluation response (Feature 5)
+// What-if link context (Phase 3)
+export interface WhatIfLinkContext {
+  base_snr_db: number | null;
+  base_ber: number | null;
+  requested_snr_db: number | null;
+  requested_ber: number | null;
+  effective_snr_db: number | null;
+  effective_eb_n0_db: number | null;
+  derived_ber_before_override: number | null;
+  effective_ber: number;
+  snr_override_applied: boolean;
+  ber_override_applied: boolean;
+}
+
+// What-if evaluation response (Feature 5 / Phase 3)
 export interface WhatIfEvalResponse {
+  /** Phase 3: full provenance of what the backend evaluated. */
+  what_if_context: WhatIfLinkContext;
+  /** Phase 3: the hypothetical LinkState used for evaluation. */
+  hypothetical_link_state: LinkState;
   evaluations: EvaluationResult[];
   risk_weights: {
     w_deadline_miss: number;

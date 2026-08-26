@@ -106,6 +106,7 @@ function makeRecommendation(recommendedPlanId: string): AIRecommendation {
     risk_score: 0.18,
     risk_level: 'LOW',
     confidence: 0.91,
+    confidence_semantics: 'heuristic',
     reasoning: 'AI recommended this plan for anomaly resolution.',
     evidence: [],
     alternative_plan_id: null,

@@ -55,8 +55,25 @@ export function LinkHealthPanel({ linkState: ls, onWhatIfResult }: Props) {
   function handleReset() {
     setSliderSnr(ls.snr_db);
     setIsPreview(false);
+    const emptyContext = {
+      base_snr_db: null,
+      base_ber: null,
+      requested_snr_db: null,
+      requested_ber: null,
+      effective_snr_db: null,
+      effective_eb_n0_db: null,
+      derived_ber_before_override: null,
+      effective_ber: 0,
+      snr_override_applied: false,
+      ber_override_applied: false,
+    };
     onWhatIfResult?.(
-      { evaluations: [], risk_weights: { w_deadline_miss: 0, w_critical_deficit: 0, w_window_pressure: 0 } },
+      {
+        what_if_context: emptyContext,
+        hypothetical_link_state: ls,
+        evaluations: [],
+        risk_weights: { w_deadline_miss: 0, w_critical_deficit: 0, w_window_pressure: 0 },
+      },
       ls.snr_db,
     );
   }

@@ -1,9 +1,22 @@
-"""GCSI Backend API — routes for /simulate and /simulate/what-if."""
+"""GCSI Backend API — routes for /simulate and /simulate/what-if.
+
+Phase 4 trust boundaries
+-------------------------
+POST /simulate
+    Looks up a plan by plan_id (server-generated).  Reconstructs authoritatively.
+    State-mutating: invalidates issued-plan registry.
+
+POST /simulate/what-if
+    Accepts a client CandidatePlan as an ID/order transport.
+    All packet facts are reconstructed from the active scenario.
+    Non-mutating: does NOT invalidate issued-plan registry.
+"""
 
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException
 
 from .. import state
+from ..domain.plan_integrity import PlanIntegrityError, PlanSource, reconstruct_authoritative_plan
 from ..models.candidate_plan import CandidatePlan
 from ..models.simulation_result import SimulationResult
 from ..simulation.transmission_sim import TransmissionSimulator
@@ -48,11 +61,12 @@ def simulate(req: SimulateRequest) -> SimulationResult:
 
     Looks up the plan by plan_id from the candidate generator, runs the
     simulation, and mutates the active link/mission state with realized outcomes.
+
+    Phase 4: After simulation, issued plans are invalidated (state has mutated).
     """
     if state.active_scenario is None or state.active_link_state is None:
         raise HTTPException(status_code=503, detail="No active scenario loaded")
 
-    # Find the requested plan among generated candidates.
     from ..config import SchedulerWeights
     from ..candidate_generator.generator import CandidateGenerator
 
@@ -80,6 +94,9 @@ def simulate(req: SimulateRequest) -> SimulationResult:
         update={"mission_state": result.mission_state}
     )
 
+    # Invalidate issued plans — state has mutated, old plans may be stale.
+    state.invalidate_issued_plans(reason=f"state-mutating simulation: plan={req.plan_id}")
+
     return result
 
 
@@ -87,7 +104,24 @@ def simulate(req: SimulateRequest) -> SimulationResult:
 def simulate_what_if(req: WhatIfRequest) -> SimulationResult:
     """Run a non-mutating what-if simulation for any plan.
 
-    Does NOT update server state.  The plan is accepted directly in the
-    request body so any custom or AI-recommended plan can be simulated.
+    Phase 4: The client plan is treated only as an ID/order transport.
+    All packet facts are reconstructed from the active scenario before
+    simulation.  Unknown or duplicate IDs are rejected (HTTP 422).
+
+    Does NOT update server state.
+    Does NOT invalidate the issued-plan registry.
     """
-    return _run_simulation(req.plan, req.seed)
+    if state.active_scenario is None or state.active_link_state is None:
+        raise HTTPException(status_code=503, detail="No active scenario loaded")
+
+    # Reconstruct packet facts authoritatively.
+    try:
+        trace = reconstruct_authoritative_plan(
+            req.plan,
+            state.active_scenario,
+            plan_source=PlanSource.client_intent,
+        )
+    except PlanIntegrityError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return _run_simulation(trace.reconstructed_plan, req.seed)

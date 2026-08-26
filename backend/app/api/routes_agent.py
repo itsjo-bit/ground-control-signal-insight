@@ -94,6 +94,7 @@ from ..evaluator.mission_outcome_evaluator import (
     MissionOutcomeEvaluator,
     MissionOutcomeResult,
 )
+from ..domain.plan_integrity import PlanSource, compute_plan_fingerprint
 from ..models.anomaly_event import AnomalyEvent
 from ..models.bridge import data_products_to_packets
 from ..models.candidate_plan import CandidatePlan
@@ -390,7 +391,9 @@ def _build_blind_recommend(
         packet_actions=packet_actions,
         reasoning=aliased_rec.reasoning,
         confidence=aliased_rec.confidence,
-        # risk_score and risk_level are always from authoritative EvaluationResult
+        # Phase 4: confidence from an external LLM is an uncalibrated self-report.
+        confidence_semantics="uncalibrated_llm",
+        # risk_score and risk_level are ALWAYS from authoritative EvaluationResult.
         risk_score=real_eval.risk_score,
         risk_level=real_eval.risk_level,
         evidence=bound_evidence,
@@ -599,6 +602,26 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
             ai_mission_outcome = next(
                 (mo for mo in mission_outcomes if mo.plan_id == ai_plan.plan_id), None
             )
+
+    # ── Phase 4: register all issued plans ───────────────────────────────────
+    # All plans surfaced to the operator (deterministic + optional AI plan) are
+    # registered in the issued-plan registry so POST /approve can verify them.
+    _scenario_id = scenario.scenario_id
+    for _plan in all_plans_for_stage2:
+        _plan_source = (
+            PlanSource.ai_generated
+            if _plan is ai_plan
+            else PlanSource.deterministic_generated
+        )
+        _order_sha, _canonical_sha = compute_plan_fingerprint(_plan, _scenario_id)
+        _plan.metadata["plan_source"] = _plan_source.value
+        state.register_issued_plan(
+            _plan,
+            scenario_id=_scenario_id,
+            packet_order_sha256=_order_sha,
+            canonical_plan_sha256=_canonical_sha,
+            plan_source_value=_plan_source.value,
+        )
 
     # ── AI Stage 2: plan recommendation ──────────────────────────────────────
     recommendation_fallback_reason: str | None = None
