@@ -14,6 +14,15 @@ normal operational plan.  It is used for:
 * benchmarking LLM prioritization against a structured-rule baseline
 * proving the LLM provides genuine value over deterministic heuristics
 
+Implementation
+--------------
+This is a thin wrapper around the shared
+:func:`~backend.app.candidate_generator.ranked_prefix_builder.build_ranked_prefix_plan`
+function.  Both :func:`build_semantic_rule_plan` and
+:func:`~backend.app.candidate_generator.ai_plan_builder.build_ai_prioritized_plan`
+delegate to the same ``build_ranked_prefix_plan`` so the plan construction
+mechanics are provably identical.
+
 Construction policy (intentionally identical to the LLM plan)
 --------------------------------------------------------------
 ::
@@ -36,6 +45,7 @@ Both receive:
 * same deterministic tail policy
 * same PlanEvaluator
 * same MissionOutcomeEvaluator
+* same duplicate-ID / completeness invariant checks (via shared builder)
 
 Do NOT add this plan to the normal 5-plan operator workflow yet.
 
@@ -55,7 +65,7 @@ from ..models.candidate_summary import CandidateSummary
 from ..models.link_state import LinkState
 from ..models.mission_state import MissionState
 from ..models.packet import Packet
-from ..scheduler.baseline import BaselineScheduler
+from .ranked_prefix_builder import SharedPlanBuildError, build_ranked_prefix_plan
 
 #: Stable plan_id and strategy for the semantic-rule-based comparator plan.
 SEMANTIC_RULE_PLAN_ID = "semantic-rule-based"
@@ -72,10 +82,19 @@ def build_semantic_rule_plan(
 ) -> CandidatePlan:
     """Build a deterministic semantic-rule comparator plan.
 
+    Thin wrapper around :func:`~backend.app.candidate_generator.ranked_prefix_builder.build_ranked_prefix_plan`.
     Uses :class:`~backend.app.agent.semantic_rule_prioritizer.SemanticRulePrioritizer`
-    to rank the candidate set, then appends the tail in BaselineScheduler order.
-    This mirrors exactly what :func:`build_ai_prioritized_plan` does when using
-    an LLM prioritization, ensuring a fair comparison.
+    to rank the candidate set, then delegates to the same shared builder used by
+    :func:`~backend.app.candidate_generator.ai_plan_builder.build_ai_prioritized_plan`.
+
+    The only experimental difference between the AI plan and this comparator plan
+    is the ranking source:
+
+    * AI plan: LLM output
+    * Semantic-rule plan: deterministic structured heuristic
+
+    Both use identical plan-construction mechanics, identical invariant checks,
+    and are evaluated by the same PlanEvaluator and MissionOutcomeEvaluator.
 
     Args:
         all_packets:   Full authoritative packet set.
@@ -96,57 +115,33 @@ def build_semantic_rule_plan(
         - No duplicate packet IDs
         - Every original packet appears exactly once
         - ``metadata`` with provenance information
+
+    Raises:
+        SharedPlanBuildError:
+            * Duplicate IDs in ``all_packets``
+            * Output count or ID set mismatch
     """
-    if weights is None:
-        weights = SchedulerWeights()
-
-    # Build packet lookup
-    pkt_map: dict[str, Packet] = {p.packet_id: p for p in all_packets}
-
     # Rank candidates using the deterministic semantic rule prioritizer
     prioritizer = SemanticRulePrioritizer()
     prioritization = prioritizer.prioritize(candidates, anomalies=anomalies)
 
-    # Build prefix from semantic-rule ranking (same logic as build_ai_prioritized_plan)
-    ranked_sorted = sorted(
-        prioritization.ranked_products,
-        key=lambda rp: rp.priority,
-    )
-
-    prefix: list[Packet] = []
-    seen: set[str] = set()
-    for rp in ranked_sorted:
-        pid = rp.product_id
-        if pid not in pkt_map:
-            continue
-        if pid in seen:
-            continue
-        prefix.append(pkt_map[pid])
-        seen.add(pid)
-
-    # Compute deterministic tail via BaselineScheduler
-    baseline_plan = BaselineScheduler.rank(all_packets, link_state, mission_state, weights)
-    tail: list[Packet] = []
-    for pkt in baseline_plan.packets:
-        if pkt.packet_id not in seen:
-            tail.append(pkt)
-            seen.add(pkt.packet_id)
-
-    ordered = prefix + tail
-
     metadata: dict = {
         "plan_type": "semantic_rule_based",
         "candidate_count": len(candidates),
-        "ranked_count": len(prefix),
+        "ranked_count": len(prioritization.ranked_products),
         "tail_policy": "baseline_scheduler",
         "comparator": "SemanticRulePrioritizer",
         "benchmark_only": True,
     }
 
-    return CandidatePlan(
+    return build_ranked_prefix_plan(
+        all_packets=all_packets,
+        prioritization=prioritization,
+        link_state=link_state,
+        mission_state=mission_state,
+        weights=weights,
         plan_id=SEMANTIC_RULE_PLAN_ID,
         strategy=SEMANTIC_RULE_PLAN_STRATEGY,
-        packets=ordered,
         generated_by="build_semantic_rule_plan",
         metadata=metadata,
     )

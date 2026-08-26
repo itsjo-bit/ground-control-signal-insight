@@ -67,6 +67,12 @@ from .prioritization_helpers import (
     build_prioritization_message as _build_prioritization_message_fn,
     parse_prioritization_response as _parse_prioritization_response_fn,
 )
+from .stage2_blinding import (
+    STAGE2_SYSTEM_PROMPT as _STAGE2_SYSTEM_PROMPT,
+    Stage2PlanSummary,
+    build_stage2_user_message,
+    parse_stage2_response,
+)
 
 # ---------------------------------------------------------------------------
 # Typed exceptions
@@ -96,6 +102,15 @@ _EVALUATION_RESULT_FIELDS: frozenset[str] = frozenset(EvaluationResult.model_fie
 _ALL_CITEABLE_FIELDS: frozenset[str] = (
     _LINK_STATE_FIELDS | _MISSION_STATE_FIELDS | _EVALUATION_RESULT_FIELDS
 )
+
+# Stage-2 citeable fields also include MissionOutcomeResult fields
+def _build_all_citeable_fields() -> frozenset[str]:
+    """Build the extended citeable field set including MissionOutcomeResult."""
+    from ..evaluator.mission_outcome_evaluator import MissionOutcomeResult
+    _MISSION_OUTCOME_FIELDS = frozenset(MissionOutcomeResult.model_fields.keys())
+    return _ALL_CITEABLE_FIELDS | _MISSION_OUTCOME_FIELDS
+
+_ALL_CITEABLE_FIELDS_EXTENDED: frozenset[str] = _build_all_citeable_fields()
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -382,6 +397,45 @@ class GraniteAgent:
         raw_response = self._call_api(user_message)
         return self._parse_response(raw_response, plans, evaluations)
 
+    def recommend_from_summaries(
+        self,
+        summaries: list[Stage2PlanSummary],
+        link_state: LinkState,
+        mission_state: MissionState,
+        anomalies: list[AnomalyEvent] | None = None,
+    ) -> AIRecommendation:
+        """Request a Stage-2 recommendation using compact provenance-blind summaries.
+
+        The external LLM receives only compact metric summaries keyed by opaque
+        option aliases (OPTION-A, …).  It never sees real plan IDs, strategy names,
+        or packet lists.
+
+        The ``recommended_plan_id`` in the returned :class:`AIRecommendation` is an
+        opaque option alias.  The caller (routes_agent) is responsible for mapping
+        it to the real plan identity and rebinding authoritative data.
+
+        Args:
+            summaries:     Compact provenance-blind summaries from stage2_blinding.
+            link_state:    Current link snapshot.
+            mission_state: Current mission snapshot.
+            anomalies:     Active anomaly events.
+
+        Returns:
+            A partial :class:`AIRecommendation` where ``recommended_plan_id`` is an
+            OPTION alias.
+
+        Raises:
+            GraniteAPIError:      If the API call fails.
+            GraniteResponseError: If the response is malformed.
+        """
+        # Build the alias map for validation (needed by parse_stage2_response)
+        alias_map = {s.option_id: s.option_id for s in summaries}  # alias→alias (used for set)
+        user_message = build_stage2_user_message(
+            summaries, link_state, mission_state, anomalies
+        )
+        raw = self._call_stage2_api(user_message)
+        return self._parse_stage2_response(raw, alias_map)
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
@@ -645,6 +699,110 @@ class GraniteAgent:
         except Exception as exc:  # noqa: BLE001  (catches pydantic.ValidationError)
             raise GraniteResponseError(
                 f"Granite response failed AIRecommendation validation: {exc}"
+            ) from exc
+
+    def _call_stage2_api(self, user_message: str) -> str:
+        """POST to Granite with the Stage-2 system prompt (compact summaries).
+
+        Uses the STAGE2_SYSTEM_PROMPT which instructs the model to return an
+        option alias (OPTION-X) not a real plan ID.
+
+        Raises:
+            GraniteAPIError: on HTTP error, connection failure, or timeout.
+        """
+        if not self._api_key:
+            raise GraniteAPIError(
+                "GCSI_GRANITE_API_KEY is not set.  Granite API is unavailable."
+            )
+        if not self._project_id:
+            raise GraniteAPIError(
+                "GCSI_GRANITE_PROJECT_ID is not set.  "
+                "The watsonx.ai /ml/v1/text/generation endpoint requires a project_id."
+            )
+        access_token = self._get_iam_token()
+        payload = {
+            "model_id": self._model_id,
+            "input": (
+                f"<|system|>\n{_STAGE2_SYSTEM_PROMPT}\n"
+                f"<|user|>\n{user_message}\n<|assistant|>\n"
+            ),
+            "parameters": {
+                "decoding_method": "greedy",
+                "max_new_tokens": 1024,
+                "stop_sequences": ["<|user|>"],
+            },
+            "project_id": self._project_id,
+        }
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        try:
+            with httpx.Client(timeout=self._timeout_s) as client:
+                resp = client.post(self._api_url, json=payload, headers=headers)
+        except httpx.RequestError as exc:
+            raise GraniteAPIError(f"Granite Stage-2 API request failed: {type(exc).__name__}") from exc
+        if resp.status_code == 401:
+            self._iam_cache.invalidate()
+            raise GraniteAPIError("Granite Stage-2 API returned HTTP 401: IAM authentication failed.")
+        if resp.status_code != 200:
+            raise GraniteAPIError(f"Granite Stage-2 API returned HTTP {resp.status_code}.")
+        try:
+            body = resp.json()
+            return body["results"][0]["generated_text"]
+        except (KeyError, IndexError, json.JSONDecodeError) as exc:
+            raise GraniteAPIError(f"Unexpected Granite Stage-2 API response shape: {type(exc).__name__}") from exc
+
+    def _parse_stage2_response(
+        self,
+        raw: str,
+        alias_map: dict[str, str],
+    ) -> AIRecommendation:
+        """Parse and validate a Stage-2 Granite response into an AIRecommendation.
+
+        The returned ``recommended_plan_id`` is an OPTION alias.  The caller is
+        responsible for mapping it to the real plan identity.
+
+        Raises:
+            GraniteResponseError: If the JSON is malformed, fields are missing,
+                                  or the option alias is invalid.
+        """
+        from .stage2_blinding import InvalidStage2AliasError as _InvalidAlias
+        try:
+            rec_alias, reasoning, confidence, evidence_dicts, alt_alias = parse_stage2_response(
+                raw, alias_map
+            )
+        except _InvalidAlias as exc:
+            raise GraniteResponseError(str(exc)) from exc
+        except ValueError as exc:
+            raise GraniteResponseError(str(exc)) from exc
+
+        # Build EvidenceItems — no value binding here (values will be rebound by routes_agent)
+        evidence_items: list[EvidenceItem] = [
+            EvidenceItem(
+                source=item.get("source", "candidate_option"),
+                field=item["field"],
+                value=None,  # backend will rebind from authoritative data
+                interpretation=item.get("interpretation", ""),
+            )
+            for item in evidence_dicts
+        ]
+
+        try:
+            return AIRecommendation(
+                recommended_plan_id=rec_alias,
+                packet_actions=[],  # will be rebuilt from real plan by routes_agent
+                reasoning=reasoning,
+                confidence=confidence,
+                risk_score=0.0,          # placeholder; rebound from authoritative eval
+                risk_level=RiskLevel.LOW, # placeholder; rebound from authoritative eval
+                evidence=evidence_items,
+                alternative_plan_id=alt_alias,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise GraniteResponseError(
+                f"Granite Stage-2 response failed AIRecommendation validation: {exc}"
             ) from exc
 
     # ------------------------------------------------------------------

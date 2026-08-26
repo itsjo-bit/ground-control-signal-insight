@@ -54,6 +54,13 @@ from .prioritization_helpers import (
     build_prioritization_message as _build_prioritization_message,
     parse_prioritization_response as _parse_prioritization_response,
 )
+from .stage2_blinding import (
+    STAGE2_SYSTEM_PROMPT as _STAGE2_SYSTEM_PROMPT,
+    Stage2PlanSummary,
+    build_stage2_user_message,
+    parse_stage2_response,
+    InvalidStage2AliasError,
+)
 
 # ---------------------------------------------------------------------------
 # OllamaProvider
@@ -287,6 +294,64 @@ class OllamaProvider(BaseAIProvider):
             raise AIResponseError(
                 f"Ollama response failed AIRecommendation validation: {exc}"
             ) from exc
+
+    def recommend_from_summaries(
+        self,
+        summaries: list[Stage2PlanSummary],
+        link_state: LinkState,
+        mission_state: MissionState,
+        anomalies: list[AnomalyEvent] | None = None,
+    ) -> AIRecommendation:
+        """Generate a Stage-2 recommendation using compact provenance-blind summaries.
+
+        Sends the compact option summaries to Ollama using the Stage-2 system prompt.
+        The model returns an opaque option alias (OPTION-X), not a real plan ID.
+
+        Raises:
+            AIProviderError:  If the Ollama server is unreachable.
+            AIResponseError:  If the response fails validation.
+        """
+        alias_map = {s.option_id: s.option_id for s in summaries}
+        user_message = build_stage2_user_message(summaries, link_state, mission_state, anomalies)
+        full_prompt = (
+            f"<|system|>\n{_STAGE2_SYSTEM_PROMPT}\n"
+            f"<|user|>\n{user_message}\n<|assistant|>\n"
+        )
+        raw = self._call_api(full_prompt)
+
+        try:
+            rec_alias, reasoning, confidence, evidence_dicts, alt_alias = parse_stage2_response(
+                raw, alias_map
+            )
+        except InvalidStage2AliasError as exc:
+            raise AIResponseError(str(exc)) from exc
+        except ValueError as exc:
+            raise AIResponseError(str(exc)) from exc
+
+        from ..models.evidence_item import EvidenceItem as _EI
+        evidence_items = [
+            _EI(
+                source=item.get("source", "candidate_option"),
+                field=item["field"],
+                value=None,  # backend will rebind from authoritative data
+                interpretation=item.get("interpretation", ""),
+            )
+            for item in evidence_dicts
+        ]
+        from ..models.risk_level import RiskLevel as _RL
+        try:
+            return AIRecommendation(
+                recommended_plan_id=rec_alias,
+                packet_actions=[],
+                reasoning=reasoning,
+                confidence=confidence,
+                risk_score=0.0,
+                risk_level=_RL.LOW,  # placeholder; rebound by routes_agent
+                evidence=evidence_items,
+                alternative_plan_id=alt_alias,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise AIResponseError(f"Ollama Stage-2 response failed validation: {exc}") from exc
 
     def prioritize_candidates(
         self,

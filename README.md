@@ -137,6 +137,34 @@ or any other source. Both produce identical metrics for identical inputs.
 **Zero-denominator rule**: When a metric denominator is zero (e.g., no required products
 in the scenario), the rate field returns `null` — not a false `1.0`.
 
+**Authoritative denominator policy** (Phase 2A.1):
+All `MissionOutcomeEvaluator` rates are computed against the **complete authoritative
+`DataProduct[]` scenario inventory**, not merely the products present in the candidate plan.
+
+> "A plan cannot improve its score simply by omitting products."
+
+Concretely:
+- `total_products` = `len(authoritative DataProduct[])`
+- `total_scientific_value` = `Σ scientific_value` across ALL authoritative products
+- `required_products_total` = all authoritative products where `delivery_requirement == "required"`
+- `active_anomaly_products_total` = all authoritative products linked to an applicable anomaly
+- Per-anomaly `total_linked_products` = all authoritative products linked to that anomaly
+
+An omitted authoritative product therefore counts as **not delivered** rather than
+disappearing from the denominator.
+
+**Applicable anomaly semantics** (Phase 2A.1):
+An anomaly is "applicable" for coverage purposes when its `status` is `"active"` or
+`"monitoring"`. Anomalies with `status == "resolved"` are excluded from coverage metrics.
+The canonical filter is `is_applicable_anomaly(anomaly)` in `mission_outcome_evaluator.py`.
+
+**Strict validation** (Phase 2A.1):
+`MissionOutcomeEvaluationError` is raised for:
+- `plan.plan_id != evaluation_result.plan_id` (mismatched pair)
+- Duplicate `product_id` in authoritative `DataProduct[]`
+- `CandidatePlan` references a `packet_id` not in the authoritative inventory
+- `EvaluationResult.deferred_packets` contains IDs not present in the plan
+
 ### Five-Plan Architecture
 
 The v2/v3 path generates **five** candidate plans:
@@ -157,43 +185,85 @@ All five plans are evaluated by the **same** `PlanEvaluator` and `MissionOutcome
 instances. No bonus metrics are added for the AI plan. AI provenance cannot influence
 evaluation results.
 
-### Semantic Deterministic Comparator (Phase 2A Benchmark Infrastructure)
+### Semantic Deterministic Comparator (Phase 2A.1 Benchmark Infrastructure)
 
 A **`semantic-rule-based`** comparator plan exists for scientific benchmarking (not shown
-in the normal UI):
+in the normal UI). Both this plan and the AI-prioritized plan are built by the **same
+shared `build_ranked_prefix_plan()` helper** in `ranked_prefix_builder.py`:
 
 ```
 LLM semantic plan          deterministic semantic-rule plan
         ↓                              ↓
     same candidate set             same candidate set
     same structured metadata       same structured metadata
-    same plan builder policy       same plan builder policy
+    ── SAME build_ranked_prefix_plan() ──
+    same duplicate-ID checks       same duplicate-ID checks
+    same completeness invariants   same completeness invariants
     same evaluators                same evaluators
-    but: LLM reasoning             but: explicit composite heuristic
+    but: LLM ranking source        but: SemanticRulePrioritizer ranking
 ```
 
 The `SemanticRulePrioritizer` applies the same structured metadata (anomaly severity,
 criticality, scientific value, deadline urgency) via a documented composite heuristic
 rather than generative inference. This enables fair ablation experiments.
 
-### AI Stage 2 — Plan Recommendation (Phase 2A: Provenance-Blind)
+**Shared builder guarantees:**
+- Duplicate authoritative packet IDs are rejected in both builders
+- Both use identical prefix + BaselineScheduler-tail construction
+- No mechanical implementation advantage exists between the two plans
+- Their only experimental difference is the ranking source
 
-For **external LLM providers** (Granite, Gemini, Ollama), Stage-2 recommendation now
-operates with **provenance blinding**:
+### AI Stage 2 — Plan Recommendation (Phase 2A.1: Compact Provenance-Blind Summaries)
 
-1. Plans are anonymised as `OPTION-A` … `OPTION-E` before sending to the LLM
-2. The LLM receives only compact evaluation summaries (no packet lists, no plan identities)
-3. The LLM selects an option alias
-4. The backend maps the alias back to the real plan ID
-5. Invalid aliases are rejected — a real plan name returned instead of an alias fails validation
+For **external LLM providers** (Granite, Gemini, Ollama), Stage-2 recommendation uses
+**compact, provenance-blind `Stage2PlanSummary` objects** via `recommend_from_summaries()`.
 
-This prevents:
+**Production Stage-2 flow:**
+
+```
+plans / evaluations / mission outcomes
+        ↓
+build_blind_mapping()          ← OPTION-A … OPTION-E
+        ↓
+build_stage2_summaries()       ← compact metrics, no plan identities
+        ↓
+build_stage2_user_message()    ← final JSON sent to external LLM
+        ↓
+provider.recommend_from_summaries()  ← actual LLM call
+        ↓
+parse_stage2_response()        ← validate OPTION alias
+        ↓
+map_alias_to_plan_id()         ← backend mapping to real plan
+        ↓
+rebind risk_score, risk_level, packet_actions from authoritative data
+        ↓
+EvidenceItem values bound from authoritative summary (not LLM-echoed)
+```
+
+**What the external LLM receives:**
+- `candidate_options`: compact metrics per OPTION alias (no real plan IDs)
+- `mission_context`: phase, event, risk level
+- `link_context`: window, BER, goodput
+- `active_anomalies`: severity, subsystem (applicable anomalies only)
+
+**What the external LLM does NOT receive:**
+- CandidatePlan objects or packet arrays
+- `ai-prioritized`, `baseline`, `strategy`, `generated_by`, `plan_type`
+- Any other provenance information
+
+**Stage-2 response contract:**
+The external LLM returns `recommended_option_id` (an OPTION alias), `reasoning`,
+`confidence`, `evidence` (field interpretations, no values), and `alternative_option_id`.
+The backend supplies `risk_score`, `risk_level`, `packet_actions`, and evidence values
+from authoritative data. The LLM never invents these.
+
+**Provenance blinding prevents:**
 - **Self-preference bias** — the LLM cannot favour the plan it may have generated
 - **Automation bias** — "AI-prioritized" branding cannot influence the selection
-- **Provenance leakage** — strategy, generated_by, and plan_type are not in the Stage-2 context
+- **Provenance leakage** — strategy, generated_by, and plan_type are absent
 
 The `LocalRuleBasedProvider` is deterministic and is not subject to these biases, so it
-operates on real plan data directly.
+operates on real plan data directly via `recommend()`.
 
 The alias→real-plan mapping is deterministic (SHA-256 based on scenario ID + plan ID),
 reproducible across runs, and never exposed to the external provider.

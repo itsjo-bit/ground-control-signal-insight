@@ -10,6 +10,18 @@ Design principles
 * No randomness.
 * Independently testable.
 
+Implementation
+--------------
+This is a thin wrapper around the shared
+:func:`~backend.app.candidate_generator.ranked_prefix_builder.build_ranked_prefix_plan`
+function.  The only responsibility of this module is to supply the AI-plan-specific
+``plan_id``, ``strategy``, ``generated_by``, and ``metadata``.
+
+Both :func:`build_ai_prioritized_plan` and
+:func:`~backend.app.candidate_generator.semantic_rule_plan_builder.build_semantic_rule_plan`
+delegate to ``build_ranked_prefix_plan`` so the plan construction mechanics
+are provably identical.  The only experimental difference is the ranking source.
+
 Ordering policy (Section 4 of the architecture spec)
 -----------------------------------------------------
 AI-ranked prefix
@@ -56,19 +68,16 @@ from ..models.candidate_prioritization import CandidatePrioritization
 from ..models.link_state import LinkState
 from ..models.mission_state import MissionState
 from ..models.packet import Packet
-from ..scheduler.baseline import BaselineScheduler
+from .ranked_prefix_builder import SharedPlanBuildError, build_ranked_prefix_plan
 
 #: Stable plan_id and strategy for the AI-prioritized plan.
 AI_PLAN_ID = "ai-prioritized"
 AI_PLAN_STRATEGY = "ai_prioritized"
 
 
-class AIPlanBuildError(Exception):
-    """Raised when the AI plan builder detects an invariant violation.
-
-    Used instead of ``assert`` so that invariant checks are never silently
-    disabled by Python optimized execution (``python -O``).
-    """
+# Re-export the shared error under the legacy name so existing tests continue
+# to import AIPlanBuildError from this module.
+AIPlanBuildError = SharedPlanBuildError
 
 
 def build_ai_prioritized_plan(
@@ -82,6 +91,11 @@ def build_ai_prioritized_plan(
     fallback_used: bool = False,
 ) -> CandidatePlan:
     """Construct the AI-prioritized transmission plan.
+
+    Thin wrapper around :func:`~backend.app.candidate_generator.ranked_prefix_builder.build_ranked_prefix_plan`.
+    All plan-construction mechanics are identical to
+    :func:`~backend.app.candidate_generator.semantic_rule_plan_builder.build_semantic_rule_plan`;
+    the only difference is the ranking source.
 
     Args:
         all_packets:     Full authoritative packet set (150 products in v3).
@@ -108,97 +122,37 @@ def build_ai_prioritized_plan(
         - Every original packet appears exactly once
         - ``metadata`` containing full provenance information
 
+    Raises:
+        AIPlanBuildError (alias for SharedPlanBuildError):
+            * Duplicate IDs in ``all_packets``
+            * Output count or ID set mismatch
+
     Notes:
         * AI-ranked IDs that do not appear in ``all_packets`` are discarded
           (hallucination guard).
         * When ``prioritization.ranked_products`` is empty the plan degrades
           gracefully to pure BaselineScheduler ordering.
     """
-    if weights is None:
-        weights = SchedulerWeights()
-
-    # -- Validate authoritative input: no duplicate packet IDs -------------
-    seen_input: set[str] = set()
-    duplicates: list[str] = []
-    for p in all_packets:
-        if p.packet_id in seen_input:
-            duplicates.append(p.packet_id)
-        seen_input.add(p.packet_id)
-    if duplicates:
-        raise AIPlanBuildError(
-            f"Authoritative all_packets contains duplicate packet IDs: {duplicates}. "
-            "This indicates corrupted input data — the AI plan cannot be built safely."
-        )
-
-    # -- Build lookup: packet_id → Packet ----------------------------------
-    pkt_map: dict[str, Packet] = {p.packet_id: p for p in all_packets}
-
-    # -- Sort AI-ranked products by priority ascending (1 = most important) -
-    ranked_sorted = sorted(
-        prioritization.ranked_products,
-        key=lambda rp: rp.priority,
-    )
-
-    # -- Build AI prefix: validate IDs, deduplicate -------------------------
-    prefix: list[Packet] = []
-    seen: set[str] = set()
-
-    for rp in ranked_sorted:
-        pid = rp.product_id
-        # Hallucination guard: skip IDs that are not in the authoritative set.
-        if pid not in pkt_map:
-            continue
-        # Dedup guard (should never trigger with a well-formed prioritization).
-        if pid in seen:
-            continue
-        prefix.append(pkt_map[pid])
-        seen.add(pid)
-
-    # -- Compute deterministic tail ordering via BaselineScheduler -----------
-    # Pass the FULL packet set; BaselineScheduler uses only packet attributes
-    # and link/mission state, so its output is independent of AI ranking.
-    baseline_plan = BaselineScheduler.rank(all_packets, link_state, mission_state, weights)
-
-    # Append tail packets in baseline order, skipping already-seen AI packets.
-    tail: list[Packet] = []
-    for pkt in baseline_plan.packets:
-        if pkt.packet_id not in seen:
-            tail.append(pkt)
-            seen.add(pkt.packet_id)
-
-    ordered = prefix + tail
-
-    # Invariant check: we must never lose or gain packets.
-    # Use explicit exception rather than assert (assert can be disabled by -O).
-    if len(ordered) != len(all_packets):
-        raise AIPlanBuildError(
-            f"AI plan packet count mismatch: expected {len(all_packets)}, "
-            f"got {len(ordered)}"
-        )
-    ordered_ids = {p.packet_id for p in ordered}
-    input_ids = {p.packet_id for p in all_packets}
-    if ordered_ids != input_ids:
-        missing = input_ids - ordered_ids
-        extra = ordered_ids - input_ids
-        raise AIPlanBuildError(
-            f"AI plan packet ID set mismatch: "
-            f"missing={sorted(missing)}, extra={sorted(extra)}"
-        )
-
-    # -- Build provenance metadata ------------------------------------------
     metadata: dict = {
         "plan_type": "ai_semantic",
         "candidate_count": prioritization.candidate_count,
-        "ranked_count": len(prefix),
+        "ranked_count": len([
+            rp for rp in prioritization.ranked_products
+            if any(p.packet_id == rp.product_id for p in all_packets)
+        ]),
         "tail_policy": "baseline_scheduler",
         "stage1_provider": stage1_provider,
         "fallback_used": fallback_used,
     }
 
-    return CandidatePlan(
+    return build_ranked_prefix_plan(
+        all_packets=all_packets,
+        prioritization=prioritization,
+        link_state=link_state,
+        mission_state=mission_state,
+        weights=weights,
         plan_id=AI_PLAN_ID,
         strategy=AI_PLAN_STRATEGY,
-        packets=ordered,
         generated_by="build_ai_prioritized_plan",
         metadata=metadata,
     )

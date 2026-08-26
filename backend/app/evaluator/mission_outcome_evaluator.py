@@ -28,11 +28,39 @@ anomaly linkage) of the packets that were *not* deferred.
 This is the critical coupling point:
 
     delivered_product ≡
-        product_id ∈ CandidatePlan.packets
+        product_id ∈ authoritative DataProduct inventory
+        AND product_id ∈ CandidatePlan.packets
         AND product_id ∉ EvaluationResult.deferred_packets
 
-The semantic evaluator therefore depends on the physical evaluator's
-verdict but does *not* reimplement window feasibility.
+Authoritative denominator policy
+---------------------------------
+All rates are computed against the **full authoritative DataProduct
+inventory**, not merely the products present in the candidate plan.
+
+This is the ground-truth principle:
+
+    "A plan cannot improve its score simply by omitting products."
+
+Concretely:
+
+* ``total_products``          = len(authoritative data_products)
+* ``total_scientific_value``  = Σ scientific_value across ALL authoritative products
+* ``required_products_total`` = all authoritative products where delivery_requirement == "required"
+* ``active_anomaly_products_total`` = all authoritative products whose anomaly_id
+                                       references an applicable active anomaly
+* per-anomaly ``total_linked_products`` = all authoritative products linked to that anomaly
+
+An omitted authoritative product therefore counts as not delivered,
+and this is reflected in every rate.
+
+Applicable anomaly semantics
+-----------------------------
+An anomaly is **applicable** (counted for coverage purposes) if its
+``status`` is ``"active"`` or ``"monitoring"``.  Anomalies with
+``status == "resolved"`` are excluded from anomaly coverage metrics.
+
+Use :func:`is_applicable_anomaly` everywhere status filtering is needed.
+Do not duplicate the status rule across evaluator, prioritizer, or benchmark.
 
 Zero-denominator policy
 -----------------------
@@ -40,16 +68,34 @@ When a metric's denominator is zero (e.g. no required products in the
 scenario) the *rate* field is ``None`` rather than a fictitious 1.0.
 Raw counts remain 0.  This prevents false "perfect performance" signals.
 
+High-severity anomaly coverage
+---------------------------------
+The denominator includes only high-severity anomalies that have at least
+one authoritative linked product.  Anomalies with severity >= threshold
+but zero authoritative linked products are excluded from the denominator
+(not from the anomaly list itself).  This prevents "no evidence exists"
+from being confused with "evidence was not delivered".
+
 Anomaly-weighted coverage formula
 ----------------------------------
-For each active anomaly *i* that has at least one linked product::
+For each applicable anomaly *i* that has at least one linked product::
 
-    coverage_i = delivered_linked_i / total_linked_i
+    coverage_i = delivered_linked_i / total_linked_i  (authoritative denominator)
 
     anomaly_weighted_coverage =
         Σ(severity_i × coverage_i) / Σ(severity_i)
 
-Only anomalies with ≥1 linked product participate in the weighted sum.
+Only anomalies with ≥1 authoritative linked product participate in the
+weighted sum.
+
+Strict validation
+-----------------
+``MissionOutcomeEvaluationError`` is raised for:
+
+* ``plan.plan_id != evaluation_result.plan_id`` — mismatched pair
+* duplicate ``product_id`` in authoritative ``DataProduct[]``
+* ``CandidatePlan`` references a ``packet_id`` not in authoritative inventory
+* ``EvaluationResult.deferred_packets`` contains IDs not in the plan
 
 High-severity anomaly threshold
 ---------------------------------
@@ -77,6 +123,61 @@ from ..models.evaluation_result import EvaluationResult
 #: Default severity threshold above which an anomaly is counted as "high severity".
 DEFAULT_HIGH_SEVERITY_THRESHOLD: float = 0.75
 
+# ---------------------------------------------------------------------------
+# Applicable anomaly statuses
+# ---------------------------------------------------------------------------
+
+#: Anomaly statuses that count as "active" for coverage metrics.
+#: "resolved" anomalies are excluded — their data delivery is no longer urgent.
+APPLICABLE_ANOMALY_STATUSES: frozenset[str] = frozenset({"active", "monitoring"})
+
+
+def is_applicable_anomaly(anomaly: AnomalyEvent) -> bool:
+    """Return True when *anomaly* should be counted in coverage metrics.
+
+    An anomaly is applicable when its status is ``"active"`` or
+    ``"monitoring"``.  Resolved anomalies are excluded.
+
+    This is the single canonical status filter.  Use it everywhere
+    anomaly coverage is computed — do not duplicate the status logic.
+
+    Args:
+        anomaly: The anomaly event to test.
+
+    Returns:
+        True when the anomaly status is in :data:`APPLICABLE_ANOMALY_STATUSES`.
+    """
+    return anomaly.status in APPLICABLE_ANOMALY_STATUSES
+
+
+# ---------------------------------------------------------------------------
+# Typed exception
+# ---------------------------------------------------------------------------
+
+
+class MissionOutcomeEvaluationError(Exception):
+    """Raised when the evaluator detects a fatal input inconsistency.
+
+    Callers must fix the root cause rather than catching and ignoring
+    this exception — it always indicates corrupted or mismatched inputs.
+
+    Conditions that trigger this error:
+
+    * ``plan.plan_id != evaluation_result.plan_id``
+      The plan and its evaluation result do not correspond to the same object.
+
+    * Duplicate ``product_id`` in the authoritative ``DataProduct[]`` list.
+      Dictionary construction would silently overwrite products, producing
+      incorrect denominators.
+
+    * A ``CandidatePlan`` packet references a ``product_id`` that does not
+      exist in the authoritative ``DataProduct[]`` inventory.
+
+    * ``EvaluationResult.deferred_packets`` contains an ID that is not
+      present in the plan's packet list.  This indicates a mismatch
+      between the physical evaluator result and the plan.
+    """
+
 
 # ---------------------------------------------------------------------------
 # Typed result model
@@ -93,7 +194,8 @@ class AnomalyCoverageDetail(BaseModel):
     severity
         Authoritative severity from the scenario AnomalyEvent [0, 1].
     total_linked_products
-        Number of data products whose ``anomaly_id`` matches this anomaly.
+        Number of authoritative data products whose ``anomaly_id`` matches
+        this anomaly (denominator uses full inventory, not just plan products).
     delivered_linked_products
         Number of those products that were delivered (not deferred).
     coverage_rate
@@ -121,6 +223,13 @@ class MissionOutcomeResult(BaseModel):
     All rates are ``None`` when their denominator is zero to prevent false
     "perfect performance" signals.
 
+    Denominator policy
+    ------------------
+    All denominators use the **full authoritative DataProduct inventory**,
+    not merely the products present in the candidate plan.  Omitting a
+    product therefore counts as non-delivery rather than removing it from
+    the denominator.
+
     Fields
     ------
     plan_id
@@ -129,31 +238,41 @@ class MissionOutcomeResult(BaseModel):
     Product delivery
         total_products, delivered_products, delivery_rate
 
+        ``total_products`` = len(authoritative DataProduct[]).
+
     Scientific value capture
         total_scientific_value, delivered_scientific_value, scientific_value_capture_rate
 
+        ``total_scientific_value`` = Σ scientific_value across ALL authoritative products.
         ``scientific_value_capture_rate`` is null when total_scientific_value == 0.
 
     Required-product delivery
         required_products_total, required_products_delivered, required_delivery_rate
 
+        ``required_products_total`` = all authoritative products where
+        delivery_requirement == "required".
         ``required_delivery_rate`` is null when required_products_total == 0.
 
     Active-anomaly product delivery
         active_anomaly_products_total, active_anomaly_products_delivered,
         active_anomaly_delivery_rate
 
+        ``active_anomaly_products_total`` = all authoritative products whose
+        anomaly_id references an applicable active anomaly.
         ``active_anomaly_delivery_rate`` is null when no active-anomaly products exist.
 
     High-severity anomaly coverage
         high_severity_anomalies_total, high_severity_anomalies_covered,
         high_severity_anomaly_coverage_rate, high_severity_threshold
 
-        ``high_severity_anomaly_coverage_rate`` is null when no high-severity anomalies exist.
+        Denominator includes only high-severity anomalies with ≥1 authoritative
+        linked product.  See module docstring for rationale.
+        ``high_severity_anomaly_coverage_rate`` is null when denominator is zero.
 
     Anomaly-weighted coverage
         anomaly_weighted_coverage — Σ(severity_i × coverage_i) / Σ(severity_i).
-        Null when no active anomaly has linked products.
+        Coverage denominator uses authoritative total linked products.
+        Null when no applicable anomaly has linked products.
 
     Data age
         average_delivered_age_s, median_delivered_age_s
@@ -203,8 +322,9 @@ class MissionOutcomeResult(BaseModel):
         ge=0.0,
         le=1.0,
         description=(
-            "Σ(severity_i × coverage_i) / Σ(severity_i) for active anomalies with linked products. "
-            "Null when no active anomaly has linked products."
+            "Σ(severity_i × coverage_i) / Σ(severity_i) for applicable anomalies with linked "
+            "products. Coverage denominator uses authoritative inventory. "
+            "Null when no applicable anomaly has linked products."
         ),
     )
 
@@ -227,7 +347,7 @@ class MissionOutcomeResult(BaseModel):
     # ── Per-anomaly detail ────────────────────────────────────────────────────
     anomaly_coverage_by_id: list[AnomalyCoverageDetail] = Field(
         default_factory=list,
-        description="Per-anomaly coverage breakdown for all active anomalies",
+        description="Per-anomaly coverage breakdown for all applicable anomalies",
     )
 
 
@@ -251,8 +371,12 @@ class MissionOutcomeEvaluator:
 
     * ``CandidatePlan.packets`` — to know which products are in the plan
     * ``EvaluationResult.deferred_packets`` — to know which were deferred
-    * ``DataProduct[]`` — authoritative product metadata
+    * ``DataProduct[]`` — authoritative product metadata (full inventory)
     * ``AnomalyEvent[]`` — authoritative anomaly metadata
+
+    All rate denominators use the **full authoritative DataProduct inventory**
+    rather than only the products present in the plan.  A plan cannot improve
+    its score by omitting difficult products.
 
     Args:
         high_severity_threshold: Severity threshold for classifying an anomaly
@@ -284,90 +408,153 @@ class MissionOutcomeEvaluator:
             evaluation_result: Deterministic ``PlanEvaluator`` result for *plan*.
                                ``deferred_packets`` is used to derive physical
                                delivery status.
-            data_products:     Authoritative list of all mission data products.
-            anomalies:         Authoritative list of active anomaly events.
+            data_products:     Authoritative list of ALL mission data products.
+                               Denominators are computed from this full inventory.
+            anomalies:         Authoritative list of anomaly events.
 
         Returns:
             :class:`MissionOutcomeResult` with multi-dimensional semantic metrics.
 
+        Raises:
+            MissionOutcomeEvaluationError:
+                * ``plan.plan_id != evaluation_result.plan_id``
+                * Duplicate ``product_id`` in authoritative ``data_products``
+                * A plan packet references an unknown authoritative product
+                * A deferred packet ID is not present in the plan
+
         Notes:
-            The ``plan`` and ``evaluation_result`` must correspond to the same
-            plan (same ``plan_id``).  No exception is raised if they differ, but
-            the metrics will be meaningless.
+            Applicable anomaly statuses: ``"active"`` and ``"monitoring"``.
+            Anomalies with ``status == "resolved"`` are excluded from
+            coverage metrics (see :func:`is_applicable_anomaly`).
         """
-        # ── Build authoritative lookups ───────────────────────────────────────
-        # product_id → DataProduct (authoritative metadata)
+        # ── Strict validation ─────────────────────────────────────────────────
+
+        # 1. plan / evaluation_result must match
+        if plan.plan_id != evaluation_result.plan_id:
+            raise MissionOutcomeEvaluationError(
+                f"plan.plan_id '{plan.plan_id}' does not match "
+                f"evaluation_result.plan_id '{evaluation_result.plan_id}'. "
+                "Computing metrics from mismatched objects produces meaningless results."
+            )
+
+        # 2. Reject duplicate authoritative product IDs
+        seen_product_ids: set[str] = set()
+        duplicates: list[str] = []
+        for dp in data_products:
+            if dp.product_id in seen_product_ids:
+                duplicates.append(dp.product_id)
+            seen_product_ids.add(dp.product_id)
+        if duplicates:
+            raise MissionOutcomeEvaluationError(
+                f"Authoritative data_products contains duplicate product_ids: {sorted(set(duplicates))}. "
+                "Dictionary construction would silently overwrite products and corrupt denominators."
+            )
+
+        # ── Build authoritative lookup ────────────────────────────────────────
+        # product_id → DataProduct (authoritative metadata for all scenario products)
         product_map: dict[str, DataProduct] = {dp.product_id: dp for dp in data_products}
+
+        # 3. Reject plan packets that reference unknown authoritative products
+        plan_packet_ids: list[str] = [pkt.packet_id for pkt in plan.packets]
+        unknown_plan_ids: list[str] = [
+            pid for pid in plan_packet_ids if pid not in product_map
+        ]
+        if unknown_plan_ids:
+            raise MissionOutcomeEvaluationError(
+                f"CandidatePlan '{plan.plan_id}' references packet_id(s) not in the "
+                f"authoritative DataProduct inventory: {sorted(unknown_plan_ids)}. "
+                "A plan being evaluated must reference authoritative mission data only."
+            )
+
+        # 4. Reject deferred IDs that are not in the plan
+        plan_packet_id_set: set[str] = set(plan_packet_ids)
+        unknown_deferred: list[str] = [
+            pid for pid in evaluation_result.deferred_packets
+            if pid not in plan_packet_id_set
+        ]
+        if unknown_deferred:
+            raise MissionOutcomeEvaluationError(
+                f"EvaluationResult for '{evaluation_result.plan_id}' contains deferred_packet IDs "
+                f"not present in the plan's packet list: {sorted(unknown_deferred)}. "
+                "This indicates a mismatch between the physical evaluator result and the plan."
+            )
+
+        # ── Set up working sets ───────────────────────────────────────────────
 
         # Set of deferred product IDs (from PlanEvaluator — physical ground truth)
         deferred_set: set[str] = set(evaluation_result.deferred_packets)
 
-        # Active anomaly ID set and severity lookup
-        active_anomaly_ids: set[str] = {ae.anomaly_id for ae in anomalies}
-        anomaly_severity: dict[str, float] = {ae.anomaly_id: ae.severity for ae in anomalies}
+        # Applicable anomalies (active + monitoring, not resolved)
+        applicable_anomalies = [ae for ae in anomalies if is_applicable_anomaly(ae)]
+        applicable_anomaly_ids: set[str] = {ae.anomaly_id for ae in applicable_anomalies}
+        anomaly_severity: dict[str, float] = {ae.anomaly_id: ae.severity for ae in applicable_anomalies}
 
-        # ── Classify plan products as delivered vs deferred ───────────────────
-        # A product is "delivered" iff it is in the plan AND not deferred.
-        delivered_ids: set[str] = set()
-        for pkt in plan.packets:
-            if pkt.packet_id not in deferred_set:
-                delivered_ids.add(pkt.packet_id)
+        # Products delivered by this plan (in plan AND not deferred)
+        delivered_ids: set[str] = {
+            pid for pid in plan_packet_ids
+            if pid not in deferred_set
+        }
 
-        # ── Only consider products that appear in the plan ────────────────────
-        # We measure outcomes for products in the plan, using authoritative metadata.
-        plan_product_ids = [pkt.packet_id for pkt in plan.packets]
-        plan_products: list[DataProduct] = [
-            product_map[pid] for pid in plan_product_ids if pid in product_map
-        ]
-        total_products = len(plan_products)
+        # ── AUTHORITATIVE denominators: use FULL inventory ────────────────────
+        #
+        # "A plan cannot improve its score by omitting products."
+        #
+        # total_products = len(ALL authoritative products)
+        all_auth_products: list[DataProduct] = list(data_products)
+        total_products = len(all_auth_products)
 
-        # ── Product delivery counts ───────────────────────────────────────────
-        delivered_products_list: list[DataProduct] = [
-            dp for dp in plan_products if dp.product_id in delivered_ids
-        ]
-        delivered_count = len(delivered_products_list)
+        # ── Product delivery (authoritative denominator) ──────────────────────
+        # Delivered = in plan AND not deferred AND in authoritative inventory
+        # Omitted authoritative product = not delivered
+        delivered_count = sum(
+            1 for dp in all_auth_products
+            if dp.product_id in delivered_ids
+        )
         delivery_rate: float | None = (
             delivered_count / total_products if total_products > 0 else None
         )
 
-        # ── Scientific value capture ──────────────────────────────────────────
-        total_sci_val = sum(dp.scientific_value for dp in plan_products)
+        # ── Scientific value capture (authoritative denominator) ──────────────
+        # total = Σ scientific_value across ALL authoritative products
+        total_sci_val = sum(dp.scientific_value for dp in all_auth_products)
         delivered_sci_val = sum(
-            dp.scientific_value for dp in plan_products if dp.product_id in delivered_ids
+            dp.scientific_value for dp in all_auth_products
+            if dp.product_id in delivered_ids
         )
         sci_capture_rate: float | None = (
             delivered_sci_val / total_sci_val if total_sci_val > 0.0 else None
         )
 
-        # ── Required-product delivery ─────────────────────────────────────────
-        required_products = [
-            dp for dp in plan_products if dp.delivery_requirement == "required"
-        ]
-        req_total = len(required_products)
-        req_delivered = sum(1 for dp in required_products if dp.product_id in delivered_ids)
+        # ── Required-product delivery (authoritative denominator) ─────────────
+        # required_total = all authoritative products where delivery_requirement == "required"
+        auth_required = [dp for dp in all_auth_products if dp.delivery_requirement == "required"]
+        req_total = len(auth_required)
+        req_delivered = sum(1 for dp in auth_required if dp.product_id in delivered_ids)
         req_rate: float | None = req_delivered / req_total if req_total > 0 else None
 
-        # ── Active-anomaly product delivery ───────────────────────────────────
-        # Products linked to an anomaly that appears in the active anomaly list.
-        anomaly_products = [
-            dp for dp in plan_products
-            if dp.anomaly_id is not None and dp.anomaly_id in active_anomaly_ids
+        # ── Active-anomaly product delivery (authoritative denominator) ───────
+        # total = all authoritative products whose anomaly_id references an applicable anomaly
+        auth_anomaly_products = [
+            dp for dp in all_auth_products
+            if dp.anomaly_id is not None and dp.anomaly_id in applicable_anomaly_ids
         ]
-        anom_total = len(anomaly_products)
-        anom_delivered = sum(1 for dp in anomaly_products if dp.product_id in delivered_ids)
+        anom_total = len(auth_anomaly_products)
+        anom_delivered = sum(
+            1 for dp in auth_anomaly_products if dp.product_id in delivered_ids
+        )
         anom_rate: float | None = anom_delivered / anom_total if anom_total > 0 else None
 
-        # ── Per-anomaly coverage detail ───────────────────────────────────────
-        # Group plan products by anomaly_id (only active anomalies count).
-        anomaly_product_map: dict[str, list[DataProduct]] = {}
-        for dp in plan_products:
+        # ── Per-anomaly coverage detail (authoritative denominator) ───────────
+        # For each applicable anomaly: total = all authoritative products linked to it
+        auth_anomaly_product_map: dict[str, list[DataProduct]] = {}
+        for dp in all_auth_products:
             aid = dp.anomaly_id
-            if aid and aid in active_anomaly_ids:
-                anomaly_product_map.setdefault(aid, []).append(dp)
+            if aid and aid in applicable_anomaly_ids:
+                auth_anomaly_product_map.setdefault(aid, []).append(dp)
 
         coverage_details: list[AnomalyCoverageDetail] = []
-        for ae in anomalies:
-            linked = anomaly_product_map.get(ae.anomaly_id, [])
+        for ae in applicable_anomalies:
+            linked = auth_anomaly_product_map.get(ae.anomaly_id, [])
             linked_total = len(linked)
             linked_delivered = sum(1 for dp in linked if dp.product_id in delivered_ids)
             cov_rate: float | None = (
@@ -381,23 +568,28 @@ class MissionOutcomeEvaluator:
                 coverage_rate=cov_rate,
             ))
 
-        # ── High-severity anomaly coverage ────────────────────────────────────
-        # "Covered" = at least one linked product was delivered.
-        high_sev_anomalies = [
-            ae for ae in anomalies
-            if ae.severity >= self._high_severity_threshold
+        # ── High-severity anomaly coverage (authoritative denominator) ────────
+        # "Covered" = at least one linked authoritative product was delivered.
+        # Denominator: high-severity applicable anomalies WITH ≥1 authoritative linked product.
+        # This prevents "no evidence exists" from polluting the denominator.
+        high_sev_anomalies_with_products = [
+            ae for ae in applicable_anomalies
+            if (
+                ae.severity >= self._high_severity_threshold
+                and len(auth_anomaly_product_map.get(ae.anomaly_id, [])) > 0
+            )
         ]
-        hs_total = len(high_sev_anomalies)
+        hs_total = len(high_sev_anomalies_with_products)
         hs_covered = 0
-        for ae in high_sev_anomalies:
-            linked = anomaly_product_map.get(ae.anomaly_id, [])
+        for ae in high_sev_anomalies_with_products:
+            linked = auth_anomaly_product_map.get(ae.anomaly_id, [])
             if any(dp.product_id in delivered_ids for dp in linked):
                 hs_covered += 1
         hs_rate: float | None = hs_covered / hs_total if hs_total > 0 else None
 
-        # ── Anomaly-weighted coverage ─────────────────────────────────────────
+        # ── Anomaly-weighted coverage (authoritative denominator) ─────────────
         # Formula: Σ(severity_i × coverage_i) / Σ(severity_i)
-        # Only anomalies with ≥1 linked product participate.
+        # Only applicable anomalies with ≥1 authoritative linked product participate.
         weighted_cov: float | None = None
         participating: list[tuple[float, float]] = []  # (severity, coverage_i)
         for detail in coverage_details:
@@ -411,34 +603,37 @@ class MissionOutcomeEvaluator:
             else:
                 weighted_cov = None
 
-        # ── Data age metrics ──────────────────────────────────────────────────
-        delivered_ages: list[float] = []
-        for dp in delivered_products_list:
-            delivered_ages.append(dp.age_s)
-
-        avg_age: float | None = sum(delivered_ages) / len(delivered_ages) if delivered_ages else None
+        # ── Data age metrics (delivered products only) ────────────────────────
+        delivered_ages: list[float] = [
+            dp.age_s for dp in all_auth_products
+            if dp.product_id in delivered_ids
+        ]
+        avg_age: float | None = (
+            sum(delivered_ages) / len(delivered_ages) if delivered_ages else None
+        )
         med_age: float | None = statistics.median(delivered_ages) if delivered_ages else None
 
         # ── Subsystem delivery breakdown ──────────────────────────────────────
         subsystem_counts: dict[str, int] = {}
-        for dp in delivered_products_list:
-            subsystem_counts[dp.subsystem] = subsystem_counts.get(dp.subsystem, 0) + 1
+        for dp in all_auth_products:
+            if dp.product_id in delivered_ids:
+                subsystem_counts[dp.subsystem] = subsystem_counts.get(dp.subsystem, 0) + 1
 
         return MissionOutcomeResult(
             plan_id=plan.plan_id,
-            # Product delivery
+            # Product delivery (authoritative denominator)
             total_products=total_products,
             delivered_products=delivered_count,
             delivery_rate=delivery_rate,
-            # Scientific value
+            # Scientific value (authoritative denominator)
             total_scientific_value=total_sci_val,
             delivered_scientific_value=delivered_sci_val,
             scientific_value_capture_rate=sci_capture_rate,
-            # Required products
+            # Required products (authoritative denominator)
             required_products_total=req_total,
             required_products_delivered=req_delivered,
             required_delivery_rate=req_rate,
-            # Active-anomaly products
+            # Active-anomaly products (authoritative denominator)
             active_anomaly_products_total=anom_total,
             active_anomaly_products_delivered=anom_delivered,
             active_anomaly_delivery_rate=anom_rate,

@@ -62,8 +62,11 @@ from typing import Optional, Sequence
 
 from pydantic import BaseModel, Field
 
+from ..models.anomaly_event import AnomalyEvent
 from ..models.candidate_plan import CandidatePlan
 from ..models.evaluation_result import EvaluationResult
+from ..models.link_state import LinkState
+from ..models.mission_state import MissionState
 
 # Strings that must NEVER appear in a provenance-blind Stage-2 context.
 _FORBIDDEN_PROVENANCE_STRINGS = frozenset([
@@ -81,7 +84,80 @@ _FORBIDDEN_PROVENANCE_STRINGS = frozenset([
     "stage1_provider",
     "fallback_used",
     "ai_semantic",
+    "semantic-rule-based",
+    "semantic_rule_based",
+    "strategy",
+    "metadata",
 ])
+
+
+# ---------------------------------------------------------------------------
+# Stage-2 system prompt (external providers)
+# ---------------------------------------------------------------------------
+
+STAGE2_SYSTEM_PROMPT = """You are a spacecraft ground-control trade-off analysis agent.
+Your task is to recommend one transmission plan option for the current communication pass.
+
+You will receive:
+- mission_context: current mission phase, event, risk level
+- link_context: remaining window, bit error rate, goodput
+- active_anomalies: anomalies currently affecting the spacecraft
+- candidate_options: a set of opaque options (OPTION-A, OPTION-B, ...) with objective metrics
+
+RULES (non-negotiable):
+1. Select exactly ONE option from the provided candidate_options keys (e.g. "OPTION-C").
+   Do NOT return a real plan name such as "baseline", "ai-prioritized", or any other identifier.
+2. You may ONLY cite fields that appear in the provided data.
+3. You must NOT perform calculations or invent metric values.
+4. Respond ONLY with a valid JSON object matching the schema below.
+
+METRIC CATEGORIES — consider BOTH for a balanced recommendation:
+
+Telecom / feasibility:
+  risk_score                    — overall transmission risk [0,1]; lower is safer
+  critical_packets_delivered    — count of critical packets successfully delivered
+  deadline_misses               — number of packets missing their deadline
+  deadline_miss_rate            — fraction of packets missing deadlines [0,1]
+  bandwidth_utilization         — fraction of link bandwidth used [0,1]
+  window_pressure               — pressure on remaining window [0,1]
+  mission_value                 — weighted delivery value
+
+Mission semantic outcome:
+  scientific_value_capture_rate — fraction of total scientific value delivered [0,1]
+  required_delivery_rate        — fraction of required products delivered [0,1]
+  active_anomaly_delivery_rate  — fraction of anomaly-linked products delivered [0,1]
+  high_severity_anomaly_coverage_rate — fraction of high-severity anomalies with coverage [0,1]
+  anomaly_weighted_coverage     — severity-weighted anomaly coverage [0,1]
+  average_delivered_age_s       — mean age of delivered data (lower = fresher)
+
+DECISION GUIDANCE:
+- Select the option whose trade-offs are BEST SUPPORTED by the authoritative metrics
+  and current mission context.
+- Do NOT assume any option is AI-generated or rule-based. Treat all options equally.
+- Do NOT automatically favor the highest scientific value if it compromises mission safety.
+- Do NOT automatically favor the lowest risk if it sacrifices required anomaly diagnostics.
+- Consider active anomaly severity and coverage when diagnostic data is at stake.
+- Higher active_anomaly_delivery_rate matters more when high-severity anomalies are present.
+- Your role is advisory trade-off interpretation, not autonomous decision-making.
+
+RESPONSE SCHEMA:
+{
+  "recommended_option_id": "<OPTION-X — must be an exact key from candidate_options>",
+  "reasoning": "<string — human-readable trade-off explanation citing specific metrics>",
+  "confidence": <float in [0.0, 1.0]>,
+  "evidence": [
+    {
+      "option_id": "<OPTION-X or null for link/mission context>",
+      "source": "<candidate_option|link_state|mission_state>",
+      "field": "<exact field name from the metric categories above>",
+      "interpretation": "<string explaining why this metric supports your recommendation>"
+    }
+  ],
+  "alternative_option_id": "<OPTION-Y or null>"
+}
+
+NOTE: Do NOT include risk_score or risk_level in your response — the backend will
+supply authoritative values. Do NOT echo metric values; provide only interpretation."""
 
 
 class InvalidStage2AliasError(Exception):
@@ -284,6 +360,183 @@ def build_blind_context_json(summaries: list[Stage2PlanSummary]) -> str:
             if k != "option_id" and v is not None
         }
     return json.dumps(ctx, indent=2)
+
+
+def build_stage2_user_message(
+    summaries: list[Stage2PlanSummary],
+    link_state: LinkState,
+    mission_state: MissionState,
+    anomalies: list[AnomalyEvent] | None = None,
+) -> str:
+    """Build the complete user message sent to an external Stage-2 provider.
+
+    Produces a single JSON string containing:
+    - ``mission_context``: compact mission snapshot (no raw scores except what
+      the LLM may use for context)
+    - ``link_context``: key link parameters
+    - ``active_anomalies``: applicable anomalies (id, severity, subsystem)
+    - ``candidate_options``: the compact provenance-blind metrics per option
+
+    This is the SOLE source of the external LLM user message for Stage-2.
+    Both ``build_stage2_summaries()`` and ``build_blind_context_json()``
+    are used internally.
+
+    Args:
+        summaries:     Compact summaries from :func:`build_stage2_summaries`.
+        link_state:    Current link snapshot.
+        mission_state: Current mission snapshot.
+        anomalies:     Anomaly events to include (any status; callers should
+                       supply applicable anomalies only).
+
+    Returns:
+        JSON string for use as the LLM user message.  Contains no provenance.
+    """
+    ctx: dict = {
+        "mission_context": {
+            "mission_phase": mission_state.mission_phase,
+            "current_event": mission_state.current_event,
+            "comm_window_remaining_s": mission_state.comm_window_remaining_s,
+            "risk_level": mission_state.risk_level.value,
+        },
+        "link_context": {
+            "remaining_window_s": link_state.remaining_window_s,
+            "ber": link_state.ber,
+            "link_goodput_bps": link_state.link_goodput_bps,
+        },
+        "active_anomalies": [
+            {
+                "anomaly_id": ae.anomaly_id,
+                "severity": ae.severity,
+                "subsystem": ae.subsystem,
+                "status": ae.status,
+            }
+            for ae in (anomalies or [])
+        ],
+        "candidate_options": json.loads(build_blind_context_json(summaries)),
+    }
+    return json.dumps(ctx, indent=2)
+
+
+# ---------------------------------------------------------------------------
+# Stage-2 evidence field registry
+# ---------------------------------------------------------------------------
+
+# Fields that Stage-2 evidence may cite from Stage2PlanSummary (candidate_option)
+_STAGE2_CANDIDATE_FIELDS: frozenset[str] = frozenset(
+    f for f in Stage2PlanSummary.model_fields if f != "option_id"
+)
+
+# Fields from LinkState that Stage-2 evidence may cite
+# (imported lazily to avoid circular imports)
+def _get_stage2_link_fields() -> frozenset[str]:
+    from ..models.link_state import LinkState as _LS
+    return frozenset(_LS.model_fields.keys())
+
+
+def _get_stage2_mission_fields() -> frozenset[str]:
+    from ..models.mission_state import MissionState as _MS
+    return frozenset(_MS.model_fields.keys())
+
+
+def get_stage2_citeable_fields() -> frozenset[str]:
+    """Return the complete set of field names that Stage-2 evidence may cite.
+
+    Includes:
+    * All :class:`Stage2PlanSummary` metric fields (except ``option_id``)
+    * All :class:`~backend.app.models.link_state.LinkState` fields
+    * All :class:`~backend.app.models.mission_state.MissionState` fields
+
+    Returns:
+        Frozenset of valid citeable field names for Stage-2 evidence validation.
+    """
+    return _STAGE2_CANDIDATE_FIELDS | _get_stage2_link_fields() | _get_stage2_mission_fields()
+
+
+def parse_stage2_response(
+    raw: str,
+    alias_map: dict[str, str],
+) -> tuple[str, str, float, list[dict], str | None]:
+    """Parse and validate a raw Stage-2 LLM response.
+
+    Validates:
+    * Response is valid JSON
+    * ``recommended_option_id`` is a valid current alias
+    * ``confidence`` is in [0, 1]
+    * ``alternative_option_id`` is null or a valid current alias
+    * Evidence field names are in the Stage-2 citeable set
+
+    Args:
+        raw:       Raw text from the LLM.
+        alias_map: The alias → real_plan_id mapping for this request.
+
+    Returns:
+        Tuple of (recommended_option_id, reasoning, confidence, evidence_dicts,
+        alternative_option_id).
+        Both IDs are validated OPTION aliases (never real plan IDs).
+
+    Raises:
+        InvalidStage2AliasError: If ``recommended_option_id`` is not a valid alias.
+        ValueError:              If JSON parsing fails or required fields are missing.
+    """
+    text = raw.strip()
+    if text.startswith("```"):
+        text = text.split("```", 2)[1]
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.rsplit("```", 1)[0].strip()
+
+    try:
+        data, _ = json.JSONDecoder().raw_decode(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Stage-2 response is not valid JSON: {exc}\nRaw: {raw[:200]}") from exc
+
+    # Validate required fields
+    required = {"recommended_option_id", "reasoning", "confidence"}
+    missing = required - data.keys()
+    if missing:
+        raise ValueError(f"Stage-2 response missing fields: {missing}")
+
+    # Validate recommended_option_id is a valid current alias
+    rec_alias = str(data["recommended_option_id"])
+    if rec_alias not in alias_map:
+        raise InvalidStage2AliasError(
+            f"Stage-2 provider returned invalid option alias '{rec_alias}'. "
+            f"Valid aliases: {sorted(alias_map.keys())}."
+        )
+
+    # Validate confidence
+    try:
+        confidence = float(data["confidence"])
+        if not (0.0 <= confidence <= 1.0):
+            confidence = max(0.0, min(1.0, confidence))
+    except (TypeError, ValueError):
+        confidence = 0.5
+
+    # Validate alternative option (drop if invalid, don't reject whole response)
+    alt_raw = data.get("alternative_option_id")
+    alt_alias: str | None = None
+    if alt_raw is not None:
+        alt_str = str(alt_raw)
+        if alt_str in alias_map and alt_str != rec_alias:
+            alt_alias = alt_str
+        # Invalid alternative is silently dropped (per policy: drop alternative only)
+
+    # Validate and filter evidence
+    citeable = get_stage2_citeable_fields()
+    evidence_out: list[dict] = []
+    for item in data.get("evidence", []):
+        field_name = item.get("field", "")
+        if field_name not in citeable:
+            continue  # silently drop unknown fields
+        evidence_out.append({
+            "option_id": item.get("option_id"),
+            "source": item.get("source", "candidate_option"),
+            "field": field_name,
+            "interpretation": item.get("interpretation", ""),
+        })
+
+    reasoning = str(data.get("reasoning", ""))
+    return rec_alias, reasoning, confidence, evidence_out, alt_alias
 
 
 def assert_no_provenance_leak(context_json: str) -> None:

@@ -13,6 +13,19 @@ Design constraints
 - The route layer selects the provider once per request based on
   configuration; the provider implementation is fully encapsulated.
 
+Two recommendation paths
+------------------------
+recommend()
+    Legacy / local path.  Receives full CandidatePlan objects and
+    EvaluationResult objects.  Used by LocalRuleBasedProvider and legacy
+    scenarios.
+
+recommend_from_summaries()
+    External Stage-2 path (v2/v3 with Granite/Gemini/Ollama).  Receives
+    compact, provenance-blind Stage2PlanSummary objects.  The external LLM
+    never sees real plan identifiers, strategy names, or packet lists.
+    Base implementation raises NotImplementedError.
+
 Typed exceptions
 ----------------
 AIProviderError        — raised when the underlying provider (API or model) is
@@ -26,7 +39,7 @@ AIHallucinationError   — raised when the provider cites a field that does not
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 
 from ..models.anomaly_event import AnomalyEvent
 from ..models.candidate_plan import CandidatePlan
@@ -36,6 +49,9 @@ from ..models.evaluation_result import EvaluationResult
 from ..models.link_state import LinkState
 from ..models.mission_state import MissionState
 from ..models.recommendation import AIRecommendation
+
+if TYPE_CHECKING:
+    from ..agent.stage2_blinding import Stage2PlanSummary
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +103,10 @@ class BaseAIProvider(ABC):
         *,
         anomalies: list[AnomalyEvent] | None = None,
     ) -> AIRecommendation:
-        """Generate a plan recommendation (legacy / four-plan path).
+        """Generate a plan recommendation (legacy / local path).
+
+        Receives full CandidatePlan objects and EvaluationResult objects.
+        Used by LocalRuleBasedProvider and legacy scenarios.
 
         Args:
             link_state:    Current link snapshot.
@@ -105,6 +124,50 @@ class BaseAIProvider(ABC):
             AIResponseError:      If the provider response is malformed/invalid.
             AIHallucinationError: If evidence cites a non-existent field.
         """
+
+    def recommend_from_summaries(
+        self,
+        summaries: list[Stage2PlanSummary],
+        link_state: LinkState,
+        mission_state: MissionState,
+        anomalies: list[AnomalyEvent] | None = None,
+    ) -> AIRecommendation:
+        """Generate a recommendation from compact provenance-blind summaries.
+
+        This is the external Stage-2 path used by Granite, Gemini, and Ollama.
+        The provider receives only compact metric summaries (no real plan IDs,
+        no strategy names, no packet lists) and returns an opaque option alias.
+
+        The recommended_plan_id in the returned AIRecommendation is an OPTION
+        alias (e.g. ``"OPTION-C"``), not a real plan ID.  The caller (routes_agent)
+        is responsible for mapping the alias back to the real plan identity and
+        rebinding authoritative risk/packet data.
+
+        Args:
+            summaries:     Compact provenance-blind plan summaries.  Each
+                           summary contains only objective metrics and an opaque
+                           option alias (``OPTION-A``, ``OPTION-B``, ...).
+            link_state:    Current link snapshot.
+            mission_state: Current mission snapshot.
+            anomalies:     Active anomaly events.
+
+        Returns:
+            An :class:`AIRecommendation` where ``recommended_plan_id`` is an
+            opaque option alias.  ``risk_score``, ``risk_level``, and
+            ``packet_actions`` will be rebound by the trusted backend after
+            alias resolution.
+
+        Raises:
+            NotImplementedError:  If the provider does not implement this path.
+            AIProviderError:      If the underlying provider is unavailable.
+            AIResponseError:      If the provider response is malformed/invalid.
+            AIHallucinationError: If evidence cites an unknown field.
+        """
+        raise NotImplementedError(
+            f"Provider '{self.provider_name}' does not implement "
+            "recommend_from_summaries(). Override this method to support "
+            "the compact Stage-2 provenance-blind recommendation path."
+        )
 
     def prioritize_candidates(
         self,

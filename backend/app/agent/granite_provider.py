@@ -27,6 +27,7 @@ from .granite_agent import (
     GraniteAgent,
     GraniteResponseError,
 )
+from .stage2_blinding import Stage2PlanSummary
 
 
 class GraniteProvider(BaseAIProvider):
@@ -73,6 +74,28 @@ class GraniteProvider(BaseAIProvider):
             raise AIResponseError(str(exc)) from exc
         except EvidenceHallucinationError as exc:
             raise AIHallucinationError(str(exc)) from exc
+
+    def recommend_from_summaries(
+        self,
+        summaries: list[Stage2PlanSummary],
+        link_state: LinkState,
+        mission_state: MissionState,
+        anomalies: list[AnomalyEvent] | None = None,
+    ) -> AIRecommendation:
+        """Delegate compact Stage-2 recommendation to :class:`GraniteAgent` and map exceptions.
+
+        Raises:
+            AIProviderError:      If the Granite API is unavailable.
+            AIResponseError:      If the response is malformed/invalid.
+        """
+        try:
+            return self._agent.recommend_from_summaries(
+                summaries, link_state, mission_state, anomalies
+            )
+        except GraniteAPIError as exc:
+            raise AIProviderError(str(exc)) from exc
+        except GraniteResponseError as exc:
+            raise AIResponseError(str(exc)) from exc
 
     def prioritize_candidates(
         self,

@@ -81,20 +81,24 @@ from ..agent.stage2_blinding import (
     InvalidStage2AliasError,
     build_blind_mapping,
     build_stage2_summaries,
-    build_blind_context_json,
     map_alias_to_plan_id,
 )
 from ..config import SchedulerWeights
 from ..candidate_generator.generator import CandidateGenerator
 from ..candidate_generator.ai_plan_builder import build_ai_prioritized_plan
 from ..evaluator.plan_evaluator import PlanEvaluator
-from ..evaluator.mission_outcome_evaluator import MissionOutcomeEvaluator, MissionOutcomeResult
+from ..evaluator.mission_outcome_evaluator import (
+    MissionOutcomeEvaluator,
+    MissionOutcomeResult,
+    is_applicable_anomaly,
+)
 from ..models.anomaly_event import AnomalyEvent
 from ..models.bridge import data_products_to_packets
 from ..models.candidate_plan import CandidatePlan
 from ..models.candidate_prioritization import CandidatePrioritization
 from ..models.candidate_summary import CandidateSummary
 from ..models.evaluation_result import EvaluationResult
+from ..models.evidence_item import EvidenceItem
 from ..models.packet import Packet
 from ..models.recommendation import AIRecommendation
 
@@ -197,9 +201,17 @@ def _build_blind_recommend(
 ) -> tuple[AIRecommendation, str | None]:
     """Run Stage-2 recommendation with provenance blinding for external providers.
 
-    For external LLM providers (non-local), wraps plans in opaque option aliases
-    before passing to the provider.  The provider's choice is mapped back to
-    the real plan_id.
+    Uses compact Stage2PlanSummary objects — no CandidatePlan packet lists,
+    no dummy plans, no provenance fields.  The provider's choice is an opaque
+    option alias which is mapped back to the real plan_id by the trusted backend.
+
+    Production flow:
+        plans/evaluations/outcomes
+        → build_blind_mapping()
+        → build_stage2_summaries()
+        → provider.recommend_from_summaries()  ← actual LLM call with compact context
+        → map alias → real plan_id
+        → rebind risk_score, risk_level, packet_actions from authoritative data
 
     Returns:
         (recommendation, fallback_reason) — fallback_reason is None when the
@@ -207,73 +219,60 @@ def _build_blind_recommend(
     """
     # Build the alias map: OPTION-A … OPTION-E → real plan_id
     alias_map = build_blind_mapping(all_plans, scenario_id=scenario_id)
-    # Build reversed map: real plan_id → alias
-    reverse_alias_map = {v: k for k, v in alias_map.items()}
 
     # Build compact summaries keyed by alias (no provenance)
     summaries = build_stage2_summaries(alias_map, all_plans, all_evals, all_outcomes)
 
-    # Remap plans and evaluations so their plan_id fields are the aliases.
-    # The external provider will see OPTION-A etc. in the plan_id fields.
-    aliased_plans: list[CandidatePlan] = []
-    aliased_evals: list[EvaluationResult] = []
-    for plan in all_plans:
-        alias = reverse_alias_map[plan.plan_id]
-        # Create an alias-keyed plan with no provenance in metadata
-        aliased_plan = CandidatePlan(
-            plan_id=alias,
-            strategy="option",          # generic — no provenance
-            packets=[],                 # no packet list — compact context only
-            generated_by="stage2_blind",
-            metadata={},
-        )
-        aliased_plans.append(aliased_plan)
-        # Create an alias-keyed evaluation
-        ev = next(e for e in all_evals if e.plan_id == plan.plan_id)
-        aliased_eval = EvaluationResult(
-            plan_id=alias,
-            mission_value=ev.mission_value,
-            critical_packets_delivered=ev.critical_packets_delivered,
-            total_critical_packets=ev.total_critical_packets,
-            deadline_misses=ev.deadline_misses,
-            avg_packet_delay_s=ev.avg_packet_delay_s,
-            bandwidth_utilization=ev.bandwidth_utilization,
-            retransmission_overhead=ev.retransmission_overhead,
-            risk_score=ev.risk_score,
-            risk_level=ev.risk_level,
-            deferred_packets=[],        # not needed by Stage-2 reasoning
-            deadline_miss_rate=ev.deadline_miss_rate,
-            critical_deficit=ev.critical_deficit,
-            window_pressure=ev.window_pressure,
-        )
-        aliased_evals.append(aliased_eval)
+    # Only pass applicable anomalies to the external LLM context
+    applicable_anomalies = [ae for ae in anomalies if is_applicable_anomaly(ae)]
 
     fallback_reason: str | None = None
 
-    # Call external provider with aliased plans/evals
+    # Call external provider with compact summaries (no dummy CandidatePlan objects)
     try:
-        aliased_rec = provider.recommend(
+        aliased_rec = provider.recommend_from_summaries(
+            summaries,
             link_state,
             mission_state,
-            aliased_plans,
-            aliased_evals,
-            anomalies=anomalies,
+            anomalies=applicable_anomalies,
         )
+    except NotImplementedError:
+        # Provider doesn't implement compact Stage-2; fall back to local
+        logger.warning(
+            "Provider '%s' does not implement recommend_from_summaries(). "
+            "Falling back to LocalRuleBasedProvider.",
+            provider.provider_name,
+        )
+        try:
+            local_rec = fallback_provider.recommend(
+                link_state, mission_state, all_plans, all_evals, anomalies=anomalies
+            )
+            fallback_reason = (
+                f"AI provider '{provider.provider_name}' does not implement compact "
+                "Stage-2 recommendation. Local rule-based recommendation is in use."
+            )
+            return local_rec, fallback_reason
+        except Exception as fallback_exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=502,
+                detail=f"Fallback failed after NotImplementedError: {fallback_exc}",
+            ) from fallback_exc
     except (AIProviderError, AIResponseError, AIHallucinationError) as exc:
         logger.error(
             "AI provider '%s' failed blind Stage-2 recommendation: %s. "
             "Falling back to LocalRuleBasedProvider.",
             provider.provider_name, exc,
         )
-        # Fallback: local provider uses real plans/evals (it's provenance-agnostic)
+        # Fallback: local provider uses real plans/evals
         try:
-            aliased_rec = fallback_provider.recommend(
-                link_state, mission_state, aliased_plans, aliased_evals, anomalies=anomalies
+            local_rec = fallback_provider.recommend(
+                link_state, mission_state, all_plans, all_evals, anomalies=anomalies
             )
             fallback_reason = (
                 f"AI provider '{provider.provider_name}' unavailable for plan "
                 "recommendation. Local rule-based recommendation is in use."
             )
+            return local_rec, fallback_reason
         except Exception as fallback_exc:  # noqa: BLE001
             raise HTTPException(
                 status_code=502,
@@ -322,21 +321,51 @@ def _build_blind_recommend(
         except InvalidStage2AliasError:
             real_alt_plan_id = None  # silently drop invalid alternative alias
 
-    # Rebuild packet_actions from the real plan
+    # Rebuild packet_actions from the real plan (authoritative)
     packet_actions = [
         {"packet_id": pkt.packet_id, "action": "transmit", "rank": rank}
         for rank, pkt in enumerate(real_plan.packets, start=1)
     ]
 
-    from ..models.recommendation import AIRecommendation as _AIRec
-    recommendation = _AIRec(
+    # Rebind evidence values from authoritative data
+    # For each evidence item citing a candidate_option field, bind the value
+    # from the authoritative summary for the recommended option.
+    rec_summary = next((s for s in summaries if s.option_id == recommended_alias), None)
+    bound_evidence = []
+    for item in aliased_rec.evidence:
+        bound_val = item.value
+        if item.source in ("candidate_option",) and rec_summary is not None:
+            auth_val = getattr(rec_summary, item.field, None)
+            if auth_val is not None:
+                bound_val = auth_val
+        elif item.source == "evaluation_result":
+            auth_val = getattr(real_eval, item.field, None)
+            if auth_val is not None:
+                bound_val = auth_val
+        elif item.source == "link_state":
+            auth_val = getattr(link_state, item.field, None)
+            if auth_val is not None:
+                bound_val = auth_val
+        elif item.source == "mission_state":
+            auth_val = getattr(mission_state, item.field, None)
+            if auth_val is not None:
+                bound_val = auth_val
+        bound_evidence.append(EvidenceItem(
+            source=item.source,
+            field=item.field,
+            value=bound_val,
+            interpretation=item.interpretation,
+        ))
+
+    recommendation = AIRecommendation(
         recommended_plan_id=real_plan_id,
         packet_actions=packet_actions,
         reasoning=aliased_rec.reasoning,
         confidence=aliased_rec.confidence,
+        # risk_score and risk_level are always from authoritative EvaluationResult
         risk_score=real_eval.risk_score,
         risk_level=real_eval.risk_level,
-        evidence=aliased_rec.evidence,
+        evidence=bound_evidence,
         alternative_plan_id=real_alt_plan_id,
     )
     return recommendation, fallback_reason
