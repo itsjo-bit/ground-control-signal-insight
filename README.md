@@ -694,26 +694,43 @@ SimulationResult  (delivered / deferred / failed products)
 | **AI Stage 2** | Plan selection from provenance-blind option summaries (advisory; cannot see plan origin) |
 | **Human operator** | Final approval authority; can modify or reject AI recommendation |
 
-### AI Trust Boundary (Phase 2A)
+### AI Boundary — What AI Does and Does Not Do
 
-The architecture enforces a clear trust boundary:
+**AI DOES:**
+- Semantic interpretation of the bounded 50-candidate set
+- Anomaly-aware product prioritization and ranking
+- Advisory plan recommendation (from provenance-blind evidence only)
+- Explainable reasoning over mission context
 
-**AI MAY produce:**
-- Semantic ranking and prioritization reasoning
-- Trade-off explanation and advisory plan recommendation
-- Per-product decision rationale
-
-**Backend is AUTHORITATIVE for:**
-- Packet identity, subsystem, and actual anomaly linkage (not LLM-supplied)
-- Product description (forwarded from DataProduct, not LLM-generated)
-- Physical feasibility and risk metrics (PlanEvaluator)
-- Scientific value, required-product status, anomaly coverage (MissionOutcomeEvaluator)
-- Plan membership and transmission outcome
-- Stage-2 recommendation binding (real plan ID, risk score, packet actions)
+**AI DOES NOT:**
+- Alter packet facts (ID, size, subsystem, anomaly linkage)
+- Compute BER, Eb/N0, goodput, or any RF metric
+- Define or override risk score / risk level
+- Decide physical transmission feasibility
+- Automatically authorize or initiate transmission
+- Replace the operator's approval authority
+- Substitute a Local fallback and report it as Granite/Gemini
 
 The LLM controls *why* to prioritize. The backend controls *what is true*.
 
-For the telecom model reference, see [`docs/telecom_model.md`](docs/telecom_model.md).
+For the complete trust architecture, see [`docs/trust_boundary.md`](docs/trust_boundary.md).
+
+### Telecom Model
+
+GCSI uses a simplified deterministic BPSK/AWGN analytical link model for
+decision-support experimentation. Distance-derived signal propagation is
+represented separately. It is not a full spacecraft RF link-budget or
+CCSDS network simulator.
+
+For full model documentation, see [`docs/telecom_model.md`](docs/telecom_model.md).
+
+### Architecture Diagram
+
+A detailed architecture diagram with Mermaid rendering is in [`docs/architecture.md`](docs/architecture.md).
+
+### API Documentation
+
+All API endpoints with mutation labels are documented in [`docs/api_overview.md`](docs/api_overview.md).
 
 ---
 
@@ -721,7 +738,7 @@ For the telecom model reference, see [`docs/telecom_model.md`](docs/telecom_mode
 
 | Variable | Default | Description |
 |---|---|---|
-| `GCSI_SCENARIO_PATH` | `data/scenarios/mission_data_v3.json` | Override the startup scenario |
+| `GCSI_SCENARIO_PATH` | `data/scenarios/asteria7_thermal_priority_contact_v1.json` | Override the startup scenario |
 | `GCSI_SCENARIOS_DIR` | `data/scenarios` | Scenarios directory for runtime switching |
 | `GCSI_AI_PROVIDER` | (auto) | Force a specific AI provider: `granite` / `gemini` / `ollama` / `local` |
 | `GCSI_AI_MAX_CANDIDATES` | `50` | Maximum products sent to AI for prioritization |
@@ -734,6 +751,50 @@ For the telecom model reference, see [`docs/telecom_model.md`](docs/telecom_mode
 | `GCSI_OLLAMA_ENABLED` | `false` | Enable Ollama provider |
 | `GCSI_OLLAMA_URL` | `http://localhost:11434` | Ollama server URL |
 | `GCSI_OLLAMA_MODEL` | `llama3.2` | Ollama model to use |
+
+---
+
+## Scientific Evaluation Status
+
+The benchmark infrastructure is implemented and the methodology is frozen.
+The final official Granite evaluation is pending valid provider access.
+
+Current status:
+
+| Item | Status |
+|---|---|
+| Benchmark methodology | Frozen and pre-registered (`docs/benchmark_methodology.md`) |
+| Benchmark configuration | Frozen (`benchmarks/configs/gcsi_benchmark_v1.json`) |
+| IAM authentication pilot | ⚠️ **Authentication failure — 0 inferences completed** |
+| Official core benchmark | **Not yet executed** — requires valid IBM Cloud IAM + watsonx.ai credentials |
+| Granite efficacy result | **Not available** |
+
+**What this means**: AI claim comparisons are architectural, not empirical.
+GCSI does not claim "AI beats baseline by X%" because that experiment has not been run.
+When valid Granite access is available, the methodology is ready to execute.
+
+See [`benchmarks/README.md`](benchmarks/README.md) and [`docs/benchmark_methodology.md`](docs/benchmark_methodology.md).
+
+---
+
+## Project Limitations
+
+- **Telecom model**: simplified BPSK/AWGN analytical model; not a flight-qualified RF link-budget tool
+- **Propagation in simulator**: `elapsed_time_s` does not include the ~608 s one-way propagation delay
+- **AI confidence**: values are not calibrated; they are indicative, not probabilistic
+- **Benchmark**: Granite efficacy results are pending; AI claims are architectural, not empirical
+- **Scenario**: ASTERIA-7 is a synthetic fictional mission; not affiliated with any real space agency
+- **ARQ model**: retransmissions are abstract Bernoulli retries; not real stop-and-wait ACK/NACK
+- **Mobile**: UI is optimized for 1366×768+ desktop; mobile layout is not a primary target
+
+---
+
+## IBM Technology Attribution
+
+- **IBM Granite** (`ibm/granite-4-h-small`) is the primary supported AI provider via IBM watsonx.ai
+- IBM Granite is used for Stage-1 semantic prioritization and Stage-2 plan recommendation
+- **IBM Bob** AI assistant was used during GCSI's development
+- GCSI does not claim empirical Granite superiority — the benchmark experiment is pending
 
 ---
 
