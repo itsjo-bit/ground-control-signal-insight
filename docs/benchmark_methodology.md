@@ -151,9 +151,21 @@ Provider success rate is always reported alongside metric results.
 | Parameter | Value |
 |---|---|
 | `max_attempts` | 2 |
-| Delay between attempts | ~0.1 s |
-| What is retried | API transport failures only (GraniteAPIError) |
-| What is NOT retried | Valid model outputs, even if plan performs poorly |
+| Delay between attempts | ~1.0 s |
+| What is retried | Transient transport failures only (explicit list) |
+| What is NOT retried | Valid model outputs, malformed JSON, schema errors, unknown errors |
+
+**Retriable conditions** (explicit whitelist only — default-deny):
+- `GraniteTransportError` subclasses
+- `httpx.TimeoutError`, `httpx.ConnectError`, `httpx.TransportError`
+- `GraniteAPIError` containing connection/timeout keywords
+- `GraniteAPIError` for HTTP 429, 500, 502, 503, 504
+
+**Non-retriable by default** (everything else):
+- HTTP 400, 401, 403, 404, 409, 422
+- Unknown `GraniteAPIError` (default-deny)
+- `GraniteResponseError` / parse failures / schema violations
+- Unexpected response shape (HTTP 200 but missing `results[0].generated_text`)
 
 A valid ranking that produces poor metrics is accepted as the trial result.
 Retrying for better performance is prohibited (cherry-picking prevention).
@@ -294,8 +306,35 @@ Every run produces a `manifest.json` containing:
 Provenance hashes per trial:
 - `prompt_system_sha256` (SHA-256 of Stage-1 system prompt)
 - `prompt_user_sha256` (SHA-256 of Stage-1 user context)
-- `response_hash` (SHA-256 of parsed ranked product IDs)
+- `raw_response_sha256` (SHA-256 of exact raw response bytes from provider)
+- `ranking_hash` (SHA-256 of parsed ranked product ID list)
 - `plan_order_hash` (SHA-256 of ordered packet IDs per plan)
+
+**Note on hash semantics**: `raw_response_sha256` is computed over the exact bytes
+returned by the Granite API before any parsing. `ranking_hash` is computed over the
+extracted product ID list. These represent different levels of provenance and may differ
+even for the same trial. Both are retained for failed trials where applicable.
+
+**Failed trial provenance**: When a provider call fails, the trial retains:
+- `attempt_count` (actual number of attempts made, not assumed 1)
+- `attempt_latencies_ms` (per-attempt latency list)
+- `raw_response` and `raw_response_sha256` (if a response body was received)
+- `prompt_system_sha256`, `prompt_user_sha256` (from the messages that were sent)
+- `actual_model_id` (model used in the request)
+- `generation_config` (parameters sent to the API)
+
+This provenance is preserved even for parse errors, schema violations, and exhausted
+retries. The raw response from a parse-failed or schema-invalid API call is always
+retained for audit purposes.
+
+**Model enforcement**: The benchmark config model is authoritative.
+`GCSI_GRANITE_MODEL_ID` is rejected at preflight if it conflicts with the effective
+benchmark model — it cannot silently substitute another model for official execution.
+
+**Generation config canonical source**: `STAGE1_GENERATION_CONFIG` in `granite_agent.py`
+is the single definition used by both `GraniteAgent._call_prioritization_api()` and
+`GraniteBenchmarkProvider` provenance. This prevents drift between what is actually
+sent and what is recorded.
 
 ---
 
@@ -355,10 +394,15 @@ python -m backend.app.benchmark.runner_cli \
 
 Environment variables (never commit):
 ```
-GCSI_GRANITE_API_KEY     # IBM Cloud IAM API key
-GCSI_GRANITE_PROJECT_ID  # watsonx.ai project ID
-GCSI_GRANITE_MODEL_ID    # Optional model override
+GCSI_GRANITE_API_KEY     # IBM Cloud IAM API key (required)
+GCSI_GRANITE_PROJECT_ID  # watsonx.ai project ID (required)
 ```
+
+**Note on GCSI_GRANITE_MODEL_ID**: This environment variable is NOT consulted for
+benchmark execution. The benchmark model is controlled exclusively by the config
+(`model: ibm/granite-4-h-small`) or the `--model` CLI flag.
+If `GCSI_GRANITE_MODEL_ID` is set and conflicts with the effective benchmark model,
+preflight will fail with an error rather than silently substituting another model.
 
 ---
 

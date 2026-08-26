@@ -392,8 +392,13 @@ class TestRetryPolicy:
         assert call_count[0] == 2
 
     def test_parse_error_not_retried(self):
-        """GraniteResponseError (malformed JSON) terminates immediately without retry."""
+        """GraniteResponseError (malformed JSON) terminates immediately without retry.
+
+        Note: provider.prioritize() now raises BenchmarkProviderFailure (wrapping the
+        original GraniteResponseError) so that full provenance is preserved.
+        """
         from backend.app.agent.granite_agent import GraniteResponseError
+        from backend.app.benchmark.runner import BenchmarkProviderFailure
         from backend.app.models.link_state import LinkState
         from backend.app.models.mission_state import MissionState
         from backend.app.models.risk_level import RiskLevel
@@ -421,14 +426,17 @@ class TestRetryPolicy:
                           risk_level=RiskLevel.LOW)
 
         provider = GraniteBenchmarkProvider(max_attempts=2, delay_s=0.0, agent=ParseFailingAgent())
-        with pytest.raises(GraniteResponseError):
+        # Provider now raises BenchmarkProviderFailure (wrapping GraniteResponseError)
+        with pytest.raises(BenchmarkProviderFailure) as exc_info:
             provider.prioritize([], ls, ms, [])
+        assert isinstance(exc_info.value.cause, GraniteResponseError)
         # Must have called exactly once — not retried
         assert call_count[0] == 1
 
     def test_invalid_product_id_not_retried(self):
-        """GraniteResponseError for invalid product ID → attempt_count=1, no retry."""
+        """GraniteResponseError for invalid product ID → BenchmarkProviderFailure, no retry."""
         from backend.app.agent.granite_agent import GraniteResponseError
+        from backend.app.benchmark.runner import BenchmarkProviderFailure
         from backend.app.models.link_state import LinkState
         from backend.app.models.mission_state import MissionState
         from backend.app.models.risk_level import RiskLevel
@@ -461,8 +469,9 @@ class TestRetryPolicy:
                           risk_level=RiskLevel.LOW)
 
         provider = GraniteBenchmarkProvider(max_attempts=2, delay_s=0.0, agent=InvalidProductAgent())
-        with pytest.raises(GraniteResponseError):
+        with pytest.raises(BenchmarkProviderFailure) as exc_info:
             provider.prioritize([], ls, ms, [])
+        assert isinstance(exc_info.value.cause, GraniteResponseError)
         assert call_count[0] == 1
 
 

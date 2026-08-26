@@ -87,6 +87,23 @@ class GraniteResponseError(Exception):
     """Raised when the Granite response is structurally malformed."""
 
 
+class GraniteParseError(GraniteResponseError):
+    """Raised when the Granite response cannot be parsed as valid JSON.
+
+    Subclass of GraniteResponseError — not retriable.
+    Benchmark status hint: PARSE_ERROR.
+    """
+
+
+class GraniteSchemaError(GraniteResponseError):
+    """Raised when the Granite response is valid JSON but fails schema validation
+    (missing required fields, invalid field types, unknown product IDs, etc.).
+
+    Subclass of GraniteResponseError — not retriable.
+    Benchmark status hint: SCHEMA_ERROR.
+    """
+
+
 class EvidenceHallucinationError(Exception):
     """Raised when an EvidenceItem cites a field not present in the provided state."""
 
@@ -256,6 +273,26 @@ CandidatePrioritization JSON schema:
   "confidence": <float in [0.0, 1.0]>,
   "decision_factors": ["<factor label>", ...]
 }"""
+
+
+# ---------------------------------------------------------------------------
+# Stage-1 generation configuration — canonical single source of truth
+# ---------------------------------------------------------------------------
+#
+# Both GraniteAgent._call_prioritization_api() and GraniteBenchmarkProvider
+# use this dict to avoid duplicated constants and provenance drift.
+#
+# DO NOT CHANGE THESE VALUES without updating both callers and benchmark config.
+# Current benchmark-preregistered values for v1:
+#   decoding_method = "greedy"
+#   max_new_tokens  = 2048
+#   stop_sequences  = ["<|user|>"]
+
+STAGE1_GENERATION_CONFIG: dict = {
+    "decoding_method": "greedy",
+    "max_new_tokens": 2048,
+    "stop_sequences": ["<|user|>"],
+}
 
 
 # ---------------------------------------------------------------------------
@@ -905,11 +942,9 @@ class GraniteAgent:
                 f"<|system|>\n{_PRIORITIZATION_SYSTEM_PROMPT}\n"
                 f"<|user|>\n{user_message}\n<|assistant|>\n"
             ),
-            "parameters": {
-                "decoding_method": "greedy",
-                "max_new_tokens": 2048,
-                "stop_sequences": ["<|user|>"],
-            },
+            # Use canonical STAGE1_GENERATION_CONFIG — single source of truth
+            # shared with GraniteBenchmarkProvider provenance recording.
+            "parameters": dict(STAGE1_GENERATION_CONFIG),
             "project_id": self._project_id,
         }
         headers = {

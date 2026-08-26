@@ -98,6 +98,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--provider", default=None, help="Provider: Granite (from config if omitted)")
     parser.add_argument(
+        "--model", type=str, default=None,
+        help="Override the benchmark model ID (marks run non-preregistered)"
+    )
+    parser.add_argument(
         "--suite", default="core", choices=["quick", "core", "full"],
         help="Scenario suite: quick (2 scenarios), core (12), full (24)"
     )
@@ -210,6 +214,36 @@ def main(argv: list[str] | None = None) -> int:
             "executed": args.max_attempts,
         }
 
+    # Model enforcement: config model wins by default.
+    # --model CLI flag provides an explicit override (marks run non-preregistered).
+    # GCSI_GRANITE_MODEL_ID environment variable is NOT consulted for benchmark model.
+    # If GCSI_GRANITE_MODEL_ID is set and conflicts with the effective model, fail preflight.
+    effective_model = args.model if args.model is not None else cfg_model
+    if args.model is not None and benchmark_cfg and args.model != cfg_model:
+        config_overrides["model"] = {
+            "configured": cfg_model,
+            "executed": args.model,
+        }
+
+    # Detect conflicting environment model — refuse unless it matches effective model
+    env_model = os.getenv("GCSI_GRANITE_MODEL_ID", "")
+    if env_model and env_model != effective_model:
+        print(
+            f"ERROR: GCSI_GRANITE_MODEL_ID={env_model!r} conflicts with the effective "
+            f"benchmark model '{effective_model}'.\n"
+            "For benchmark execution, the config model is authoritative.\n"
+            "Either unset GCSI_GRANITE_MODEL_ID, or use --model to explicitly override "
+            "the benchmark model (which marks the run as NON-PREREGISTERED).\n"
+            "Aborting to prevent silent model substitution."
+        )
+        return 1
+
+    # quick suite: always non-preregistered — it's a subset of the official matrix
+    if args.suite == "quick":
+        if "scenario_matrix" not in config_overrides:
+            # Will be filled in after variant generation below
+            pass  # explicit_suite_override = True — handled via config_overrides later
+
     effective_provider = args.provider or cfg_provider
 
     # ---------------------------------------------------------------------------
@@ -272,31 +306,16 @@ def main(argv: list[str] | None = None) -> int:
                     "Do NOT commit credentials to source control."
                 )
                 return 1
+        # Pass effective_model explicitly so GraniteAgent is constructed with the
+        # config model — not whatever GCSI_GRANITE_MODEL_ID happens to be set to.
         provider = GraniteBenchmarkProvider(
             max_attempts=effective_max_attempts,
             delay_s=cfg_delay_s,
-            config_model_id=cfg_model,
+            model_id=effective_model,
         )
     else:
         print(f"ERROR: Unknown provider '{effective_provider}'. Supported: Granite")
         return 1
-
-    # Model identity check for official runs
-    if not args.dry_run and benchmark_cfg and not config_overrides:
-        actual_model = provider.model_id
-        if actual_model not in ("unknown", cfg_model):
-            # Model mismatch on what would be a preregistered run
-            env_model = os.getenv("GCSI_GRANITE_MODEL_ID", "")
-            if env_model and env_model != cfg_model:
-                print(
-                    f"WARNING: Config requires model '{cfg_model}' but "
-                    f"GCSI_GRANITE_MODEL_ID={env_model!r}.\n"
-                    "This run is marked NON-PREREGISTERED due to model mismatch."
-                )
-                config_overrides["model"] = {
-                    "configured": cfg_model,
-                    "executed": env_model,
-                }
 
     # ---------------------------------------------------------------------------
     # Output directory
@@ -341,7 +360,19 @@ def main(argv: list[str] | None = None) -> int:
     # ---------------------------------------------------------------------------
     # Print pre-run summary
     # ---------------------------------------------------------------------------
+    # quick suite is always non-preregistered (it's a subset of the official matrix)
+    if args.suite == "quick":
+        config_overrides.setdefault("scenario_matrix", {
+            "configured_count": len(cfg_capacity_ratios) * len(cfg_anomaly_modes_str) * (
+                len(benchmark_cfg.deadline_modes) if benchmark_cfg else 1
+            ),
+            "executed": [v.spec.scenario_id for v in variants],
+        })
     is_preregistered = len(config_overrides) == 0
+    # run_type pilot also forces non-preregistered regardless of overrides
+    if args.run_type == "pilot":
+        is_preregistered = False
+
     config_sha = benchmark_cfg.config_sha256 if benchmark_cfg else "N/A"
     config_file_sha = benchmark_cfg.compute_file_sha256(config_path) if (benchmark_cfg and config_path) else "N/A"
 
@@ -350,13 +381,13 @@ def main(argv: list[str] | None = None) -> int:
     print(f"{'='*60}")
     print(f"Config file:      {config_path or '(none — using defaults)'}")
     print(f"Config file SHA:  {config_file_sha}")
-    print(f"Config model SHA: {config_sha}")
+    print(f"Source config SHA:{config_sha}")
     print(f"Preregistered:    {is_preregistered}")
     if config_overrides:
         print(f"Config overrides: {config_overrides}")
     print(f"Run type:         {args.run_type}")
     print(f"Provider:         {effective_provider}")
-    print(f"Model (config):   {cfg_model}")
+    print(f"Model (effective):{effective_model}")
     print(f"Suite:            {args.suite} ({n_scenarios} scenarios)")
     print(f"Repetitions:      {effective_repetitions} per scenario")
     print(f"Candidate limit:  {effective_candidate_limit}")
@@ -441,8 +472,14 @@ def main(argv: list[str] | None = None) -> int:
         preregistered=is_preregistered,
     )
 
-    # Write effective config snapshot
-    runner.write_effective_config(benchmark_cfg)
+    # Write effective config snapshot — pass actual variants for full provenance
+    runner.write_effective_config(
+        benchmark_cfg,
+        variants=variants,
+        suite=args.suite,
+        run_type=args.run_type,
+        preregistered=is_preregistered,
+    )
 
     # Run matrix
     try:

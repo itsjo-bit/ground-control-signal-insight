@@ -165,26 +165,27 @@ class GraniteTimeoutError(GraniteTransportError):
 def is_retriable_benchmark_error(exc: Exception) -> bool:
     """Return True if *exc* is a retriable transient transport/service failure.
 
-    RETRIABLE:
-        GraniteTransportError (and subclasses including GraniteTransientHTTPError,
-        GraniteTimeoutError)
-        httpx.TimeoutException
-        httpx.ConnectError
-        Timeout-named exceptions
-        GraniteAPIError where the error is a connection/HTTP-service issue
+    RETRIABLE (explicit list only — default is NO):
+        GraniteTransportError (and subclasses: GraniteTransientHTTPError,
+            GraniteTimeoutError)
+        httpx.TimeoutException / ConnectError / TransportError subclasses
+        GraniteAPIError signalling connection error, timeout, or HTTP 429/500/502/503/504
 
-    NOT RETRIABLE:
+    NOT RETRIABLE (default — everything else):
         GraniteResponseError (malformed JSON, invalid product IDs, schema errors)
-        GraniteSchemaError
-        GraniteParseError
+        GraniteAPIError with HTTP 400/401/403/404/409/422 or unknown application errors
+        Unexpected response shape (missing results[0].generated_text)
         Any validation error
         Any other exception
+
+    The default branch is ``return False`` (default-deny).
+    Unknown GraniteAPIError cases are NOT retried.
     """
     # Explicit retriable types
     if isinstance(exc, GraniteTransportError):
         return True
 
-    # Check httpx transport errors
+    # httpx transport errors — only connection / timeout / transport failures
     exc_class = type(exc).__name__
     exc_module = type(exc).__module__
 
@@ -204,18 +205,18 @@ def is_retriable_benchmark_error(exc: Exception) -> bool:
         # Connection/timeout failures are retriable
         if "connection" in msg or "timeout" in msg:
             return True
-        # Explicit HTTP transient codes
-        for code in ("500", "502", "503", "504", "429"):
-            if code in msg:
+        # Explicit HTTP transient codes ONLY — matched against known patterns
+        # "HTTP 429", "HTTP 500", "HTTP 502", "HTTP 503", "HTTP 504"
+        for code in ("429", "500", "502", "503", "504"):
+            if f"http {code}" in msg:
                 return True
-        # IAM exchange failure may be transient
-        if "iam token" in msg and ("connection" in msg or "timeout" in msg):
-            return True
-        # Explicit auth failure (401/403) is NOT retriable
-        if "401" in msg or "403" in msg or "auth" in msg:
-            return False
-        # Default: treat GraniteAPIError as transport error (conservative)
-        return True
+        # Explicitly non-retriable HTTP status codes — default-deny for all others
+        for bad_code in ("400", "401", "403", "404", "409", "422"):
+            if f"http {bad_code}" in msg:
+                return False
+        # Unknown GraniteAPIError → default-deny (NOT retriable)
+        # This is intentional: unknown errors should NOT be silently retried
+        return False
 
     # Anything else (parse errors, validation errors, etc.) — not retriable
     return False
@@ -226,11 +227,87 @@ def is_retriable_benchmark_error(exc: Exception) -> bool:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Structured benchmark provider failure (Part B — failure provenance)
+# ---------------------------------------------------------------------------
+
+
+class BenchmarkProviderFailure(Exception):
+    """Raised by GraniteBenchmarkProvider when a call fails.
+
+    Carries the same provenance metadata that a successful BenchmarkProviderResult
+    carries, wherever that data is available at the point of failure.
+
+    This ensures failed trials record:
+      - attempt_count  (actual number of attempts made)
+      - attempt_latencies_ms  (per-attempt latency list)
+      - raw_response  (any response body received before failure)
+      - raw_response_sha256  (hash of above)
+      - actual_model_id  (the model used in the request)
+      - generation_config  (the generation parameters sent)
+      - actual_system_prompt / actual_system_sha256
+      - actual_user_message / actual_user_sha256
+      - cause  (the original exception)
+      - status_hint  (BenchmarkStatus suggested for this failure)
+
+    The runner converts this to a BenchmarkProviderResult via to_provider_result().
+    """
+
+    def __init__(
+        self,
+        cause: Exception,
+        *,
+        status_hint: "BenchmarkStatus",
+        attempt_count: int,
+        provider_latency_ms_total: float = 0.0,
+        attempt_latencies_ms: list[float] | None = None,
+        raw_response: str = "",
+        raw_response_sha256: str = "",
+        actual_model_id: str = "",
+        generation_config: dict | None = None,
+        actual_system_prompt: str = "",
+        actual_user_message: str = "",
+        actual_system_sha256: str = "",
+        actual_user_sha256: str = "",
+    ) -> None:
+        super().__init__(str(cause))
+        self.cause = cause
+        self.status_hint = status_hint
+        self.attempt_count = attempt_count
+        self.provider_latency_ms_total = provider_latency_ms_total
+        self.attempt_latencies_ms = attempt_latencies_ms or []
+        self.raw_response = raw_response
+        self.raw_response_sha256 = raw_response_sha256
+        self.actual_model_id = actual_model_id
+        self.generation_config = generation_config or {}
+        self.actual_system_prompt = actual_system_prompt
+        self.actual_user_message = actual_user_message
+        self.actual_system_sha256 = actual_system_sha256
+        self.actual_user_sha256 = actual_user_sha256
+
+    def to_provider_result(self) -> "BenchmarkProviderResult":
+        """Convert this failure into a BenchmarkProviderResult with no prioritization."""
+        return BenchmarkProviderResult(
+            prioritization=None,
+            attempt_count=self.attempt_count,
+            provider_latency_ms_total=self.provider_latency_ms_total,
+            attempt_latencies_ms=self.attempt_latencies_ms,
+            raw_response=self.raw_response,
+            raw_response_sha256=self.raw_response_sha256,
+            actual_model_id=self.actual_model_id,
+            generation_config=self.generation_config,
+            actual_system_prompt=self.actual_system_prompt,
+            actual_user_message=self.actual_user_message,
+            actual_system_sha256=self.actual_system_sha256,
+            actual_user_sha256=self.actual_user_sha256,
+        )
+
+
 class BenchmarkProvider:
     """Minimal provider interface for benchmark mode.
 
-    Strict mode: if the external call fails, raise — do NOT fall back to Local.
-    The caller records the failure status and continues.
+    Strict mode: if the external call fails, raise BenchmarkProviderFailure —
+    do NOT fall back to Local.  The caller records the failure status and continues.
 
     The provider must return a BenchmarkProviderResult containing:
     - prioritization (CandidatePrioritization or None on failure)
@@ -270,13 +347,20 @@ class GraniteBenchmarkProvider(BenchmarkProvider):
         Only GraniteTransportError / transient transport failures are retried.
         GraniteResponseError and all model-output errors terminate the trial.
 
+    Model enforcement:
+        The benchmark config model is the sole authority for which model is used.
+        If ``model_id`` is supplied, GraniteAgent is explicitly instantiated with
+        that model_id — the environment variable GCSI_GRANITE_MODEL_ID is never
+        consulted for benchmark execution.  This prevents silent model substitution.
+
     Args:
-        max_attempts:       Maximum retry attempts for transient transport failures.
-        delay_s:            Delay between retry attempts (seconds).
-        agent:              Optional pre-built GraniteAgent (for testing / injection).
-                            If None, a default GraniteAgent() is constructed on first call.
-        config_model_id:    The model ID required by the config. If set and the agent's
-                            model differs, a warning is emitted.
+        max_attempts:   Maximum retry attempts for transient transport failures.
+        delay_s:        Delay between retry attempts (seconds).
+        agent:          Optional pre-built GraniteAgent (for testing / injection).
+                        If provided, model_id is derived from the agent.
+        model_id:       The effective benchmark model ID. Required for official runs.
+                        GraniteAgent is instantiated with this exact model_id.
+                        (Formerly ``config_model_id`` — rename enforces strict usage.)
     """
 
     def __init__(
@@ -284,13 +368,16 @@ class GraniteBenchmarkProvider(BenchmarkProvider):
         max_attempts: int = 2,
         delay_s: float = 1.0,
         agent=None,
+        model_id: str = "",
+        # Legacy alias kept for backward compat — same semantic
         config_model_id: str = "",
     ) -> None:
         self.max_attempts = max_attempts
         self.delay_s = delay_s
         self._agent = agent
         self._provider_name = "Granite"
-        self._config_model_id = config_model_id
+        # model_id wins over config_model_id (legacy)
+        self._effective_model_id: str = model_id or config_model_id or ""
 
     @property
     def provider_name(self) -> str:
@@ -298,16 +385,32 @@ class GraniteBenchmarkProvider(BenchmarkProvider):
 
     @property
     def model_id(self) -> str:
-        """Return the actual model ID from the underlying agent."""
+        """Return the actual model ID that will be/was used by GraniteAgent.
+
+        If an agent has already been instantiated, reflect its actual _model_id.
+        Otherwise return the effective benchmark model (set at construction).
+        Never returns 'unknown' for a properly configured benchmark provider.
+        """
         if self._agent is not None:
-            return getattr(self._agent, "_model_id", "unknown")
-        # Agent not yet instantiated; return config model if available
-        return self._config_model_id or "unknown"
+            return getattr(self._agent, "_model_id", self._effective_model_id or "unknown")
+        return self._effective_model_id or "unknown"
 
     def _ensure_agent(self):
+        """Create GraniteAgent using the effective benchmark model.
+
+        The benchmark config model_id is passed explicitly to GraniteAgent so the
+        environment variable GCSI_GRANITE_MODEL_ID cannot silently override it.
+        """
         if self._agent is None:
             from ..agent.granite_agent import GraniteAgent
-            self._agent = GraniteAgent()
+            if self._effective_model_id:
+                # Explicit model enforcement: pass the config model to GraniteAgent.
+                # This prevents GCSI_GRANITE_MODEL_ID from substituting another model.
+                self._agent = GraniteAgent(model_id=self._effective_model_id)
+            else:
+                # No configured model — fall through to GraniteAgent default / env var.
+                # This path should not occur for official benchmark execution.
+                self._agent = GraniteAgent()
         return self._agent
 
     def prioritize(
@@ -326,7 +429,10 @@ class GraniteBenchmarkProvider(BenchmarkProvider):
         from ..agent.granite_agent import (
             GraniteAgent,
             GraniteAPIError,
+            GraniteParseError,
             GraniteResponseError,
+            GraniteSchemaError,
+            STAGE1_GENERATION_CONFIG,
             _PRIORITIZATION_SYSTEM_PROMPT,
         )
         from ..agent.prioritization_helpers import build_prioritization_message
@@ -343,11 +449,8 @@ class GraniteBenchmarkProvider(BenchmarkProvider):
         actual_user_sha256 = _sha256_hex(actual_user_message)
 
         actual_model_id = getattr(agent, "_model_id", "unknown")
-        generation_config = {
-            "decoding_method": "greedy",
-            "max_new_tokens": 2048,
-            "stop_sequences": ["<|user|>"],
-        }
+        # Use canonical STAGE1_GENERATION_CONFIG — single source of truth
+        generation_config = dict(STAGE1_GENERATION_CONFIG)
 
         last_exc: Exception | None = None
         attempt_latencies: list[float] = []
@@ -388,7 +491,8 @@ class GraniteBenchmarkProvider(BenchmarkProvider):
                 )
 
             except GraniteResponseError as exc:
-                # Model output error — NOT retriable, terminate immediately
+                # Model output error — NOT retriable, terminate immediately.
+                # Preserve the raw response (already captured above if API call succeeded).
                 attempt_latencies.append((time.monotonic() - attempt_start) * 1000.0)
                 logger.warning(
                     "Granite attempt %d/%d: non-retriable response error: %s",
@@ -396,8 +500,29 @@ class GraniteBenchmarkProvider(BenchmarkProvider):
                 )
                 total_latency_ms = (time.monotonic() - total_start) * 1000.0
                 raw_sha = _sha256_hex(raw_response) if raw_response else ""
-                # Re-raise immediately without retry
-                raise
+                # Determine status hint: distinguish parse errors from schema/invalid errors
+                from ..agent.granite_agent import GraniteParseError, GraniteSchemaError
+                if isinstance(exc, GraniteParseError):
+                    hint = BenchmarkStatus.PARSE_ERROR
+                elif isinstance(exc, GraniteSchemaError):
+                    hint = BenchmarkStatus.SCHEMA_ERROR
+                else:
+                    hint = BenchmarkStatus.INVALID_RESPONSE
+                raise BenchmarkProviderFailure(
+                    cause=exc,
+                    status_hint=hint,
+                    attempt_count=attempt,
+                    provider_latency_ms_total=total_latency_ms,
+                    attempt_latencies_ms=list(attempt_latencies),
+                    raw_response=raw_response,
+                    raw_response_sha256=raw_sha,
+                    actual_model_id=actual_model_id,
+                    generation_config=generation_config,
+                    actual_system_prompt=actual_system_prompt,
+                    actual_user_message=actual_user_message,
+                    actual_system_sha256=actual_system_sha256,
+                    actual_user_sha256=actual_user_sha256,
+                ) from exc
 
             except GraniteAPIError as exc:
                 attempt_latencies.append((time.monotonic() - attempt_start) * 1000.0)
@@ -406,7 +531,22 @@ class GraniteBenchmarkProvider(BenchmarkProvider):
                         "Granite attempt %d/%d: non-retriable API error: %s",
                         attempt, self.max_attempts, exc
                     )
-                    raise
+                    total_latency_ms = (time.monotonic() - total_start) * 1000.0
+                    raise BenchmarkProviderFailure(
+                        cause=exc,
+                        status_hint=BenchmarkStatus.PROVIDER_ERROR,
+                        attempt_count=attempt,
+                        provider_latency_ms_total=total_latency_ms,
+                        attempt_latencies_ms=list(attempt_latencies),
+                        raw_response=raw_response,
+                        raw_response_sha256=_sha256_hex(raw_response) if raw_response else "",
+                        actual_model_id=actual_model_id,
+                        generation_config=generation_config,
+                        actual_system_prompt=actual_system_prompt,
+                        actual_user_message=actual_user_message,
+                        actual_system_sha256=actual_system_sha256,
+                        actual_user_sha256=actual_user_sha256,
+                    ) from exc
                 last_exc = exc
                 logger.warning(
                     "Granite attempt %d/%d: retriable transport error: %s",
@@ -418,7 +558,22 @@ class GraniteBenchmarkProvider(BenchmarkProvider):
             except Exception as exc:
                 attempt_latencies.append((time.monotonic() - attempt_start) * 1000.0)
                 if not is_retriable_benchmark_error(exc):
-                    raise
+                    total_latency_ms = (time.monotonic() - total_start) * 1000.0
+                    raise BenchmarkProviderFailure(
+                        cause=exc,
+                        status_hint=BenchmarkStatus.PROVIDER_ERROR,
+                        attempt_count=attempt,
+                        provider_latency_ms_total=total_latency_ms,
+                        attempt_latencies_ms=list(attempt_latencies),
+                        raw_response=raw_response,
+                        raw_response_sha256=_sha256_hex(raw_response) if raw_response else "",
+                        actual_model_id=actual_model_id,
+                        generation_config=generation_config,
+                        actual_system_prompt=actual_system_prompt,
+                        actual_user_message=actual_user_message,
+                        actual_system_sha256=actual_system_sha256,
+                        actual_user_sha256=actual_user_sha256,
+                    ) from exc
                 last_exc = exc
                 logger.warning(
                     "Granite attempt %d/%d: retriable error: %s",
@@ -427,8 +582,23 @@ class GraniteBenchmarkProvider(BenchmarkProvider):
                 if attempt < self.max_attempts:
                     time.sleep(self.delay_s)
 
-        # All attempts exhausted
-        raise last_exc  # type: ignore[misc]
+        # All attempts exhausted — raise with full provenance
+        total_latency_ms = (time.monotonic() - total_start) * 1000.0
+        raise BenchmarkProviderFailure(
+            cause=last_exc,  # type: ignore[arg-type]
+            status_hint=BenchmarkStatus.PROVIDER_ERROR,
+            attempt_count=self.max_attempts,
+            provider_latency_ms_total=total_latency_ms,
+            attempt_latencies_ms=list(attempt_latencies),
+            raw_response=raw_response,
+            raw_response_sha256=_sha256_hex(raw_response) if raw_response else "",
+            actual_model_id=actual_model_id,
+            generation_config=generation_config,
+            actual_system_prompt=actual_system_prompt,
+            actual_user_message=actual_user_message,
+            actual_system_sha256=actual_system_sha256,
+            actual_user_sha256=actual_user_sha256,
+        )
 
 
 class FakeProvider(BenchmarkProvider):
@@ -967,6 +1137,7 @@ class BenchmarkRunner:
             generation_config={
                 "decoding_method": "greedy",
                 "max_new_tokens": 2048,
+                "stop_sequences": ["<|user|>"],
             },
             candidate_limit=self.candidate_limit,
             scenario_matrix=[v.spec.scenario_id for v in variants],
@@ -1012,20 +1183,61 @@ class BenchmarkRunner:
         data["run_status"] = status
         manifest_path.write_text(json.dumps(data, indent=2))
 
-    def write_effective_config(self, benchmark_config: BenchmarkConfig | None = None) -> None:
-        """Write effective_config.json to the result directory."""
-        if self.output_dir is None:
-            return
+    def write_effective_config(
+        self,
+        benchmark_config: BenchmarkConfig | None = None,
+        *,
+        variants: list | None = None,
+        suite: str = "core",
+        run_type: str | None = None,
+        preregistered: bool | None = None,
+    ) -> dict:
+        """Write effective_config.json to the result directory.
+
+        The effective config captures what was ACTUALLY EXECUTED — not merely the
+        source config intent.  This includes the actual scenario IDs, suite name,
+        run_type, model, repetitions, and all other execution parameters.
+
+        The effective_config_sha256 is computed over the executed snapshot
+        (excluding the hash field itself) using canonical sorted JSON serialization.
+        Same effective execution → same SHA.  Different scenario subset → different SHA.
+
+        Args:
+            benchmark_config: Source benchmark config (for source_config_sha256).
+            variants:         Actually-executed BenchmarkScenarioVariant list.
+                              Used to record exact scenario IDs and capacity/anomaly/deadline info.
+            suite:            Suite name ("quick", "core", "full") — recorded explicitly.
+            run_type:         Override for run_type label.
+            preregistered:    Override for preregistered flag.
+
+        Returns:
+            The effective config dict (also written to disk if output_dir is set).
+        """
         cfg = benchmark_config or self.benchmark_config
-        if cfg is None:
-            return
-        effective = {
-            "source_config_version": cfg.benchmark_version,
-            "source_config_sha256": cfg.config_sha256,
+        effective_run_type = run_type or self.run_type
+        is_preregistered = preregistered if preregistered is not None else len(self.config_overrides) == 0
+
+        # Executed scenario IDs and matrices (from actual variants if provided)
+        if variants is not None:
+            executed_scenario_ids = [v.spec.scenario_id for v in variants]
+            executed_capacity_ratios = sorted({v.spec.capacity_ratio for v in variants})
+            executed_anomaly_modes = sorted({v.spec.anomaly_mode.value for v in variants})
+            executed_deadline_scales = sorted({v.spec.deadline_scale for v in variants})
+        else:
+            executed_scenario_ids = []
+            executed_capacity_ratios = cfg.capacity_ratios if cfg else []
+            executed_anomaly_modes = cfg.anomaly_modes if cfg else []
+            executed_deadline_scales = cfg.deadline_modes if cfg else [1.0]
+
+        effective: dict = {
+            "suite": suite,
+            "run_type": effective_run_type,
+            "preregistered": is_preregistered,
+            "executed_scenario_ids": executed_scenario_ids,
             "executed_values": {
-                "capacity_ratios": cfg.capacity_ratios,
-                "anomaly_modes": cfg.anomaly_modes,
-                "deadline_modes": cfg.deadline_modes,
+                "capacity_ratios": executed_capacity_ratios,
+                "anomaly_modes": executed_anomaly_modes,
+                "deadline_scales": executed_deadline_scales,
                 "repetitions": self.repetitions,
                 "candidate_limit": self.candidate_limit,
                 "provider": self.provider.provider_name,
@@ -1034,20 +1246,39 @@ class BenchmarkRunner:
                     "max_attempts": getattr(self.provider, "max_attempts", 1),
                     "delay_between_attempts_s": getattr(self.provider, "delay_s", 0.0),
                 },
-                "comparison_tolerance": cfg.comparison_tolerance,
-                "primary_metrics": cfg.primary_metrics,
-                "ablation_scenarios": cfg.ablation_configuration.ablation_scenarios,
             },
             "config_overrides": self.config_overrides,
-            "preregistered": len(self.config_overrides) == 0,
         }
+
+        # Record source config provenance if available
+        if cfg is not None:
+            effective["source_config_version"] = cfg.benchmark_version
+            effective["source_config_sha256"] = cfg.config_sha256
+            effective["executed_values"]["comparison_tolerance"] = cfg.comparison_tolerance
+            effective["executed_values"]["primary_metrics"] = cfg.primary_metrics
+            effective["executed_values"]["ablation_scenarios"] = cfg.ablation_configuration.ablation_scenarios
+
+        # Record scenario_matrix override explicitly when suite != core
+        if cfg is not None and variants is not None:
+            configured_count = len(cfg.capacity_ratios) * len(cfg.anomaly_modes) * len(cfg.deadline_modes)
+            if len(executed_scenario_ids) != configured_count or suite != "core":
+                effective["config_overrides"] = dict(self.config_overrides)
+                effective["config_overrides"]["scenario_matrix"] = {
+                    "configured_count": configured_count,
+                    "executed": executed_scenario_ids,
+                }
+
+        # Compute effective_config_sha256 over the snapshot (excluding the hash field)
         effective_sha = hashlib.sha256(
             json.dumps(effective, indent=2, sort_keys=True).encode()
         ).hexdigest()
         effective["effective_config_sha256"] = effective_sha
-        (self.output_dir / "effective_config.json").write_text(
-            json.dumps(effective, indent=2), encoding="utf-8"
-        )
+
+        if self.output_dir is not None:
+            (self.output_dir / "effective_config.json").write_text(
+                json.dumps(effective, indent=2), encoding="utf-8"
+            )
+        return effective
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -1103,17 +1334,24 @@ class BenchmarkRunner:
                 candidates, link_state, scenario.mission_state, llm_anomalies,
                 distance_km=scenario.distance_km,
             )
+        except BenchmarkProviderFailure as failure:
+            # Structured failure — full provenance carried by the exception.
+            # Use the status hint from the provider (parse_error, invalid_response, etc.)
+            status = failure.status_hint
+            error_type = type(failure.cause).__name__
+            error_msg = _sanitize_error(str(failure.cause))
+            # Convert to BenchmarkProviderResult — no guessing, authoritative metadata.
+            provider_result = failure.to_provider_result()
         except Exception as exc:  # noqa: BLE001
+            # Non-BenchmarkProviderFailure exceptions (e.g. from FakeProvider callbacks)
             status = _classify_error(exc)
             error_type = type(exc).__name__
             error_msg = _sanitize_error(str(exc))
-            # Capture raw response if available from the provider result (partial)
-            raw_response = getattr(exc, "_raw_response", "")
             provider_result = BenchmarkProviderResult(
                 prioritization=None,
-                attempt_count=getattr(exc, "_attempt_count", 1),
-                raw_response=raw_response,
-                raw_response_sha256=_sha256_hex(raw_response) if raw_response else "",
+                attempt_count=1,
+                raw_response="",
+                raw_response_sha256="",
             )
 
         return self._make_trial(
