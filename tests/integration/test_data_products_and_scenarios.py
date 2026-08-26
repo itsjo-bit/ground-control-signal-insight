@@ -325,17 +325,17 @@ class TestSwitchScenario:
 # ── Default scenario (no env override) ───────────────────────────────────────
 
 class TestDefaultScenario:
-    def test_default_scenario_path_is_v3(self):
-        """The compiled default must point to mission_data_v3.json."""
-        assert "mission_data_v3.json" in _DEFAULT_SCENARIO_PATH
+    def test_default_scenario_path_is_asteria7(self):
+        """Phase 4.2A: The compiled default must point to asteria7_thermal_priority_contact_v1.json."""
+        assert "asteria7_thermal_priority_contact_v1.json" in _DEFAULT_SCENARIO_PATH
 
     def test_default_scenario_loads_without_env_override(self, monkeypatch):
-        """Without GCSI_SCENARIO_PATH in the environment, v3 must load."""
+        """Without GCSI_SCENARIO_PATH in the environment, ASTERIA-7 must be selected."""
         monkeypatch.delenv("GCSI_SCENARIO_PATH", raising=False)
         # Simulate what main.py lifespan does
         env_path = os.getenv("GCSI_SCENARIO_PATH")
         scenario_path = env_path if env_path else _DEFAULT_SCENARIO_PATH
-        assert "mission_data_v3.json" in scenario_path
+        assert "asteria7_thermal_priority_contact_v1" in scenario_path
 
     def test_explicit_env_override_is_respected(self, monkeypatch):
         """When GCSI_SCENARIO_PATH is set explicitly, it must take priority."""
@@ -343,7 +343,7 @@ class TestDefaultScenario:
         env_path = os.getenv("GCSI_SCENARIO_PATH")
         scenario_path = env_path if env_path else _DEFAULT_SCENARIO_PATH
         assert "nominal_pass.json" in scenario_path
-        assert "mission_data_v3.json" not in scenario_path
+        assert "asteria7_thermal_priority_contact_v1" not in scenario_path
 
 
 # ── Capability detection ──────────────────────────────────────────────────────

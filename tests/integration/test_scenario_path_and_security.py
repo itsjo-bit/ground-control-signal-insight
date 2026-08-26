@@ -71,9 +71,9 @@ class TestPathResolution:
             f"mission_data_v3.json not found at: {_DEFAULT_SCENARIO_PATH}"
         )
 
-    def test_default_scenario_path_is_v3(self):
-        """The default must point to mission_data_v3.json."""
-        assert "mission_data_v3.json" in _DEFAULT_SCENARIO_PATH
+    def test_default_scenario_path_is_asteria7(self):
+        """Phase 4.2A: The default must point to asteria7_thermal_priority_contact_v1.json."""
+        assert "asteria7_thermal_priority_contact_v1.json" in _DEFAULT_SCENARIO_PATH
 
     def test_scenarios_dir_in_main_is_absolute(self):
         """_SCENARIOS_DIR exposed from main must be absolute."""
@@ -88,11 +88,11 @@ class TestPathResolution:
         assert resolved.is_absolute()
 
     def test_default_path_loads_without_env_override(self, monkeypatch):
-        """Without GCSI_SCENARIO_PATH in the environment, v3 path is selected."""
+        """Phase 4.2A: Without GCSI_SCENARIO_PATH in the environment, ASTERIA-7 path is selected."""
         monkeypatch.delenv("GCSI_SCENARIO_PATH", raising=False)
         env_path = os.getenv("GCSI_SCENARIO_PATH")
         chosen = env_path if env_path else _DEFAULT_SCENARIO_PATH
-        assert "mission_data_v3.json" in chosen
+        assert "asteria7_thermal_priority_contact_v1" in chosen
 
     def test_explicit_env_override_is_respected(self, monkeypatch):
         """When GCSI_SCENARIO_PATH is set, it takes priority over the default."""
@@ -103,11 +103,11 @@ class TestPathResolution:
         assert "mission_data_v3.json" not in chosen
 
     def test_default_scenario_is_loadable_as_absolute(self):
-        """The absolute default path must load successfully."""
+        """Phase 4.2A: The absolute default path (ASTERIA-7) must load successfully."""
         # This verifies the path is correct independent of cwd.
         app_state.load_scenario(_DEFAULT_SCENARIO_PATH)
         assert app_state.active_scenario is not None
-        assert len(app_state.active_scenario.data_products) == 150
+        assert len(app_state.active_scenario.data_products) == 1284
 
 
 # ── Version ───────────────────────────────────────────────────────────────────
