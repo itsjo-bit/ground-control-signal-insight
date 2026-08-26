@@ -24,6 +24,7 @@ import type {
   EvaluationResult,
   LinkState,
   MissionState,
+  RankedProduct,
   ScenarioInfo,
   WhatIfEvalResponse,
 } from '../types/domain';
@@ -34,6 +35,7 @@ import type { ViewSettings } from '../hooks/useViewSettings';
 import type { WorkspaceMode } from '../MissionControl';
 import { formatBitsAsDataVolume, formatDuration } from '../utils/formatters';
 import { presentationLinkStatus, presentationSnrTrend } from '../experience/linkPresentation';
+import { countUrgentProducts } from '../experience/urgentCandidates';
 
 // Import existing panels (preserved as-is)
 import { MissionStatePanel } from './MissionStatePanel';
@@ -158,6 +160,15 @@ interface CommonProps {
   manualAssessmentStale: boolean;
   onManualEvaluate: () => void;
   onManualTransmit: () => void;
+  // ── Phase 4.2F3 props ─────────────────────────────────────────────────────────
+  /** Called when operator approves AI recommendation — does NOT execute transmission. */
+  onApproveAiPlan: () => void;
+  /** Called when operator wants to modify AI plan — seeds manual mode with AI plan IDs. */
+  onModifyAiPlan: () => void;
+  /** Called when operator rejects AI recommendation — no backend mutation. */
+  onRejectAiPlan: () => void;
+  /** Whether the AI recommendation was rejected this session. */
+  aiRecommendationRejected: boolean;
 }
 
 // ── StatGrid ──────────────────────────────────────────────────────────────────
@@ -828,7 +839,7 @@ function DataSection(props: CommonProps) {
                   )}
                   {showExpandedColumns && (
                     <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: 'rgba(147,160,180,0.5)', flexShrink: 0, minWidth: 40 }}>
-                      {(p.size_bits / 1024).toFixed(0)}kb
+                      {formatBitsAsDataVolume(p.size_bits)}
                     </span>
                   )}
                   <div style={{ width: 28, height: 3, background: 'rgba(46,58,79,0.8)', borderRadius: 2, flexShrink: 0 }}>
@@ -853,7 +864,7 @@ function DataSection(props: CommonProps) {
                       {[
                         ['Type', p.product_type],
                         ['Subsystem', p.subsystem],
-                        ['Size', `${(p.size_bits / 1024).toFixed(1)} kb`],
+                        ['Size', formatBitsAsDataVolume(p.size_bits)],
                         ['Criticality', p.criticality.toFixed(2)],
                         ['Relevance', p.mission_relevance.toFixed(2)],
                         ['Delivery', p.delivery_requirement],
@@ -923,7 +934,7 @@ function DataSection(props: CommonProps) {
         }}>
           <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 10, color: '#34d399', fontWeight: 700 }}>{selectedCount}</span>
           <span style={{ fontFamily: '"IBM Plex Sans"', fontSize: 11, color: 'rgba(147,160,180,0.6)' }}>selected</span>
-          <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 10, color: 'rgba(147,160,180,0.6)' }}>{(selectedBits / 1024).toFixed(0)} kb</span>
+          <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 10, color: 'rgba(147,160,180,0.6)' }}>{formatBitsAsDataVolume(selectedBits)}</span>
           <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 10, color: capacityUsedPct > 90 ? '#f87171' : 'rgba(147,160,180,0.5)' }}>{capacityUsedPct.toFixed(0)}% cap</span>
           <button
             onClick={props.onClearManualSelection}
@@ -937,12 +948,303 @@ function DataSection(props: CommonProps) {
   );
 }
 
+// ── F3: Human Decision Panel (Approve / Modify / Reject) ─────────────────────
+
+function AiHumanDecisionPanel({ props }: { props: CommonProps }) {
+  const rec = props.recommendation;
+  const recEval = props.recEval;
+  const recPlan = props.recPlan;
+  const approvalPhase = props.approvalPhase;
+  const isTransmitting = approvalPhase === 'transmitting';
+  const isComplete = approvalPhase === 'complete';
+
+  if (!rec) return null;
+
+  const planPayloadBits = (recPlan?.packets ?? []).reduce((s, p) => s + p.size_bits, 0);
+  const deferredCount = recEval?.deferred_packets.length ?? 0;
+  const selectedCount = (recPlan?.packets.length ?? 0);
+
+  const riskLevel = recEval?.risk_level ?? rec.risk_level;
+  const riskColor =
+    riskLevel === 'LOW' ? '#34d399' :
+    riskLevel === 'MEDIUM' ? '#f59e0b' :
+    riskLevel === 'HIGH' ? '#fb923c' : '#f87171';
+
+  // Required delivery rate from evaluation
+  const reqDeliveryRate = recEval
+    ? recEval.critical_packets_delivered / Math.max(1, recEval.total_critical_packets)
+    : null;
+
+  // Anomaly-linked packet coverage from plan packets
+  const anomalyIds = new Set(props.anomalies.map((a) => a.anomaly_id));
+  const anomalyLinkedPackets = (recPlan?.packets ?? []).filter((pkt) => {
+    const dp = props.rawDataProducts.find((p) => p.product_id === pkt.packet_id);
+    return dp?.anomaly_id && anomalyIds.has(dp.anomaly_id);
+  });
+  const totalAnomalyLinked = props.rawDataProducts.filter((p) => p.anomaly_id && anomalyIds.has(p.anomaly_id)).length;
+  const anomalyCoverage = totalAnomalyLinked > 0
+    ? (anomalyLinkedPackets.length / totalAnomalyLinked)
+    : null;
+
+  return (
+    <div style={{
+      background: 'rgba(8,12,22,0.95)',
+      border: '1px solid rgba(76,141,255,0.18)',
+      borderRadius: 6, padding: '12px 14px',
+      marginBottom: 12,
+    }}>
+      {/* Header */}
+      <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 9, color: 'rgba(76,141,255,0.7)', letterSpacing: '0.1em', marginBottom: 8 }}>
+        AI RECOMMENDATION
+      </div>
+
+      {/* Metrics grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 12 }}>
+        {[
+          { label: 'IMMEDIATE PRIORITIES', value: `${selectedCount} products`, color: '#6EA8FF' },
+          { label: 'PRIORITY PAYLOAD', value: formatBitsAsDataVolume(planPayloadBits), color: '#e2e8f4' },
+          { label: 'CONTACT CAPACITY', value: formatBitsAsDataVolume(props.availableCapacityBits), color: 'rgba(147,160,180,0.7)' },
+          { label: 'PLAN RISK', value: riskLevel, color: riskColor },
+          ...(reqDeliveryRate !== null ? [{ label: 'REQ. DELIVERY', value: `${(reqDeliveryRate * 100).toFixed(0)}%`, color: reqDeliveryRate >= 0.8 ? '#34d399' : '#f59e0b' }] : []),
+          ...(anomalyCoverage !== null ? [{ label: 'ANOMALY COVERAGE', value: `${(anomalyCoverage * 100).toFixed(0)}%`, color: anomalyCoverage >= 0.8 ? '#34d399' : anomalyCoverage >= 0.5 ? '#f59e0b' : '#f87171' }] : []),
+          { label: 'DEFERRED', value: `${deferredCount}`, color: deferredCount > 0 ? '#f59e0b' : '#34d399' },
+        ].map(({ label, value, color }) => (
+          <div key={label} style={{
+            background: 'rgba(255,255,255,0.025)',
+            border: '1px solid rgba(46,58,79,0.5)',
+            borderRadius: 4, padding: '5px 8px',
+          }}>
+            <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: 'rgba(147,160,180,0.45)', letterSpacing: '0.07em', marginBottom: 2 }}>{label}</div>
+            <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 12, fontWeight: 700, color }}>{value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Decision buttons */}
+      {!isComplete && !isTransmitting && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <button
+            onClick={props.onApproveAiPlan}
+            disabled={isTransmitting}
+            style={{
+              width: '100%', padding: '9px 0', fontSize: 12, fontWeight: 600,
+              fontFamily: '"IBM Plex Sans", system-ui', cursor: 'pointer',
+              background: 'rgba(52,211,153,0.12)', color: '#34d399',
+              border: '1px solid rgba(52,211,153,0.35)', borderRadius: 6,
+              letterSpacing: '0.02em',
+            }}
+          >
+            ✓ APPROVE TRANSMISSION
+          </button>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              onClick={props.onModifyAiPlan}
+              style={{
+                flex: 1, padding: '7px 0', fontSize: 11, fontWeight: 600,
+                fontFamily: '"IBM Plex Sans"', cursor: 'pointer',
+                background: 'rgba(245,158,11,0.08)', color: '#f59e0b',
+                border: '1px solid rgba(245,158,11,0.28)', borderRadius: 5,
+              }}
+            >
+              ✎ MODIFY PLAN
+            </button>
+            <button
+              onClick={props.onRejectAiPlan}
+              style={{
+                flex: 1, padding: '7px 0', fontSize: 11, fontWeight: 600,
+                fontFamily: '"IBM Plex Sans"', cursor: 'pointer',
+                background: 'rgba(248,113,113,0.08)', color: '#f87171',
+                border: '1px solid rgba(248,113,113,0.25)', borderRadius: 5,
+              }}
+            >
+              ✕ REJECT
+            </button>
+          </div>
+          <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 10, color: 'rgba(147,160,180,0.4)', textAlign: 'center', marginTop: 2 }}>
+            Approve authorizes transmission · Modify seeds manual planning · Reject does not transmit
+          </div>
+        </div>
+      )}
+
+      {isTransmitting && (
+        <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 11, color: '#6EA8FF', textAlign: 'center', padding: '8px 0' }}>
+          Transmission in progress…
+        </div>
+      )}
+      {isComplete && (
+        <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 11, color: '#34d399', textAlign: 'center', padding: '8px 0' }}>
+          ✓ Transmission complete — see Log section
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── V3.5 / F3: AI Mission Triage helpers ─────────────────────────────────────
+
+/** Determine provider-aware triage heading */
+function triageHeading(providerName: string | null, fallbackReason: string | null): {
+  title: string; subtitle: string | null; isLocal: boolean;
+} {
+  const isLocal = !providerName
+    || providerName.toLowerCase().includes('local')
+    || providerName.toLowerCase().includes('rule')
+    || providerName.toLowerCase().includes('deterministic');
+  const hasFallback = !!fallbackReason;
+  if (isLocal || hasFallback) {
+    return {
+      title: 'DETERMINISTIC MISSION TRIAGE',
+      subtitle: 'LOCAL FALLBACK',
+      isLocal: true,
+    };
+  }
+  return {
+    title: 'AI MISSION TRIAGE',
+    subtitle: null,
+    isLocal: false,
+  };
+}
+
+/** WHY THIS MATTERS panel — shows RankedProduct reason + DataProduct evidence */
+function WhyThisMatters({
+  rp,
+  dataProduct,
+  anomaly,
+}: {
+  rp: RankedProduct;
+  dataProduct: DataProduct | undefined;
+  anomaly: AnomalyEvent | undefined;
+}) {
+  const AI_COLOR = '#6EA8FF';
+  const MUTED = 'rgba(147,160,180,0.8)';
+  const DIM = 'rgba(147,160,180,0.45)';
+
+  return (
+    <div style={{
+      background: 'rgba(8,12,22,0.95)',
+      border: '1px solid rgba(76,141,255,0.18)',
+      borderRadius: 6, padding: '10px 12px',
+      marginBottom: 8,
+    }}>
+      {/* WHY THIS MATTERS header */}
+      <div style={{
+        fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 9,
+        color: 'rgba(76,141,255,0.7)', letterSpacing: '0.1em', marginBottom: 6,
+        display: 'flex', alignItems: 'center', gap: 6,
+      }}>
+        <span>◈</span> WHY THIS MATTERS
+        <span style={{ marginLeft: 'auto', fontFamily: '"IBM Plex Mono"', fontSize: 8, color: DIM }}>
+          Rank #{rp.priority}
+        </span>
+      </div>
+
+      {/* Product ID */}
+      <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 13, fontWeight: 700, color: AI_COLOR, marginBottom: 4 }}>
+        {rp.product_id}
+      </div>
+
+      {/* AI reasoning — labelled advisory */}
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: DIM, letterSpacing: '0.08em', marginBottom: 3 }}>
+          AI INTERPRETATION · ADVISORY · UNCALIBRATED
+        </div>
+        <div style={{
+          fontFamily: '"IBM Plex Sans", system-ui', fontSize: 12, color: MUTED,
+          fontStyle: 'italic', lineHeight: 1.5,
+          background: 'rgba(0,0,0,0.12)', borderRadius: 3, padding: '5px 8px',
+        }}>
+          "{rp.reason}"
+        </div>
+      </div>
+
+      {/* Authoritative evidence from DataProduct */}
+      {dataProduct && (
+        <div>
+          <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: 'rgba(52,211,153,0.7)', letterSpacing: '0.08em', marginBottom: 5 }}>
+            ● AUTHORITATIVE EVIDENCE
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 10px', fontSize: 10 }}>
+            {[
+              ['Active event', anomaly ? anomaly.anomaly_id : (dataProduct.anomaly_id ?? '—')],
+              ['Subsystem', dataProduct.subsystem],
+              ['Severity', anomaly ? `${(anomaly.severity * 100).toFixed(0)}%` : '—'],
+              ['Criticality', dataProduct.criticality.toFixed(2)],
+              ['Mission relevance', dataProduct.mission_relevance.toFixed(2)],
+              ['Delivery req.', dataProduct.delivery_requirement],
+              ['Payload', formatBitsAsDataVolume(dataProduct.size_bits)],
+              ['Contact deadline', dataProduct.deadline_s < 3600 ? `${dataProduct.deadline_s.toFixed(0)} s` : `${(dataProduct.deadline_s / 3600).toFixed(1)} h`],
+            ].map(([label, val]) => (
+              <div key={label} style={{ display: 'flex', gap: 4 }}>
+                <span style={{ color: 'rgba(147,160,180,0.4)', fontFamily: '"IBM Plex Sans"' }}>{label}</span>
+                <span style={{ color: '#e2e8f4', fontFamily: '"IBM Plex Mono"', wordBreak: 'break-all' }}>{val}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** AI Funnel display: 1,284 → 50 → 23 → N */
+function AiFunnel({
+  totalQueued,
+  semanticCandidates,
+  urgentCount,
+  projectedFit,
+}: {
+  totalQueued: number;
+  semanticCandidates: number;
+  urgentCount: number;
+  projectedFit: number | null;
+}) {
+  const DIM = 'rgba(147,160,180,0.45)';
+  const rows: Array<{ count: number; label: string; color: string }> = [
+    { count: totalQueued, label: 'QUEUED PRODUCTS', color: '#f59e0b' },
+    { count: semanticCandidates, label: 'SEMANTIC CANDIDATES', color: '#6EA8FF' },
+    { count: urgentCount, label: 'URGENT / OPERATIONALLY RELEVANT', color: '#f87171' },
+    { count: projectedFit ?? 0, label: 'PROJECTED TO FIT CONTACT', color: '#34d399' },
+  ];
+
+  return (
+    <div style={{
+      background: 'rgba(8,12,22,0.95)',
+      border: '1px solid rgba(46,58,79,0.7)',
+      borderRadius: 6, padding: '10px 12px',
+      marginBottom: 10,
+    }}>
+      <div style={{
+        fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 9,
+        color: 'rgba(147,160,180,0.55)', letterSpacing: '0.1em', marginBottom: 8,
+      }}>
+        MISSION TRIAGE FUNNEL
+      </div>
+      {rows.map((row, i) => (
+        <div key={row.label}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+            <span style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 20, fontWeight: 700, color: row.color, minWidth: 56, textAlign: 'right' }}>
+              {row.count > 0 || i === 3 ? row.count.toLocaleString() : '—'}
+            </span>
+            <span style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 9, color: row.color, letterSpacing: '0.06em', flexShrink: 0 }}>
+              {row.label}
+            </span>
+          </div>
+          {i < rows.length - 1 && (
+            <div style={{ marginLeft: 24, color: DIM, fontSize: 11, lineHeight: '14px' }}>↓</div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── V3.5: AI Copilot section — Tabbed workspace ───────────────────────────────
 
 type AiTab = 'prioritization' | 'reasoning' | 'decision';
 
 function AiSection(props: CommonProps) {
   const [activeTab, setActiveTab] = useState<AiTab>('prioritization');
+  const [selectedRpId, setSelectedRpId] = useState<string | null>(null);
 
   const lc = props.aiLifecycle;
   const isStandby = lc === 'standby';
@@ -962,6 +1264,63 @@ function AiSection(props: CommonProps) {
 
   const rankedCount = props.aiPrioritization?.ranked_products.length ?? null;
 
+  // ── Derived funnel counts ────────────────────────────────────────────────────
+  const funnelData = useMemo(() => {
+    const totalQueued = props.rawDataProducts.length > 0 ? props.rawDataProducts.length : props.dataProductsCount;
+    const semanticCandidates = props.aiCandidateCount ?? props.aiPrioritization?.candidate_count ?? 0;
+
+    // Urgent count: apply production predicate to candidates
+    // Candidates are products that appear in ranked_products
+    const rankedIds = new Set((props.aiPrioritization?.ranked_products ?? []).map((r) => r.product_id));
+    const candidateProducts = props.rawDataProducts.filter((p) => rankedIds.has(p.product_id));
+    const anomalyIds = new Set(props.anomalies.map((a) => a.anomaly_id));
+    const effectiveWindowS = ms?.comm_window_remaining_s ?? 0;
+    const urgentCount = countUrgentProducts(candidateProducts, anomalyIds, effectiveWindowS);
+
+    // Projected fit: ai_plan packets that are NOT deferred
+    const recPlanPackets = props.recPlan?.packets ?? [];
+    const deferredSet = new Set(props.recEval?.deferred_packets ?? []);
+    const projectedFit = recPlanPackets.filter((pkt) => !deferredSet.has(pkt.packet_id)).length;
+
+    return { totalQueued, semanticCandidates, urgentCount, projectedFit: projectedFit > 0 ? projectedFit : null };
+  }, [props.rawDataProducts, props.dataProductsCount, props.aiCandidateCount, props.aiPrioritization, props.anomalies, ms, props.recPlan, props.recEval]);
+
+  // ── Derived provider heading ─────────────────────────────────────────────────
+  const triageInfo = useMemo(
+    () => triageHeading(
+      props.aiActualProvider ?? props.aiProvider,
+      props.aiRecommendationFallbackReason ?? props.aiPrioritizationFallbackReason,
+    ),
+    [props.aiActualProvider, props.aiProvider, props.aiRecommendationFallbackReason, props.aiPrioritizationFallbackReason],
+  );
+
+  // ── WHY THIS MATTERS lookup ─────────────────────────────────────────────────
+  const productById = useMemo(() => {
+    const m = new Map<string, DataProduct>();
+    for (const p of props.rawDataProducts) m.set(p.product_id, p);
+    return m;
+  }, [props.rawDataProducts]);
+
+  const anomalyById = useMemo(() => {
+    const m = new Map<string, AnomalyEvent>();
+    for (const a of props.anomalies) m.set(a.anomaly_id, a);
+    return m;
+  }, [props.anomalies]);
+
+  // Auto-select first ranked product when AI result arrives
+  useEffect(() => {
+    if (hasResult && props.aiPrioritization && !selectedRpId) {
+      const first = props.aiPrioritization.ranked_products.find((r) => r.priority === 1)
+        ?? props.aiPrioritization.ranked_products[0];
+      if (first) setSelectedRpId(first.product_id);
+    }
+  }, [hasResult, props.aiPrioritization, selectedRpId]);
+
+  const selectedRp: RankedProduct | null = useMemo(() => {
+    if (!selectedRpId || !props.aiPrioritization) return null;
+    return props.aiPrioritization.ranked_products.find((r) => r.product_id === selectedRpId) ?? null;
+  }, [selectedRpId, props.aiPrioritization]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
       {/* AI Copilot status card — always visible */}
@@ -975,10 +1334,15 @@ function AiSection(props: CommonProps) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: hasResult ? 8 : 0 }}>
           <span style={{ width: 7, height: 7, borderRadius: '50%', display: 'inline-block', background: statusColor, flexShrink: 0 }} />
           <span style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', color: statusColor }}>
-            AI COPILOT · {statusLabel}
+            {hasResult ? triageInfo.title : `AI COPILOT · ${statusLabel}`}
           </span>
+          {hasResult && triageInfo.subtitle && (
+            <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#f59e0b', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 2, padding: '1px 5px' }}>
+              {triageInfo.subtitle}
+            </span>
+          )}
           {props.aiProvider && (isReady || isStale) && (
-            <span style={{ marginLeft: 'auto', fontFamily: '"IBM Plex Mono"', fontSize: 9, color: 'rgba(110,168,255,0.6)', flexShrink: 0 }}>
+            <span style={{ marginLeft: 'auto', fontFamily: '"IBM Plex Mono"', fontSize: 9, color: triageInfo.isLocal ? '#f59e0b' : 'rgba(110,168,255,0.6)', flexShrink: 0 }}>
               {props.aiProvider}
             </span>
           )}
@@ -988,21 +1352,27 @@ function AiSection(props: CommonProps) {
         {hasResult && props.aiPrioritization && (
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
             <div>
-              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: 'rgba(147,160,180,0.4)', letterSpacing: '0.08em' }}>ANALYZED</div>
+              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: 'rgba(147,160,180,0.4)', letterSpacing: '0.08em' }}>TOTAL QUEUED</div>
               <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>
-                {props.aiCandidateCount ?? props.aiPrioritization.candidate_count ?? '—'}
+                {funnelData.totalQueued.toLocaleString()}
               </div>
             </div>
             <div>
-              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: 'rgba(147,160,180,0.4)', letterSpacing: '0.08em' }}>RANKED</div>
+              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: 'rgba(147,160,180,0.4)', letterSpacing: '0.08em' }}>CANDIDATES</div>
               <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 13, fontWeight: 700, color: '#6EA8FF' }}>
-                {props.aiPrioritization.ranked_products.length}
+                {funnelData.semanticCandidates}
               </div>
             </div>
             <div>
-              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: 'rgba(147,160,180,0.4)', letterSpacing: '0.08em' }}>CONFIDENCE</div>
+              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: 'rgba(147,160,180,0.4)', letterSpacing: '0.08em' }}>URGENT</div>
+              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 13, fontWeight: 700, color: '#f87171' }}>
+                {funnelData.urgentCount}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: 'rgba(147,160,180,0.4)', letterSpacing: '0.08em' }}>FIT CONTACT</div>
               <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 13, fontWeight: 700, color: '#34d399' }}>
-                {(props.aiPrioritization.confidence * 100).toFixed(0)}%
+                {funnelData.projectedFit ?? '—'}
               </div>
             </div>
             {isStale && (
@@ -1091,8 +1461,32 @@ function AiSection(props: CommonProps) {
           </div>
         )}
 
+        {/* Rejected state */}
+        {props.aiRecommendationRejected && (
+          <div style={{ background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.22)', borderRadius: 5, padding: '8px 10px', marginTop: 8 }}>
+            <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, fontWeight: 700, color: '#f87171', marginBottom: 3 }}>AI RECOMMENDATION REJECTED</div>
+            <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 11, color: 'rgba(147,160,180,0.6)', lineHeight: 1.5, marginBottom: 8 }}>
+              No transmission was initiated.
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                onClick={() => props.onSelectDecisionMode('manual')}
+                style={{ flex: 1, padding: '6px 0', fontSize: 11, fontFamily: '"IBM Plex Sans"', fontWeight: 600, cursor: 'pointer', background: 'rgba(52,211,153,0.08)', color: '#34d399', border: '1px solid rgba(52,211,153,0.28)', borderRadius: 5 }}
+              >
+                Return to Manual Planning
+              </button>
+              <button
+                onClick={() => { props.onRunAiAnalysis(); }}
+                style={{ flex: 1, padding: '6px 0', fontSize: 11, fontFamily: '"IBM Plex Sans"', fontWeight: 600, cursor: 'pointer', background: 'rgba(76,141,255,0.08)', color: '#6EA8FF', border: '1px solid rgba(76,141,255,0.28)', borderRadius: 5 }}
+              >
+                Re-run Analysis
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Action button */}
-        {(isStandby || isStale || isError) && (
+        {(isStandby || isStale || isError) && !props.aiRecommendationRejected && (
           <button
             onClick={() => {
               if (props.decisionMode !== 'ai') props.onSelectDecisionMode('ai');
@@ -1148,14 +1542,75 @@ function AiSection(props: CommonProps) {
           {/* Tab content — natural height, Main Control scrolls */}
           <div style={{ padding: '10px', overflowX: 'hidden' }}>
             {activeTab === 'prioritization' && (
-              <AIDecisionPanel
-                prioritization={props.aiPrioritization}
-                providerName={props.aiActualProvider ?? props.aiProvider}
-                requestedProviderName={props.aiRequestedProvider}
-                candidateCount={props.aiCandidateCount}
-                prioritizationFallbackReason={props.aiPrioritizationFallbackReason}
-                recommendationFallbackReason={props.aiRecommendationFallbackReason}
-              />
+              <>
+                {/* AI funnel */}
+                <AiFunnel
+                  totalQueued={funnelData.totalQueued}
+                  semanticCandidates={funnelData.semanticCandidates}
+                  urgentCount={funnelData.urgentCount}
+                  projectedFit={funnelData.projectedFit}
+                />
+
+                {/* WHY THIS MATTERS for selected product */}
+                {selectedRp && (
+                  <WhyThisMatters
+                    rp={selectedRp}
+                    dataProduct={productById.get(selectedRp.product_id)}
+                    anomaly={selectedRp.anomaly_ids.length > 0 ? anomalyById.get(selectedRp.anomaly_ids[0]) : undefined}
+                  />
+                )}
+
+                {/* Ranked product selector */}
+                {props.aiPrioritization && props.aiPrioritization.ranked_products.length > 0 && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: 'rgba(147,160,180,0.45)', letterSpacing: '0.08em', marginBottom: 5 }}>
+                      SELECT PRODUCT TO VIEW EVIDENCE
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 1, maxHeight: 200, overflowY: 'auto' }}>
+                      {props.aiPrioritization.ranked_products
+                        .slice()
+                        .sort((a, b) => a.priority - b.priority)
+                        .map((rp) => {
+                          const isSelected = rp.product_id === selectedRpId;
+                          return (
+                            <button
+                              key={rp.product_id}
+                              onClick={() => setSelectedRpId(rp.product_id)}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: 8,
+                                padding: '5px 8px', textAlign: 'left', cursor: 'pointer',
+                                background: isSelected ? 'rgba(76,141,255,0.12)' : 'transparent',
+                                border: `1px solid ${isSelected ? 'rgba(76,141,255,0.35)' : 'rgba(46,58,79,0.5)'}`,
+                                borderRadius: 4,
+                                fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
+                              }}
+                            >
+                              <span style={{ fontSize: 9, color: 'rgba(147,160,180,0.45)', minWidth: 20, textAlign: 'right' }}>
+                                #{rp.priority}
+                              </span>
+                              <span style={{ fontSize: 11, color: isSelected ? '#6EA8FF' : 'rgba(147,160,180,0.8)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {rp.product_id}
+                              </span>
+                              {rp.anomaly_ids.length > 0 && (
+                                <span style={{ color: '#f87171', fontSize: 9, flexShrink: 0 }}>⚠</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Full AI prioritization detail */}
+                <AIDecisionPanel
+                  prioritization={props.aiPrioritization}
+                  providerName={props.aiActualProvider ?? props.aiProvider}
+                  requestedProviderName={props.aiRequestedProvider}
+                  candidateCount={props.aiCandidateCount}
+                  prioritizationFallbackReason={props.aiPrioritizationFallbackReason}
+                  recommendationFallbackReason={props.aiRecommendationFallbackReason}
+                />
+              </>
             )}
             {activeTab === 'reasoning' && (
               <RecommendationPanel
@@ -1168,16 +1623,22 @@ function AiSection(props: CommonProps) {
               />
             )}
             {activeTab === 'decision' && (
-              <MissionDecisionPanel
-                prioritization={props.aiPrioritization}
-                recommendation={props.recommendation}
-                allPlans={props.allPlans}
-                recEval={props.recEval}
-                linkState={props.linkState}
-                providerName={props.aiActualProvider ?? props.aiProvider}
-                prioritizationError={props.aiPrioritizationError}
-                candidateCount={props.aiCandidateCount}
-              />
+              <>
+                {/* Human decision panel */}
+                <AiHumanDecisionPanel props={props} />
+
+                {/* Full decision chain */}
+                <MissionDecisionPanel
+                  prioritization={props.aiPrioritization}
+                  recommendation={props.recommendation}
+                  allPlans={props.allPlans}
+                  recEval={props.recEval}
+                  linkState={props.linkState}
+                  providerName={props.aiActualProvider ?? props.aiProvider}
+                  prioritizationError={props.aiPrioritizationError}
+                  candidateCount={props.aiCandidateCount}
+                />
+              </>
             )}
           </div>
         </div>

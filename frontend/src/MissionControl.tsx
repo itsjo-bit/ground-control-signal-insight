@@ -490,6 +490,7 @@ export default function MissionControl() {
     setManualSelectedIds(new Set());
     setManualOrder([]);
     clearManualAssessmentState();
+    setAiRecommendationRejected(false);
     aiRequestInFlight.current = false;
     // V3.5: workspace mode is NOT reset on mission reset
     try {
@@ -540,6 +541,7 @@ export default function MissionControl() {
     setManualSelectedIds(new Set());
     setManualOrder([]);
     clearManualAssessmentState();
+    setAiRecommendationRejected(false);
     // Clear scenario-specific experience state on switch
     setExperienceManifest(null);
     setExperienceAvailable(false);
@@ -737,6 +739,36 @@ export default function MissionControl() {
   const recPlan = recommendation
     ? (allPlans.find((p) => p.plan_id === recommendation.recommended_plan_id) ?? null)
     : null;
+
+  // ── Phase 4.2F3: AI plan human decision handlers ─────────────────────────
+  // These are placed after recPlan to avoid forward-reference.
+  const [aiRecommendationRejected, setAiRecommendationRejected] = useState<boolean>(false);
+
+  /** Approve: authorization only — actual execution happens through existing ApprovalBar. */
+  const handleApproveAiPlan = useCallback(() => {
+    setApprovalPhase('ready');
+    setAiRecommendationRejected(false);
+    setActiveSection('transmission');
+  }, []);
+
+  /** Modify: seed manual mode with AI plan packet IDs, switch to manual planning. */
+  const handleModifyAiPlan = useCallback(() => {
+    if (!recPlan) return;
+    const orderedIds = recPlan.packets.map((p) => p.packet_id);
+    setManualOrder(orderedIds);
+    setManualSelectedIds(new Set(orderedIds));
+    clearManualAssessmentState();
+    setDecisionMode('manual');
+    setAiRecommendationRejected(false);
+    setActiveSection('data');
+  }, [recPlan, clearManualAssessmentState]);
+
+  /** Reject: no backend mutation, no transmission, no state change except flag. */
+  const handleRejectAiPlan = useCallback(() => {
+    setAiRecommendationRejected(true);
+    setApprovalPhase('idle');
+  }, []);
+
   const manualPlan: CandidatePlan | null = manualOrder.length > 0 ? {
     plan_id: 'operator-manual',
     strategy: 'manual',
@@ -1161,6 +1193,10 @@ export default function MissionControl() {
             manualAssessmentStale={manualAssessmentStale}
             onManualEvaluate={handleManualEvaluate}
             onManualTransmit={handleManualTransmit}
+            onApproveAiPlan={handleApproveAiPlan}
+            onModifyAiPlan={handleModifyAiPlan}
+            onRejectAiPlan={handleRejectAiPlan}
+            aiRecommendationRejected={aiRecommendationRejected}
           />
         </div>
       )}
