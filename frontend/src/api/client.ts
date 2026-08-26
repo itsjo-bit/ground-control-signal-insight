@@ -15,6 +15,16 @@ import type {
   WhatIfEvalResponse,
 } from '../types/domain';
 
+// Re-exported for convenience
+export type AssessManualPlanResponse = {
+  plan: CandidatePlan;
+  evaluation: EvaluationResult;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  mission_outcome: any | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  capacity_summary: any;
+};
+
 const BASE = '/api';
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -121,6 +131,21 @@ export async function getRecommendation(): Promise<RecommendResponse> {
 // Raw data products — full unfiltered list from active scenario
 export async function getDataProducts(): Promise<DataProductsResponse> {
   return fetchJson<DataProductsResponse>(`${BASE}/data-products`);
+}
+
+// POST /plans/assess — non-mutating manual plan assessment
+export async function assessManualPlan(
+  productIds: string[],
+): Promise<AssessManualPlanResponse> {
+  return fetchJson(`${BASE}/plans/assess`, {
+    method: 'POST',
+    body: JSON.stringify({ product_ids: productIds }),
+  });
+}
+
+// GET /experience — experience manifest for the active scenario
+export async function getExperience(): Promise<{ available: boolean; manifest: unknown | null }> {
+  return fetchJson(`${BASE}/experience`);
 }
 
 // Scenario management

@@ -150,6 +150,16 @@ export interface EvaluationResult {
   window_pressure: number;
 }
 
+// Transmission attempt event (Phase 4.2B)
+export interface TransmissionAttemptEvent {
+  packet_id: string;
+  attempt_number: number;
+  start_elapsed_s: number;
+  end_elapsed_s: number;
+  status: 'success' | 'failure';
+  packet_size_bits?: number;
+}
+
 // Simulation result
 export interface SimulationResult {
   plan_id: string;
@@ -160,6 +170,8 @@ export interface SimulationResult {
   retransmission_counts: Record<string, number>;
   link_state: LinkState;
   mission_state: MissionState;
+  /** Phase 4.2B: additive event log — backwards-compatible default [] */
+  attempt_events?: TransmissionAttemptEvent[];
 }
 
 // AI recommendation

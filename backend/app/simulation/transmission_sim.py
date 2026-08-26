@@ -59,7 +59,7 @@ from ..models.candidate_plan import CandidatePlan
 from ..models.link_state import LinkState
 from ..models.mission_state import MissionState
 from ..models.risk_level import RiskLevel
-from ..models.simulation_result import SimulationResult
+from ..models.simulation_result import SimulationResult, TransmissionAttemptEvent
 from ..telecom.formulas import packet_success_probability, transmission_time
 
 #: Maximum retransmission attempts per packet before giving up.
@@ -145,6 +145,7 @@ class TransmissionSimulator:
         deferred: list[str] = []
         failed: list[str] = []
         retransmission_counts: dict[str, int] = {}
+        attempt_events: list[TransmissionAttemptEvent] = []
 
         for pkt in plan.packets:
             if elapsed_s >= window_s:
@@ -175,10 +176,22 @@ class TransmissionSimulator:
                     break
 
                 attempts = attempt_num
+                start_s = elapsed_s
                 # Attempt consumes tx seconds of window.
                 elapsed_s += tx
 
                 success: bool = bool(rng.random() < p_s)
+
+                # Record the attempt event (purely observational — no new RNG).
+                attempt_events.append(TransmissionAttemptEvent(
+                    packet_id=pkt.packet_id,
+                    attempt_number=attempt_num,
+                    start_elapsed_s=start_s,
+                    end_elapsed_s=elapsed_s,
+                    status="success" if success else "failure",
+                    packet_size_bits=pkt.size_bits,
+                ))
+
                 if success:
                     packet_outcome = "delivered"
                     break
@@ -220,4 +233,5 @@ class TransmissionSimulator:
             retransmission_counts=retransmission_counts,
             link_state=updated_link_state,
             mission_state=updated_mission_state,
+            attempt_events=attempt_events,
         )

@@ -2,6 +2,34 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
+class TransmissionAttemptEvent(BaseModel):
+    """Records a single transmission attempt for post-hoc visualization.
+
+    Fields
+    ------
+    packet_id
+        The packet that was attempted.
+    attempt_number
+        1-based attempt index for this packet.
+    start_elapsed_s
+        Window elapsed time before this attempt started (seconds).
+    end_elapsed_s
+        Window elapsed time after this attempt consumed its tx slot (seconds).
+    status
+        ``"success"`` — the Bernoulli draw succeeded.
+        ``"failure"`` — the Bernoulli draw failed.
+    packet_size_bits
+        Size of the packet in bits (optional, for bandwidth accounting).
+    """
+
+    packet_id: str
+    attempt_number: int  # 1-based
+    start_elapsed_s: float
+    end_elapsed_s: float
+    status: str  # "success" | "failure"
+    packet_size_bits: int | None = None
+
+
 class SimulationModelMetadata(BaseModel):
     """Machine-readable description of the current simulator's retransmission model.
 
@@ -66,7 +94,7 @@ class SimulationModelMetadata(BaseModel):
     )
 
 
-class SimulationResult(BaseModel):
+class SimulationResult(BaseModel):  # noqa: E302
     """Realized outcomes from stochastic transmission simulation.
 
     Fields represent actual packet delivery outcomes drawn via Bernoulli trials
@@ -123,6 +151,16 @@ class SimulationResult(BaseModel):
         description=(
             "Machine-readable description of the retransmission model used.  "
             "See SimulationModelMetadata for field-by-field semantics."
+        ),
+    )
+
+    # Phase 4.2B: additive event stream for post-hoc visualization
+    attempt_events: list[TransmissionAttemptEvent] = Field(
+        default_factory=list,
+        description=(
+            "Per-attempt event log for all transmission attempts.  "
+            "Purely observational — does not affect delivered/failed/deferred outcomes.  "
+            "Backwards-compatible default (empty list)."
         ),
     )
 

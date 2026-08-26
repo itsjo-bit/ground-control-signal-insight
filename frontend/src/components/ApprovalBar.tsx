@@ -1,6 +1,8 @@
 import { useState, useRef } from 'react';
 import { approvePlan, approveCustomPlan } from '../api/client';
-import type { ApproveResponse, CandidatePlan, Packet } from '../types/domain';
+import type { ApproveResponse, CandidatePlan, DataProduct, EvaluationResult, Packet } from '../types/domain';
+import type { DecisionMode } from '../types/domain';
+import { formatBitsAsDataVolume } from '../utils/formatters';
 
 
 /** Phase 2E-D4: operator approval state machine phases. */
@@ -35,6 +37,24 @@ interface Props {
    * The parent should reset approvalPhase back to 'ready' so the operator can retry.
    */
   onApprovalError: () => void;
+
+  // ── Phase 4.2B: Manual mode props ────────────────────────────────────────
+  /** Current decision mode. Controls whether AI or manual controls are shown. */
+  decisionMode?: DecisionMode;
+  /** Set of product IDs the operator has selected in manual mode. */
+  manualSelectedIds?: Set<string>;
+  /** Ordered list of product IDs for the manual transmission plan. */
+  manualOrder?: string[];
+  /** Raw data products for byte-count display. */
+  rawDataProducts?: DataProduct[];
+  /** Latest manual evaluation (from POST /plans/assess), if available. */
+  manualEvaluation?: EvaluationResult | null;
+  /** Called when the operator clicks [EVALUATE SELECTION]. */
+  onManualEvaluate?: () => void;
+  /** Called when the operator clicks [TRANSMIT SELECTED]. */
+  onManualTransmit?: () => void;
+  /** Available contact capacity in bits. */
+  availableCapacityBits?: number;
 }
 
 const TYPE_COLOUR: Record<string, string> = {
@@ -47,7 +67,22 @@ function packetTypeColour(type: string): string {
   return TYPE_COLOUR[type.toLowerCase()] ?? 'var(--text-muted)';
 }
 
-export function ApprovalBar({ recommendedPlanId, recommendedPlan, baselinePlan, approvalPhase, onApproved, onTransmitting, onApprovalError }: Props) {
+export function ApprovalBar({
+  recommendedPlanId,
+  recommendedPlan,
+  baselinePlan,
+  approvalPhase,
+  onApproved,
+  onTransmitting,
+  onApprovalError,
+  decisionMode = 'ai',
+  manualOrder = [],
+  rawDataProducts = [],
+  manualEvaluation,
+  onManualEvaluate,
+  onManualTransmit,
+  availableCapacityBits,
+}: Props) {
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,11 +93,192 @@ export function ApprovalBar({ recommendedPlanId, recommendedPlan, baselinePlan, 
   const dragOverIdx = useRef<number | null>(null);
 
   // Phase 2E-D2 (P0 fix): use recommendedPlan packets as the source of truth.
-  // The operator sees and can reorder exactly the packets from the AI-recommended
-  // plan — not the raw baseline queue.  Falls back to baseline for legacy scenarios
-  // where recommendedPlan is null.
   const sourcePlan = recommendedPlan ?? baselinePlan;
   const packets: Packet[] = customOrder ?? sourcePlan?.packets ?? [];
+
+  // ── MANUAL MODE — Phase 4.2B ───────────────────────────────────────────────
+  if (decisionMode === 'manual') {
+    const selectedCount = manualOrder.length;
+    const selectedBits = manualOrder.reduce((sum, id) => {
+      const dp = rawDataProducts.find((p) => p.product_id === id);
+      return sum + (dp?.size_bits ?? 0);
+    }, 0);
+    const exceedsCapacity =
+      availableCapacityBits !== undefined &&
+      availableCapacityBits > 0 &&
+      selectedBits > availableCapacityBits;
+
+    if (approvalPhase === 'complete') {
+      return (
+        <section className="approval-bar">
+          <h2>
+            Approval
+            <span style={{
+              marginLeft: 10, fontSize: 9, fontWeight: 700,
+              background: 'rgba(53,231,183,0.08)', color: 'var(--signal)',
+              border: '1px solid rgba(53,231,183,0.35)',
+              borderRadius: 2, padding: '1px 7px', fontFamily: 'var(--font-mono)',
+              letterSpacing: '0.06em',
+            }}>
+              ✓ TRANSMITTED
+            </span>
+          </h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+            Transmission complete. Review the simulation results below.
+          </p>
+        </section>
+      );
+    }
+
+    return (
+      <section className="approval-bar">
+        <h2>
+          Manual Transmission Plan
+          {approvalPhase === 'transmitting' && (
+            <span style={{
+              marginLeft: 10, fontSize: 9, fontWeight: 700,
+              background: 'rgba(255,182,72,0.10)', color: 'var(--warn)',
+              border: '1px solid rgba(255,182,72,0.40)',
+              borderRadius: 2, padding: '1px 7px', fontFamily: 'var(--font-mono)',
+              letterSpacing: '0.06em',
+              animation: 'pulse 1.4s infinite',
+            }}>
+              ⟳ TRANSMITTING
+            </span>
+          )}
+        </h2>
+
+        {selectedCount === 0 ? (
+          <p style={{
+            color: 'var(--text-muted)', fontSize: 12,
+            fontFamily: 'var(--font-mono)',
+            background: 'rgba(76,141,255,0.05)',
+            border: '1px solid rgba(76,141,255,0.15)',
+            borderRadius: 4, padding: '8px 12px',
+          }}>
+            <strong style={{ color: 'var(--ai)' }}>MANUAL TRANSMISSION PLAN</strong>
+            {' — '}0 PRODUCTS SELECTED
+            {' — '}Open <strong>Data</strong> to begin manual planning.
+          </p>
+        ) : (
+          <div style={{ marginBottom: 10 }}>
+            <div style={{
+              display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
+              gap: 8, marginBottom: 10,
+            }}>
+              <div style={{
+                background: 'rgba(76,141,255,0.05)', border: '1px solid rgba(76,141,255,0.18)',
+                borderRadius: 4, padding: '6px 10px',
+              }}>
+                <div style={{ color: 'var(--text-muted)', fontSize: 10, fontFamily: 'var(--font-mono)', marginBottom: 2 }}>SELECTED</div>
+                <div style={{ color: 'var(--ai)', fontSize: 15, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{selectedCount}</div>
+              </div>
+              <div style={{
+                background: 'rgba(76,141,255,0.05)', border: '1px solid rgba(76,141,255,0.18)',
+                borderRadius: 4, padding: '6px 10px',
+              }}>
+                <div style={{ color: 'var(--text-muted)', fontSize: 10, fontFamily: 'var(--font-mono)', marginBottom: 2 }}>TOTAL SIZE</div>
+                <div style={{
+                  color: exceedsCapacity ? 'var(--critical)' : 'var(--ai)',
+                  fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-mono)',
+                }}>
+                  {formatBitsAsDataVolume(selectedBits)}
+                </div>
+              </div>
+              {availableCapacityBits !== undefined && availableCapacityBits > 0 && (
+                <div style={{
+                  background: exceedsCapacity ? 'rgba(248,113,113,0.06)' : 'rgba(76,141,255,0.05)',
+                  border: `1px solid ${exceedsCapacity ? 'rgba(248,113,113,0.30)' : 'rgba(76,141,255,0.18)'}`,
+                  borderRadius: 4, padding: '6px 10px',
+                }}>
+                  <div style={{ color: 'var(--text-muted)', fontSize: 10, fontFamily: 'var(--font-mono)', marginBottom: 2 }}>BUDGET</div>
+                  <div style={{
+                    color: exceedsCapacity ? 'var(--critical)' : 'var(--signal)',
+                    fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-mono)',
+                  }}>
+                    {formatBitsAsDataVolume(availableCapacityBits)}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {exceedsCapacity && (
+              <div style={{
+                background: 'rgba(248,113,113,0.07)',
+                border: '1px solid rgba(248,113,113,0.30)',
+                borderRadius: 4, padding: '6px 12px', marginBottom: 8,
+                color: 'var(--critical)', fontSize: 11, fontFamily: 'var(--font-mono)',
+              }}>
+                ⚠ SELECTION EXCEEDS CONTACT CAPACITY — packets near the end will be deferred
+              </div>
+            )}
+
+            {manualEvaluation && (
+              <div style={{
+                background: 'rgba(52,211,153,0.05)',
+                border: '1px solid rgba(52,211,153,0.18)',
+                borderRadius: 4, padding: '6px 12px', marginBottom: 8,
+                fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)',
+              }}>
+                <span style={{ color: 'var(--signal)', fontWeight: 700 }}>EVALUATED</span>
+                {' — '}Risk: {manualEvaluation.risk_level} ({manualEvaluation.risk_score.toFixed(3)})
+                {' · '}Deferred: {manualEvaluation.deferred_packets.length}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Action buttons */}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
+          {onManualEvaluate && selectedCount > 0 && (
+            <button
+              onClick={onManualEvaluate}
+              disabled={loading}
+              style={{
+                background: 'rgba(76,141,255,0.08)',
+                color: '#6EA8FF',
+                border: '1px solid rgba(76,141,255,0.30)',
+                borderRadius: 5, padding: '5px 14px',
+                fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              EVALUATE SELECTION
+            </button>
+          )}
+          {onManualTransmit && selectedCount > 0 && (
+            <button
+              onClick={onManualTransmit}
+              disabled={loading || approvalPhase === 'transmitting'}
+              style={{
+                background: 'rgba(52,211,153,0.07)',
+                color: 'var(--signal)',
+                border: '1px solid rgba(52,211,153,0.30)',
+                borderRadius: 5, padding: '5px 14px',
+                fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700,
+                cursor: 'pointer',
+                opacity: (loading || approvalPhase === 'transmitting') ? 0.5 : 1,
+              }}
+            >
+              TRANSMIT SELECTED
+            </button>
+          )}
+          {loading && (
+            <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+              Submitting…
+            </span>
+          )}
+          {error && (
+            <span style={{ color: 'var(--critical)', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+              Error: {error}
+            </span>
+          )}
+        </div>
+      </section>
+    );
+  }
+
+  // ── AI MODE (all existing logic below is unchanged) ────────────────────────
 
   // ── AI Analyzing state ────────────────────────────────────────────────────
   if (approvalPhase === 'ai_analyzing') {
@@ -87,7 +303,7 @@ export function ApprovalBar({ recommendedPlanId, recommendedPlan, baselinePlan, 
     );
   }
 
-  // ── Unavailable state ────────────────────────────────────────────────────
+  // ── Unavailable state (AI mode only) ─────────────────────────────────────
   if (recommendedPlanId === null) {
     return (
       <section className="approval-bar" style={{ opacity: 0.6 }}>

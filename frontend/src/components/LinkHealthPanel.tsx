@@ -1,7 +1,41 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EvaluationResult, LinkState, WhatIfEvalResponse } from '../types/domain';
 import { whatIfEvaluate } from '../api/client';
-import { SignalWaveform } from './SignalWaveform';
+
+// ── Inner SVG paths helper (renders inside our own <svg>) ─────────────────────
+const POINTS = 90;
+
+function SignalWaveformPaths({ snrDb, width, height }: { snrDb: number; width: number; height: number }) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 110);
+    return () => clearInterval(id);
+  }, []);
+
+  const quality = Math.max(0, Math.min(1, (snrDb + 10) / 25));
+  const amplitude = height * 0.3;
+  const noiseAmp = (1 - quality) * height * 0.42;
+  const midY = height / 2;
+  const phase = tick * 0.32;
+  let d = '';
+  for (let i = 0; i < POINTS; i++) {
+    const t = i / (POINTS - 1);
+    const x = t * width;
+    const clean = Math.sin(t * Math.PI * 6 + phase) * amplitude * quality;
+    const seed = Math.sin(i * 12.9898 + phase * 7.233) * 43758.5453;
+    const noise = (seed - Math.floor(seed) - 0.5) * 2 * noiseAmp;
+    const y = midY + clean + noise;
+    d += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1) + ' ';
+  }
+  const stroke =
+    quality > 0.55 ? 'var(--signal)' : quality > 0.25 ? 'var(--warn)' : 'var(--critical)';
+  return (
+    <>
+      <line x1={0} y1={midY} x2={width} y2={midY} stroke="var(--border)" strokeWidth={1} strokeDasharray="2 5" />
+      <path d={d.trim()} fill="none" stroke={stroke} strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round" />
+    </>
+  );
+}
 
 interface Props {
   linkState: LinkState;
@@ -78,11 +112,52 @@ export function LinkHealthPanel({ linkState: ls, onWhatIfResult }: Props) {
     );
   }
 
+  // Compact link status summary
+  const snr = ls.snr_db;
+  const snrTrend = snr < 5 ? '↓ declining' : snr > 15 ? '↑ strong' : '→ stable';
+  const stability = (ls.link_stability * 100).toFixed(0);
+  const linkStatus = ls.ber > 1e-3 ? 'DEGRADED' : ls.ber > 1e-5 ? 'MARGINAL' : 'NOMINAL';
+  const linkStatusColor =
+    linkStatus === 'DEGRADED' ? 'var(--critical)' : linkStatus === 'MARGINAL' ? 'var(--warn)' : 'var(--signal)';
+
   return (
     <section className="panel">
 <h2>Link Health</h2>
-<div className="waveform-wrap">
-<SignalWaveform snrDb={sliderSnr} width={340} height={60} />
+
+{/* Compact summary badges */}
+<div style={{
+  display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 8,
+}}>
+  {[
+    { label: 'CURRENT SNR', value: `${ls.snr_db.toFixed(1)} dB` },
+    { label: 'TREND', value: snrTrend },
+    { label: 'STABILITY', value: `${stability}%` },
+    { label: 'LINK STATE', value: linkStatus, color: linkStatusColor },
+  ].map(({ label, value, color }) => (
+    <div key={label} style={{
+      background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
+      borderRadius: 4, padding: '4px 6px',
+    }}>
+      <div style={{ color: 'var(--text-muted)', fontSize: 9, fontFamily: 'var(--font-mono)', marginBottom: 2 }}>{label}</div>
+      <div style={{ color: color ?? 'var(--text)', fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{value}</div>
+    </div>
+  ))}
+</div>
+
+{/* Full-width responsive waveform */}
+<div className="waveform-wrap" style={{ width: '100%', marginBottom: 6 }}>
+  <svg
+    width="100%"
+    height={60}
+    viewBox={`0 0 340 60`}
+    preserveAspectRatio="none"
+    className="signal-waveform"
+    role="img"
+    aria-label={`Signal waveform, SNR ${sliderSnr.toFixed(1)} dB`}
+    style={{ display: 'block' }}
+  >
+    <SignalWaveformPaths snrDb={sliderSnr} width={340} height={60} />
+  </svg>
 </div>
 <table>
 <tbody>

@@ -1108,6 +1108,10 @@ function TransmissionSection(props: CommonProps) {
             onApproved={props.onApproved}
             onTransmitting={props.onTransmitting}
             onApprovalError={props.onApprovalError}
+            decisionMode={props.decisionMode}
+            manualOrder={props.manualOrder}
+            rawDataProducts={props.rawDataProducts}
+            availableCapacityBits={props.availableCapacityBits}
           />
         </div>
       </ResizableSection>

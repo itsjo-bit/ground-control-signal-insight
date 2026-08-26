@@ -16,7 +16,17 @@ POST /plans/evaluate
 POST /plans/what-if
     Accepts optional snr_db/ber overrides.  Plans are evaluated from the
     scenario inventory; client packet facts are not used.  Non-mutating.
+
+POST /plans/assess
+    Non-mutating manual assessment.  Accepts a list of product_ids and
+    an optional order.  Reconstructs authoritative packet facts from the
+    scenario, runs PlanEvaluator and MissionOutcomeEvaluator, and returns
+    the plan, evaluation, mission_outcome, and capacity_summary.
+    Does NOT require an AI recommendation.  Does NOT mutate state.
+    Does NOT invalidate the issued-plan registry.
 """
+
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -33,6 +43,7 @@ from ..domain.plan_integrity import (
     get_authoritative_packets,
     reconstruct_authoritative_plan,
 )
+from ..evaluator.mission_outcome_evaluator import MissionOutcomeEvaluator
 from ..evaluator.plan_evaluator import PlanEvaluator
 from ..models.bridge import data_products_to_packets
 from ..models.candidate_plan import CandidatePlan
@@ -228,4 +239,125 @@ def what_if_evaluate(req: WhatIfEvalRequest) -> WhatIfEvalResponse:
             "w_critical_deficit": rw.w_critical_deficit,
             "w_window_pressure": rw.w_window_pressure,
         },
+    )
+
+
+# ── POST /plans/assess — non-mutating manual assessment ──────────────────────
+
+
+class AssessRequest(BaseModel):
+    """Request body for POST /plans/assess — non-mutating manual plan assessment."""
+
+    product_ids: list[str]
+    order: list[str] | None = None  # if None, use product_ids order
+
+
+class AssessResponse(BaseModel):
+    """Response for POST /plans/assess."""
+
+    plan: CandidatePlan
+    evaluation: EvaluationResult
+    mission_outcome: Any  # MissionOutcomeResult
+    capacity_summary: dict
+
+
+@router.post("/plans/assess", response_model=AssessResponse)
+def assess_manual_plan(req: AssessRequest) -> AssessResponse:
+    """Non-mutating manual plan assessment.
+
+    Accepts a list of product_ids (with optional ordering), reconstructs
+    authoritative packet facts from the active scenario, runs PlanEvaluator
+    and MissionOutcomeEvaluator, and returns the plan + full evaluation.
+
+    Does NOT require an AI recommendation.
+    Does NOT mutate any state.
+    Does NOT invalidate the issued-plan registry.
+
+    Raises 503 if no scenario has been loaded.
+    Raises 422 if product IDs are unknown, duplicated, or the scenario has
+    duplicate authoritative IDs.
+    """
+    if state.active_scenario is None or state.active_link_state is None:
+        raise HTTPException(status_code=503, detail="No active scenario loaded")
+
+    ordered_ids = req.order if req.order is not None else req.product_ids
+
+    # Build a minimal CandidatePlan from the ordered product IDs so
+    # reconstruct_authoritative_plan can verify and re-bind facts.
+    stub_packets = [
+        Packet(
+            packet_id=pid,
+            packet_type="",
+            size_bits=1,
+            criticality=0.0,
+            mission_relevance=0.0,
+            deadline_s=0.0,
+            retry_cost=0.0,
+            delivery_requirement="optional",
+        )
+        for pid in ordered_ids
+    ]
+    stub_plan = CandidatePlan(
+        plan_id="operator-manual-assess",
+        strategy="manual",
+        packets=stub_packets,
+        generated_by="operator",
+        metadata={"decision_mode": "manual", "selected_count": len(ordered_ids)},
+    )
+
+    # Reconstruct with authoritative packet facts.
+    try:
+        trace = reconstruct_authoritative_plan(
+            stub_plan,
+            state.active_scenario,
+            plan_source=PlanSource.client_intent,
+        )
+    except PlanIntegrityError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    auth_plan = trace.reconstructed_plan
+
+    # Run PlanEvaluator.
+    ev = PlanEvaluator()
+    evaluation = ev.evaluate(
+        auth_plan,
+        state.active_link_state,
+        state.active_scenario.mission_state,
+    )
+
+    # Run MissionOutcomeEvaluator (requires data_products and anomalies).
+    data_products = getattr(state.active_scenario, "data_products", []) or []
+    anomalies = getattr(state.active_scenario, "anomalies", []) or []
+
+    mission_outcome = None
+    if data_products:
+        moe = MissionOutcomeEvaluator()
+        mission_outcome = moe.evaluate(
+            auth_plan,
+            evaluation,
+            data_products,
+            anomalies,
+        )
+
+    # Build capacity summary.
+    link = state.active_link_state
+    window_s = min(
+        link.remaining_window_s,
+        state.active_scenario.mission_state.comm_window_remaining_s,
+    )
+    available_capacity_bits = int(link.link_goodput_bps * window_s)
+    selected_bits = sum(pkt.size_bits for pkt in auth_plan.packets)
+    capacity_summary = {
+        "available_capacity_bits": available_capacity_bits,
+        "selected_bits": selected_bits,
+        "selected_count": len(auth_plan.packets),
+        "exceeds_capacity": selected_bits > available_capacity_bits,
+        "window_s": window_s,
+    }
+
+    return AssessResponse(
+        plan=auth_plan,
+        evaluation=evaluation,
+        mission_outcome=mission_outcome,
+        capacity_summary=capacity_summary,
     )
