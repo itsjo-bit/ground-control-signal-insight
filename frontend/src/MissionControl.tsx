@@ -683,18 +683,47 @@ export default function MissionControl() {
     setManualAssessmentOrderFingerprint(newOrder.join(','));
   }
 
-  // ── Phase 4.2F: Manual transmit — enters plan_uplink phase ───────────────
-  function handleManualTransmit() {
+  // ── Phase 4.2F: Manual transmit — actually executes approveCustomPlan ────
+  const handleManualTransmit = useCallback(async () => {
     if (manualOrder.length === 0) return;
-    // Use the assessed plan if available and not stale, otherwise build from selection
+    // If we have a fresh assessed plan, use it (authoritative backend facts).
+    // Otherwise build a local plan from the current selection.
+    const localPlan: CandidatePlan | null = manualOrder.length > 0 ? {
+      plan_id: 'operator-manual',
+      strategy: 'manual',
+      generated_by: 'operator',
+      metadata: { decision_mode: 'manual', selected_count: manualOrder.length },
+      packets: manualOrder.map((id) => {
+        const dp = rawDataProducts.find((p) => p.product_id === id);
+        return dp ? {
+          packet_id: dp.product_id,
+          packet_type: dp.product_type,
+          size_bits: dp.size_bits,
+          criticality: dp.criticality,
+          mission_relevance: dp.mission_relevance,
+          deadline_s: dp.deadline_s,
+          retry_cost: dp.retry_cost,
+          delivery_requirement: dp.delivery_requirement,
+        } : null;
+      }).filter(Boolean) as import('./types/domain').Packet[],
+    } : null;
+
     const planToExecute = (manualAssessment && !manualAssessmentStale)
       ? manualAssessment.plan
-      : manualPlan;
+      : localPlan;
     if (!planToExecute) return;
-    // Signal to approval: execute this custom plan via /approve/custom
-    // Phase will be set by parent on completion
+
     setApprovalPhase('transmitting');
-  }
+    setError(null);
+    try {
+      const { approveCustomPlan } = await import('./api/client');
+      const result = await approveCustomPlan(planToExecute, 'manual selection');
+      handleApproved(result);
+    } catch (err) {
+      setError(`Manual transmission failed: ${err}`);
+      setApprovalPhase('ready');
+    }
+  }, [manualAssessment, manualAssessmentStale, manualOrder, rawDataProducts]);
 
   // ── Derived values ─────────────────────────────────────────────────────────
 
