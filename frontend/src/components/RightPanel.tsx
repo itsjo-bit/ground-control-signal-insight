@@ -53,8 +53,12 @@ import { SimulationPanel } from './SimulationPanel';
 import { TransmissionNarrativePanel } from './TransmissionNarrativePanel';
 import { MissionReportPanel } from './MissionReportPanel';
 import { TransmissionSequencePanel } from './TransmissionSequencePanel';
+import { GroundReceptionPanel } from './GroundReceptionPanel';
+import { ManualVsAiPanel } from './ManualVsAiPanel';
+import { SessionLogPanel } from './SessionLogPanel';
 import { ResizableSection } from './ResizableSection';
 import { ConfigPanel } from './ConfigPanel';
+import type { SessionEvent } from '../experience/missionExperienceReducer';
 
 // ── Shared style tokens (V3.3 gray + blue, unchanged) ─────────────────────────
 
@@ -181,6 +185,8 @@ interface CommonProps {
   onRejectAiPlan: () => void;
   /** Whether the AI recommendation was rejected this session. */
   aiRecommendationRejected: boolean;
+  /** Session event log from missionExperienceReducer. */
+  sessionEvents: SessionEvent[];
 }
 
 // ── StatGrid ──────────────────────────────────────────────────────────────────
@@ -1880,13 +1886,17 @@ function TransmissionSection(props: CommonProps) {
   );
 }
 
-// ── V3.5: Log section — Tabbed workspace ─────────────────────────────────────
+// ── V3.5 / F5: Log section — Tabbed workspace ────────────────────────────────
 
-type LogTab = 'simulation' | 'narrative' | 'report';
+type LogTab = 'simulation' | 'narrative' | 'ground' | 'comparison' | 'sessionlog' | 'report';
 
 function LogSection(props: CommonProps) {
   const hasResult = !!props.approveResult;
-  const [activeTab, setActiveTab] = useState<LogTab>(hasResult ? 'simulation' : 'report');
+  const hasManualAssessment = !!props.manualAssessment && !props.manualAssessmentStale;
+  const hasAiEval = !!props.recEval && !!props.recPlan;
+  const showComparison = hasManualAssessment && hasAiEval;
+
+  const [activeTab, setActiveTab] = useState<LogTab>(hasResult ? 'ground' : 'sessionlog');
 
   const isAiPlan = props.approveResult
     ? (props.approveResult.simulation_result.plan_id !== undefined &&
@@ -1895,8 +1905,11 @@ function LogSection(props: CommonProps) {
     : false;
 
   const tabs: TabItem<LogTab>[] = [
+    { id: 'ground', label: 'Reception', badge: hasResult ? '✓' : undefined },
     { id: 'simulation', label: 'Simulation' },
     { id: 'narrative', label: 'Narrative' },
+    ...(showComparison ? [{ id: 'comparison' as const, label: 'Manual vs AI' }] : []),
+    { id: 'sessionlog', label: 'Session Log', badge: props.sessionEvents.length > 0 ? props.sessionEvents.length : undefined },
     { id: 'report', label: 'Report' },
   ];
 
@@ -1914,6 +1927,22 @@ function LogSection(props: CommonProps) {
 
       {/* Tab content — natural height, Main Control scrolls */}
       <div style={{ padding: '10px', overflowX: 'hidden' }}>
+        {activeTab === 'ground' && (
+          <>
+            {hasResult ? (
+              <GroundReceptionPanel
+                approveResult={props.approveResult!}
+                anomalies={props.anomalies}
+                groundInformationObjectives={props.experienceManifest?.ground_information_objectives ?? null}
+                groundStationName={props.experienceManifest?.display.ground_station_name}
+              />
+            ) : (
+              <div style={{ color: 'rgba(147,160,180,0.4)', fontSize: 12, padding: '20px 0', textAlign: 'center' }}>
+                No ground reception data yet. Complete a transmission to see the ground station reception.
+              </div>
+            )}
+          </>
+        )}
         {activeTab === 'simulation' && (
           <>
             {hasResult ? (
@@ -1943,6 +1972,18 @@ function LogSection(props: CommonProps) {
               </div>
             )}
           </>
+        )}
+        {activeTab === 'comparison' && showComparison && (
+          <ManualVsAiPanel
+            manualAssessment={props.manualAssessment!}
+            aiEval={props.recEval!}
+            aiPlanPayloadBits={(props.recPlan?.packets ?? []).reduce((s, p) => s + p.size_bits, 0)}
+            aiPlanPacketCount={props.recPlan?.packets.length ?? 0}
+            availableCapacityBits={props.availableCapacityBits}
+          />
+        )}
+        {activeTab === 'sessionlog' && (
+          <SessionLogPanel events={props.sessionEvents} />
         )}
         {activeTab === 'report' && (
           <MissionReportPanel

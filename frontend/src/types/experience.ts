@@ -77,10 +77,13 @@ export interface ExperienceManifest {
   snr_history: HistoricalSnrPoint[];
   thermal_history: HistoricalThermalPoint[];
   ingest_replay: IngestReplay;
-  ground_information_objectives: Record<string, string[]>;
+  ground_information_objectives: GroundInformationObjectives;
   curated_candidate_ids: string[];
   playback: ExperiencePlaybackConfig;
 }
+
+/** Mapping of objective name → required product IDs. */
+export type GroundInformationObjectives = Record<string, string[]>;
 
 export interface ExperienceResponse {
   available: boolean;

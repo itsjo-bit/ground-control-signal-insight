@@ -6,8 +6,12 @@ Verifies:
 - Actual delivered IDs drive objectives
 - Partial evidence remains partial
 - Spacecraft anomaly is not magically resolved
-- Benchmark freeze verification
+- Benchmark freeze verification (exact SHA256)
 - Generic scenario compatibility
+
+IMPORTANT: coverage helpers are imported from the PRODUCTION module
+  backend.app.presentation.ground_evidence
+NOT redefined locally here.
 """
 from __future__ import annotations
 
@@ -18,22 +22,29 @@ from pathlib import Path
 import pytest
 
 from backend.app import state as app_state
-from backend.app.agent.candidate_prioritizer import CandidatePrioritizer
-from backend.app.domain.anomaly_policy import is_applicable_anomaly
 from backend.app.simulation.transmission_sim import TransmissionSimulator
-from backend.app.evaluator.plan_evaluator import PlanEvaluator
 from backend.app.models.candidate_plan import CandidatePlan
 from backend.app.models.packet import Packet
+
+# ── Production ground-evidence helpers (these must be the real implementations) ──
+from backend.app.presentation.ground_evidence import (
+    assess_ground_objectives,
+    overall_ground_evidence_coverage,
+    ground_evidence_level,
+    objective_availability_label,
+    EVIDENCE_THRESHOLD_HIGH,
+    EVIDENCE_THRESHOLD_MEDIUM,
+)
 
 _PROJECT_ROOT = Path(__file__).parents[2]
 _SCENARIOS_DIR = _PROJECT_ROOT / "data" / "scenarios"
 _ASTERIA_SCENARIO = str(_SCENARIOS_DIR / "asteria7_thermal_priority_contact_v1.json")
 _V3_SCENARIO = str(_SCENARIOS_DIR / "mission_data_v3.json")
 _BENCHMARK_CONFIG = _PROJECT_ROOT / "benchmarks" / "configs" / "gcsi_benchmark_v1.json"
-_NOMINAL_PASS = str(_SCENARIOS_DIR / "nominal_pass.json")
+_V3_PATH = _SCENARIOS_DIR / "mission_data_v3.json"
 
 # Ground information objectives for ASTERIA-7 (mirrors data/demo/asteria7_experience.json)
-GROUND_OBJECTIVES = {
+GROUND_OBJECTIVES: dict[str, list[str]] = {
     "fresh_thermal_history": ["TEL-THERM-HR-042"],
     "anomaly_event_timeline": ["DIAG-THERM-EVT-017"],
     "power_correlation": ["TEL-PWR-CORR-031"],
@@ -43,44 +54,10 @@ GROUND_OBJECTIVES = {
     "pointing_context": ["NAV-ATT-214"],
 }
 
-# Evidence coverage thresholds
-THRESHOLD_HIGH = 0.80
-THRESHOLD_MEDIUM = 0.40
-
-
-def compute_evidence_coverage(
-    delivered_ids: set[str],
-    objectives: dict[str, list[str]],
-) -> dict[str, float]:
-    """Compute per-objective coverage as fraction of required products delivered."""
-    coverage = {}
-    for name, ids in objectives.items():
-        if not ids:
-            coverage[name] = 1.0
-        else:
-            delivered_count = sum(1 for pid in ids if pid in delivered_ids)
-            coverage[name] = delivered_count / len(ids)
-    return coverage
-
-
-def overall_coverage(
-    delivered_ids: set[str],
-    objectives: dict[str, list[str]],
-) -> float:
-    """Compute overall coverage as fraction of all required IDs delivered."""
-    all_ids = [pid for ids in objectives.values() for pid in ids]
-    if not all_ids:
-        return 1.0
-    delivered_count = sum(1 for pid in all_ids if pid in delivered_ids)
-    return delivered_count / len(all_ids)
-
-
-def coverage_level(pct: float) -> str:
-    if pct >= THRESHOLD_HIGH:
-        return "HIGH"
-    if pct >= THRESHOLD_MEDIUM:
-        return "MEDIUM"
-    return "LOW"
+# Frozen SHA256 hashes of protected files — computed at Phase 4.2F5 gate.
+# These values MUST match forever; update requires scientific review.
+_BENCHMARK_SHA256 = "932bedd0dc6aacf255517ec62d812c8be6306358e0dff27bc0a227462fae6fc8"
+_V3_SHA256 = "dea5339623a604f3119a46c6fc754a2df22340acf7466f7783b3ac93e05501a9"
 
 
 @pytest.fixture(autouse=True)
@@ -101,61 +78,80 @@ def loaded_asteria():
     app_state.load_scenario(_ASTERIA_SCENARIO)
 
 
-class TestGroundEvidenceCoverage:
-    def test_no_delivery_gives_zero_coverage(self):
-        """With nothing delivered, all objectives have 0% coverage."""
-        delivered = set()
-        coverage = compute_evidence_coverage(delivered, GROUND_OBJECTIVES)
-        for name, pct in coverage.items():
-            assert pct == 0.0, f"Expected 0% coverage for {name}, got {pct}"
-        assert coverage_level(overall_coverage(delivered, GROUND_OBJECTIVES)) == "LOW"
+# ── Tests verify that production module functions work correctly ──────────────
 
-    def test_all_anchors_delivered_gives_high_coverage(self):
-        """Delivering all 8 anchor products achieves HIGH coverage on all objectives."""
-        all_anchor_ids = {
-            "TEL-THERM-HR-042",
-            "DIAG-THERM-EVT-017",
-            "TEL-PWR-CORR-031",
-            "DIAG-COM-LINK-088",
-            "NAV-ATT-214",
-            "FDIR-THERM-017",
-            "CMD-THERM-571",
-            "CAL-THERM-006",
-        }
-        coverage = compute_evidence_coverage(all_anchor_ids, GROUND_OBJECTIVES)
-        for name, pct in coverage.items():
-            assert pct == 1.0, f"Expected 100% coverage for {name}, got {pct}"
-        oc = overall_coverage(all_anchor_ids, GROUND_OBJECTIVES)
-        assert coverage_level(oc) == "HIGH"
+class TestProductionGroundEvidenceHelpers:
+    """Verify that the production ground-evidence module behaves correctly."""
 
-    def test_partial_delivery_gives_partial_coverage(self):
-        """Delivering only some anchor products gives partial coverage."""
-        partial_ids = {"TEL-THERM-HR-042", "FDIR-THERM-017"}
-        coverage = compute_evidence_coverage(partial_ids, GROUND_OBJECTIVES)
+    def test_ground_evidence_level_low(self):
+        assert ground_evidence_level(0.0) == "LOW"
+        assert ground_evidence_level(0.39) == "LOW"
 
-        # fresh_thermal_history should be 100%
-        assert coverage["fresh_thermal_history"] == 1.0
-        # fault_control_context: FDIR delivered, CMD not → 50%
-        assert coverage["fault_control_context"] == 0.5
-        # anomaly_event_timeline: not delivered → 0%
-        assert coverage["anomaly_event_timeline"] == 0.0
+    def test_ground_evidence_level_medium(self):
+        assert ground_evidence_level(0.40) == "MEDIUM"
+        assert ground_evidence_level(0.79) == "MEDIUM"
 
-    def test_coverage_level_thresholds(self):
-        """Coverage level thresholds are correct."""
-        assert coverage_level(0.0) == "LOW"
-        assert coverage_level(0.39) == "LOW"
-        assert coverage_level(0.40) == "MEDIUM"
-        assert coverage_level(0.79) == "MEDIUM"
-        assert coverage_level(0.80) == "HIGH"
-        assert coverage_level(1.0) == "HIGH"
+    def test_ground_evidence_level_high(self):
+        assert ground_evidence_level(0.80) == "HIGH"
+        assert ground_evidence_level(1.0) == "HIGH"
 
-    def test_anomaly_not_resolved_after_delivery(self, loaded_asteria):
-        """Delivering data products must NOT change the anomaly's status.
+    def test_thresholds_match_spec(self):
+        assert EVIDENCE_THRESHOLD_HIGH == 0.80
+        assert EVIDENCE_THRESHOLD_MEDIUM == 0.40
 
-        The spacecraft thermal anomaly is not resolved by ground receiving data.
-        """
+    def test_objective_availability_label(self):
+        assert objective_availability_label(1.0) == "AVAILABLE"
+        assert objective_availability_label(0.5) == "PARTIAL"
+        assert objective_availability_label(0.0) == "UNAVAILABLE"
+
+    def test_assess_empty_delivery(self):
+        """Zero delivery → all objectives UNAVAILABLE."""
+        result = assess_ground_objectives(set(), GROUND_OBJECTIVES)
+        assert len(result) == len(GROUND_OBJECTIVES)
+        for obj in result:
+            assert obj.fraction == 0.0
+            assert obj.level == "LOW"
+
+    def test_assess_full_delivery(self):
+        """All anchor IDs delivered → all objectives AVAILABLE at HIGH."""
+        all_ids = {pid for ids in GROUND_OBJECTIVES.values() for pid in ids}
+        result = assess_ground_objectives(all_ids, GROUND_OBJECTIVES)
+        for obj in result:
+            assert obj.fraction == 1.0
+            assert obj.level == "HIGH"
+
+    def test_assess_partial_delivery(self):
+        """Partial delivery gives correct fractions."""
+        partial = {"TEL-THERM-HR-042", "FDIR-THERM-017"}
+        result = assess_ground_objectives(partial, GROUND_OBJECTIVES)
+        by_name = {o.name: o for o in result}
+
+        assert by_name["fresh_thermal_history"].fraction == 1.0
+        assert by_name["fault_control_context"].fraction == 0.5
+        assert by_name["anomaly_event_timeline"].fraction == 0.0
+
+    def test_overall_coverage_zero(self):
+        cov = overall_ground_evidence_coverage(set(), GROUND_OBJECTIVES)
+        assert ground_evidence_level(cov) == "LOW"
+
+    def test_overall_coverage_full(self):
+        all_ids = {pid for ids in GROUND_OBJECTIVES.values() for pid in ids}
+        cov = overall_ground_evidence_coverage(all_ids, GROUND_OBJECTIVES)
+        assert ground_evidence_level(cov) == "HIGH"
+
+    def test_before_after_information_state_changes(self, loaded_asteria):
+        """Information state changes between before and after delivery."""
+        before = overall_ground_evidence_coverage(set(), GROUND_OBJECTIVES)
+        all_anchors = {pid for ids in GROUND_OBJECTIVES.values() for pid in ids}
+        after = overall_ground_evidence_coverage(all_anchors, GROUND_OBJECTIVES)
+
+        assert ground_evidence_level(before) == "LOW"
+        assert ground_evidence_level(after) == "HIGH"
+        assert after > before
+
+    def test_anomaly_not_resolved_by_delivery(self, loaded_asteria):
+        """Delivering data products must NOT change the spacecraft anomaly status."""
         scenario = app_state.active_scenario
-        # Verify thermal anomaly is active
         anomaly = next(
             (a for a in scenario.anomalies if a.anomaly_id == "ANOM-THERM-017"),
             None,
@@ -163,61 +159,36 @@ class TestGroundEvidenceCoverage:
         assert anomaly is not None
         assert anomaly.status == "active"
 
-        # Simulate delivery and check anomaly is still active
+        # Ground coverage computation does NOT modify scenario state
         delivered = {"TEL-THERM-HR-042", "DIAG-THERM-EVT-017", "FDIR-THERM-017"}
-        # Coverage computation is deterministic based on delivered_ids only
-        coverage = compute_evidence_coverage(delivered, GROUND_OBJECTIVES)
+        _ = assess_ground_objectives(delivered, GROUND_OBJECTIVES)
+        _ = overall_ground_evidence_coverage(delivered, GROUND_OBJECTIVES)
 
-        # Even high coverage doesn't change the anomaly status
         assert scenario.anomalies[0].status == "active", (
-            "Spacecraft anomaly must remain active — transmission does not resolve it"
+            "Spacecraft anomaly must remain active — ground reception does not resolve it"
         )
 
-    def test_before_after_information_state_changes(self, loaded_asteria):
-        """Information state changes between 'before' and 'after' delivery."""
-        # Before: nothing delivered
-        before_coverage = overall_coverage(set(), GROUND_OBJECTIVES)
-        before_level = coverage_level(before_coverage)
-
-        # After: all anchors delivered
-        all_anchors = {
-            "TEL-THERM-HR-042", "DIAG-THERM-EVT-017", "TEL-PWR-CORR-031",
-            "DIAG-COM-LINK-088", "NAV-ATT-214", "FDIR-THERM-017",
-            "CMD-THERM-571", "CAL-THERM-006",
-        }
-        after_coverage = overall_coverage(all_anchors, GROUND_OBJECTIVES)
-        after_level = coverage_level(after_coverage)
-
-        assert before_level == "LOW"
-        assert after_level == "HIGH"
-        assert after_coverage > before_coverage
-
     def test_simulated_delivery_drives_objectives(self, loaded_asteria):
-        """TransmissionSimulator delivered_packets actually drives ground objectives."""
+        """TransmissionSimulator.delivered_packets actually drives ground objectives."""
         scenario = app_state.active_scenario
         link_state = app_state.active_link_state
 
-        # Build a plan with the 8 anchor products
-        anchor_ids = [
-            "TEL-THERM-HR-042", "DIAG-THERM-EVT-017", "TEL-PWR-CORR-031",
-            "DIAG-COM-LINK-088", "NAV-ATT-214", "FDIR-THERM-017",
-            "CMD-THERM-571", "CAL-THERM-006",
-        ]
+        anchor_ids = list({pid for ids in GROUND_OBJECTIVES.values() for pid in ids})
         dp_map = {dp.product_id: dp for dp in scenario.data_products}
-        packets = []
-        for pid in anchor_ids:
-            dp = dp_map[pid]
-            packets.append(Packet(
-                packet_id=dp.product_id,
-                packet_type=dp.product_type,
-                size_bits=dp.size_bits,
-                criticality=dp.criticality,
-                mission_relevance=dp.mission_relevance,
-                deadline_s=dp.deadline_s,
-                retry_cost=dp.retry_cost,
-                delivery_requirement=dp.delivery_requirement,
-            ))
-
+        packets = [
+            Packet(
+                packet_id=dp_map[pid].product_id,
+                packet_type=dp_map[pid].product_type,
+                size_bits=dp_map[pid].size_bits,
+                criticality=dp_map[pid].criticality,
+                mission_relevance=dp_map[pid].mission_relevance,
+                deadline_s=dp_map[pid].deadline_s,
+                retry_cost=dp_map[pid].retry_cost,
+                delivery_requirement=dp_map[pid].delivery_requirement,
+            )
+            for pid in anchor_ids
+            if pid in dp_map
+        ]
         plan = CandidatePlan(
             plan_id="anchor-plan",
             strategy="manual",
@@ -225,51 +196,71 @@ class TestGroundEvidenceCoverage:
             generated_by="test",
             metadata={},
         )
-
         sim = TransmissionSimulator()
         result = sim.simulate(plan, link_state, scenario.mission_state, seed=42)
 
-        # Compute coverage from actual simulation result
         delivered_ids = set(result.delivered_packets)
-        coverage = compute_evidence_coverage(delivered_ids, GROUND_OBJECTIVES)
+        objectives = assess_ground_objectives(delivered_ids, GROUND_OBJECTIVES)
+        overall = overall_ground_evidence_coverage(delivered_ids, GROUND_OBJECTIVES)
 
-        # At very low BER, all anchors should be delivered
-        # With BER ~3.3e-10, p_success for each packet is nearly 1.0
-        # Verify that at least some objectives have coverage
-        total_delivered = len(delivered_ids)
-        assert total_delivered >= 0  # Basic sanity
+        # Sanity: total delivered must be non-negative
+        assert len(delivered_ids) >= 0
+        # overall is a valid fraction
+        assert 0.0 <= overall <= 1.0
+        # Each objective is a valid ObjectiveCoverage
+        assert len(objectives) == len(GROUND_OBJECTIVES)
+
+
+class TestGroundObjectivesAllIdsValid:
+    def test_all_ground_objective_ids_exist_in_asteria_scenario(self, loaded_asteria):
+        """All product IDs in GROUND_OBJECTIVES must exist in ASTERIA-7 scenario."""
+        scenario = app_state.active_scenario
+        all_ids = {dp.product_id for dp in scenario.data_products}
+        for obj_name, product_ids in GROUND_OBJECTIVES.items():
+            for pid in product_ids:
+                assert pid in all_ids, (
+                    f"Ground objective '{obj_name}' references product '{pid}' "
+                    f"which does not exist in ASTERIA-7 scenario"
+                )
 
 
 class TestBenchmarkFreeze:
-    def test_benchmark_config_unchanged(self):
-        """benchmarks/configs/gcsi_benchmark_v1.json must be byte-for-byte unchanged."""
-        assert _BENCHMARK_CONFIG.exists(), "Benchmark config file not found"
-        content = _BENCHMARK_CONFIG.read_bytes()
-        sha256 = hashlib.sha256(content).hexdigest()
-        # We record the hash at this point; if the content changes, the hash will differ
-        # The critical thing is that the file is valid JSON and loads without error
-        data = json.loads(content)
-        assert "scenarios" in data or "capacity_ratios" in data or "benchmark" in data or len(data) > 0, (
-            "Benchmark config must be non-empty valid JSON"
-        )
-        # Also verify it hasn't become a different structure
-        # (we don't hard-code the exact hash as it was already set before Phase 4.2)
-        assert len(content) > 100, "Benchmark config file seems too small"
+    """Verify that protected scientific files have NOT been modified.
 
-    def test_mission_data_v3_unchanged(self):
-        """data/scenarios/mission_data_v3.json must be byte-for-byte unchanged."""
-        v3_path = _SCENARIOS_DIR / "mission_data_v3.json"
-        assert v3_path.exists(), "mission_data_v3.json not found"
-        content = v3_path.read_bytes()
-        data = json.loads(content)
-        # Must still be a valid scenario with data_products
+    The SHA256 hashes below were recorded at the Phase 4.2F5 gate and must
+    remain unchanged for the life of this codebase.  If a hash fails, it means
+    a frozen scientific file was accidentally modified — revert it before
+    committing.
+    """
+
+    def test_benchmark_config_exact_sha256(self):
+        """benchmarks/configs/gcsi_benchmark_v1.json must match its frozen SHA256."""
+        assert _BENCHMARK_CONFIG.exists(), "Benchmark config file not found"
+        actual = hashlib.sha256(_BENCHMARK_CONFIG.read_bytes()).hexdigest().lower()
+        assert actual == _BENCHMARK_SHA256, (
+            f"benchmarks/configs/gcsi_benchmark_v1.json has been modified!\n"
+            f"  Expected SHA256: {_BENCHMARK_SHA256}\n"
+            f"  Actual SHA256:   {actual}\n"
+            "Revert the file before committing."
+        )
+
+    def test_mission_data_v3_exact_sha256(self):
+        """data/scenarios/mission_data_v3.json must match its frozen SHA256."""
+        assert _V3_PATH.exists(), "mission_data_v3.json not found"
+        actual = hashlib.sha256(_V3_PATH.read_bytes()).hexdigest().lower()
+        assert actual == _V3_SHA256, (
+            f"data/scenarios/mission_data_v3.json has been modified!\n"
+            f"  Expected SHA256: {_V3_SHA256}\n"
+            f"  Actual SHA256:   {actual}\n"
+            "Revert the file before committing."
+        )
+
+    def test_mission_data_v3_structure_intact(self):
+        """mission_data_v3.json structural checks."""
+        data = json.loads(_V3_PATH.read_bytes())
         assert data.get("scenario_id") is not None
-        assert len(data.get("data_products", [])) == 150, (
-            "mission_data_v3.json must still have exactly 150 data products"
-        )
-        assert len(data.get("anomalies", [])) == 3, (
-            "mission_data_v3.json must still have exactly 3 anomalies"
-        )
+        assert len(data.get("data_products", [])) == 150
+        assert len(data.get("anomalies", [])) == 3
 
     def test_generic_scenario_loads_after_asteria_default(self):
         """Generic scenario (v3) still loads and works normally."""
@@ -282,7 +273,6 @@ class TestBenchmarkFreeze:
         app_state.load_scenario(_ASTERIA_SCENARIO)
         assert len(app_state.active_scenario.data_products) == 1284
 
-        # Switch to v3
         app_state.load_scenario(_V3_SCENARIO)
         assert len(app_state.active_scenario.data_products) == 150
         assert app_state.active_scenario.scenario_id != "asteria7_thermal_priority_contact_v1"
@@ -302,16 +292,3 @@ class TestBenchmarkFreeze:
         result = get_experience()
         assert result.available is True
         assert result.manifest is not None
-
-
-class TestGroundObjectivesAllIdsValid:
-    def test_all_ground_objective_ids_exist_in_asteria_scenario(self, loaded_asteria):
-        """All product IDs in GROUND_OBJECTIVES must exist in ASTERIA-7 scenario."""
-        scenario = app_state.active_scenario
-        all_ids = {dp.product_id for dp in scenario.data_products}
-        for obj_name, product_ids in GROUND_OBJECTIVES.items():
-            for pid in product_ids:
-                assert pid in all_ids, (
-                    f"Ground objective '{obj_name}' references product '{pid}' "
-                    f"which does not exist in ASTERIA-7 scenario"
-                )

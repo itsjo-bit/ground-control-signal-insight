@@ -47,7 +47,7 @@ import { MissionViewport } from './components/MissionViewport';
 import { RightPanel } from './components/RightPanel';
 import { useResizablePanel } from './hooks/useResizablePanel';
 import { useViewSettings } from './hooks/useViewSettings';
-import type { ManualAssessmentResult } from './experience/missionExperienceReducer';
+import type { ManualAssessmentResult, SessionEvent } from './experience/missionExperienceReducer';
 
 // ── Workspace mode ─────────────────────────────────────────────────────────────
 
@@ -359,6 +359,22 @@ export default function MissionControl() {
   const [manualAssessmentStale, setManualAssessmentStale] = useState<boolean>(false);
   const [_manualAssessmentOrderFingerprint, setManualAssessmentOrderFingerprint] = useState<string | null>(null);
 
+  // ── Phase 4.2F5: Session event log ────────────────────────────────────────
+  const [sessionEvents, setSessionEvents] = useState<SessionEvent[]>([]);
+  let _sessionEventCounter = useRef(0);
+
+  const addSessionEvent = useCallback((type: SessionEvent['type'], detail?: string) => {
+    setSessionEvents((prev) => [
+      ...prev,
+      {
+        id: `ev-${++_sessionEventCounter.current}`,
+        timestamp: Date.now(),
+        type,
+        detail,
+      },
+    ]);
+  }, []);
+
   // ── Navigation ─────────────────────────────────────────────────────────────
   const [activeSection, setActiveSection] = useState<NavSection>('mission');
 
@@ -395,12 +411,13 @@ export default function MissionControl() {
       };
       setManualAssessment(result);
       setManualAssessmentStale(false);
+      addSessionEvent('manual_plan_assessed', `${manualOrder.length} products`);
     } catch (err) {
       setManualAssessmentError(String(err));
     } finally {
       setManualAssessmentLoading(false);
     }
-  }, [manualOrder]);
+  }, [manualOrder, addSessionEvent]);
 
   // ── V3.4: Load mission data — NO AI ───────────────────────────────────────
   const loadMissionData = useCallback(async (markStale = false) => {
@@ -503,6 +520,7 @@ export default function MissionControl() {
     setAiRecommendationRejected(false);
     setChoreographyActive(false);
     setPendingExecutionPlan(null);
+    setSessionEvents([]);
     aiRequestInFlight.current = false;
     // V3.5: workspace mode is NOT reset on mission reset
     try {
@@ -587,6 +605,7 @@ export default function MissionControl() {
     setAiPrioritizationError(null);
     setAiPrioritizationFallbackReason(null);
     setAiRecommendationFallbackReason(null);
+    addSessionEvent('ai_analysis_requested');
     // Clear stale AI plan before re-analysis so the old plan is never kept
     // when a new analysis produces a different ranking.
     setAllPlans((prev) => prev.filter((p) => p.plan_id !== 'ai-prioritized'));
@@ -627,13 +646,14 @@ export default function MissionControl() {
       }
       setAiLifecycle('ready');
       setApprovalPhase('ready');
+      addSessionEvent('ai_analysis_completed', resp.actual_provider ?? resp.provider ?? undefined);
     } catch (err) {
       setAiLifecycle('error');
       setAiError(String(err));
     } finally {
       aiRequestInFlight.current = false;
     }
-  }, [allPlans]);
+  }, [allPlans, addSessionEvent]);
 
   // ── Approval handlers ──────────────────────────────────────────────────────
 
@@ -642,6 +662,7 @@ export default function MissionControl() {
     setLinkState(result.simulation_result.link_state);
     setMissionState(result.simulation_result.mission_state);
     setApprovalPhase('complete');
+    addSessionEvent('ground_reception_completed', `delivered=${result.simulation_result.delivered_packets.length}`);
     setActiveSection('log');
   }
 
@@ -730,8 +751,9 @@ export default function MissionControl() {
     setPendingExecutionMode('custom');
     setChoreographyActive(true);
     setApprovalPhase('transmitting');
+    addSessionEvent('plan_uplink_started', `manual:${manualOrder.length} products`);
     setActiveSection('transmission');
-  }, [manualAssessment, manualAssessmentStale, manualOrder, rawDataProducts]);
+  }, [manualAssessment, manualAssessmentStale, manualOrder, rawDataProducts, addSessionEvent]);
 
   // ── Derived values ─────────────────────────────────────────────────────────
 
@@ -758,8 +780,9 @@ export default function MissionControl() {
     setPendingExecutionMode('ai');
     setChoreographyActive(true);
     setApprovalPhase('transmitting');
+    addSessionEvent('recommendation_approved', `plan=${recPlan.plan_id}`);
     setActiveSection('transmission');
-  }, [recPlan]);
+  }, [recPlan, addSessionEvent]);
 
   /** Modify: seed manual mode with AI plan packet IDs, switch to manual planning. */
   const handleModifyAiPlan = useCallback(() => {
@@ -777,7 +800,8 @@ export default function MissionControl() {
   const handleRejectAiPlan = useCallback(() => {
     setAiRecommendationRejected(true);
     setApprovalPhase('idle');
-  }, []);
+    addSessionEvent('recommendation_rejected');
+  }, [addSessionEvent]);
 
   /**
    * Execute the actual backend approval during choreography.
@@ -794,8 +818,9 @@ export default function MissionControl() {
   /** Called when TransmissionSequencePanel completes the full sequence. */
   const handleChoreographyComplete = useCallback((result: ApproveResponse) => {
     setChoreographyActive(false);
+    addSessionEvent('transmission_completed', `delivered=${result.simulation_result.delivered_packets.length}`);
     handleApproved(result);
-  }, []); // handleApproved is not in deps because it's defined below as a function
+  }, [addSessionEvent]); // handleApproved is not in deps because it's defined below as a function
 
   const manualPlan: CandidatePlan | null = manualOrder.length > 0 ? {
     plan_id: 'operator-manual',
@@ -1225,6 +1250,7 @@ export default function MissionControl() {
             onModifyAiPlan={handleModifyAiPlan}
             onRejectAiPlan={handleRejectAiPlan}
             aiRecommendationRejected={aiRecommendationRejected}
+            sessionEvents={sessionEvents}
             choreographyActive={choreographyActive}
             pendingExecutionPlan={pendingExecutionPlan}
             onExecuteApproval={handleExecuteApproval}
