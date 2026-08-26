@@ -63,6 +63,14 @@ AI_PLAN_ID = "ai-prioritized"
 AI_PLAN_STRATEGY = "ai_prioritized"
 
 
+class AIPlanBuildError(Exception):
+    """Raised when the AI plan builder detects an invariant violation.
+
+    Used instead of ``assert`` so that invariant checks are never silently
+    disabled by Python optimized execution (``python -O``).
+    """
+
+
 def build_ai_prioritized_plan(
     all_packets: list[Packet],
     prioritization: CandidatePrioritization,
@@ -109,6 +117,19 @@ def build_ai_prioritized_plan(
     if weights is None:
         weights = SchedulerWeights()
 
+    # -- Validate authoritative input: no duplicate packet IDs -------------
+    seen_input: set[str] = set()
+    duplicates: list[str] = []
+    for p in all_packets:
+        if p.packet_id in seen_input:
+            duplicates.append(p.packet_id)
+        seen_input.add(p.packet_id)
+    if duplicates:
+        raise AIPlanBuildError(
+            f"Authoritative all_packets contains duplicate packet IDs: {duplicates}. "
+            "This indicates corrupted input data — the AI plan cannot be built safely."
+        )
+
     # -- Build lookup: packet_id → Packet ----------------------------------
     pkt_map: dict[str, Packet] = {p.packet_id: p for p in all_packets}
 
@@ -147,11 +168,22 @@ def build_ai_prioritized_plan(
 
     ordered = prefix + tail
 
-    # Sanity check: we must never lose or gain packets.
-    assert len(ordered) == len(all_packets), (
-        f"AI plan packet count mismatch: expected {len(all_packets)}, "
-        f"got {len(ordered)}"
-    )
+    # Invariant check: we must never lose or gain packets.
+    # Use explicit exception rather than assert (assert can be disabled by -O).
+    if len(ordered) != len(all_packets):
+        raise AIPlanBuildError(
+            f"AI plan packet count mismatch: expected {len(all_packets)}, "
+            f"got {len(ordered)}"
+        )
+    ordered_ids = {p.packet_id for p in ordered}
+    input_ids = {p.packet_id for p in all_packets}
+    if ordered_ids != input_ids:
+        missing = input_ids - ordered_ids
+        extra = ordered_ids - input_ids
+        raise AIPlanBuildError(
+            f"AI plan packet ID set mismatch: "
+            f"missing={sorted(missing)}, extra={sorted(extra)}"
+        )
 
     # -- Build provenance metadata ------------------------------------------
     metadata: dict = {

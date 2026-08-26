@@ -103,6 +103,40 @@ AI-ranked products appear first (in priority order); unranked products are appen
 in deterministic BaselineScheduler order. AI does not determine feasibility or compute
 link metrics.
 
+### Two Independent Evaluation Layers (Phase 2A)
+
+Every candidate plan is evaluated by **two independent, AI-provenance-agnostic** layers:
+
+```
+CandidatePlan
+├─ PlanEvaluator           ← physical / telecom feasibility
+└─ MissionOutcomeEvaluator ← mission-semantic outcome
+```
+
+**`PlanEvaluator`** — determines **what can be delivered**:
+- Expected transmission feasibility (window, BER, goodput)
+- Deadline misses and deadline miss rate
+- Critical packet delivery
+- Bandwidth utilization and retransmission overhead
+- Window pressure and risk score (LOW/MEDIUM/HIGH/CRITICAL)
+- `deferred_packets` — the physical ground truth used by the next layer
+
+**`MissionOutcomeEvaluator`** — determines **what that delivery means**:
+- Scientific value capture rate (`Σ sci_value_delivered / Σ sci_value_total`)
+- Required product delivery rate
+- Active anomaly product delivery rate
+- Per-anomaly coverage (product-level, with severity)
+- High-severity anomaly coverage (default threshold: severity ≥ 0.75)
+- Anomaly-weighted coverage: `Σ(severity_i × coverage_i) / Σ(severity_i)`
+- Delivered data age metrics
+- Subsystem delivery breakdown
+
+Neither evaluator knows whether a plan came from AI, a deterministic baseline,
+or any other source. Both produce identical metrics for identical inputs.
+
+**Zero-denominator rule**: When a metric denominator is zero (e.g., no required products
+in the scenario), the rate field returns `null` — not a false `1.0`.
+
 ### Five-Plan Architecture
 
 The v2/v3 path generates **five** candidate plans:
@@ -119,16 +153,50 @@ The four deterministic baselines are generated from the **original** packet set,
 completely independent of the AI ranking. They form a scientific control group:
 changing the AI ranking changes the AI plan but must NOT change any baseline.
 
-All five plans are evaluated by the **same** `PlanEvaluator` instance under the
-same link state, mission state, and risk weights. No bonus metrics are added for
-the AI plan.
+All five plans are evaluated by the **same** `PlanEvaluator` and `MissionOutcomeEvaluator`
+instances. No bonus metrics are added for the AI plan. AI provenance cannot influence
+evaluation results.
 
-### AI Stage 2 — Plan Recommendation
+### Semantic Deterministic Comparator (Phase 2A Benchmark Infrastructure)
 
-After evaluation, AI receives all five evaluated plans and provides an advisory
-recommendation. It may recommend any plan — including `ai-prioritized` or any
-deterministic baseline. The recommendation is based solely on deterministic
-evaluation evidence. Stage 2 does not invent or modify metrics.
+A **`semantic-rule-based`** comparator plan exists for scientific benchmarking (not shown
+in the normal UI):
+
+```
+LLM semantic plan          deterministic semantic-rule plan
+        ↓                              ↓
+    same candidate set             same candidate set
+    same structured metadata       same structured metadata
+    same plan builder policy       same plan builder policy
+    same evaluators                same evaluators
+    but: LLM reasoning             but: explicit composite heuristic
+```
+
+The `SemanticRulePrioritizer` applies the same structured metadata (anomaly severity,
+criticality, scientific value, deadline urgency) via a documented composite heuristic
+rather than generative inference. This enables fair ablation experiments.
+
+### AI Stage 2 — Plan Recommendation (Phase 2A: Provenance-Blind)
+
+For **external LLM providers** (Granite, Gemini, Ollama), Stage-2 recommendation now
+operates with **provenance blinding**:
+
+1. Plans are anonymised as `OPTION-A` … `OPTION-E` before sending to the LLM
+2. The LLM receives only compact evaluation summaries (no packet lists, no plan identities)
+3. The LLM selects an option alias
+4. The backend maps the alias back to the real plan ID
+5. Invalid aliases are rejected — a real plan name returned instead of an alias fails validation
+
+This prevents:
+- **Self-preference bias** — the LLM cannot favour the plan it may have generated
+- **Automation bias** — "AI-prioritized" branding cannot influence the selection
+- **Provenance leakage** — strategy, generated_by, and plan_type are not in the Stage-2 context
+
+The `LocalRuleBasedProvider` is deterministic and is not subject to these biases, so it
+operates on real plan data directly.
+
+The alias→real-plan mapping is deterministic (SHA-256 based on scenario ID + plan ID),
+reproducible across runs, and never exposed to the external provider.
 
 ### Human operator — maintains final authority
 
@@ -504,12 +572,16 @@ CandidatePrioritizer  (deterministic screening → ≤50 CandidateSummary object
 [AI Stage 1]  AI Provider  →  CandidatePrioritization
 (semantic product ranking — advisory)
         ↓
-CandidateGenerator  (4 CandidatePlans from AI-ordered packets)
+CandidateGenerator  (4 deterministic CandidatePlans, AI-agnostic)
+   +  build_ai_prioritized_plan  (1 AI-ordered plan)
         ↓
-PlanEvaluator  (4 EvaluationResults — deterministic, authoritative)
+       All 5 plans  →  PlanEvaluator  (authoritative: telecom / feasibility)
+                    →  MissionOutcomeEvaluator  (authoritative: semantic value)
         ↓
-[AI Stage 2]  AI Provider  →  AIRecommendation
-(plan recommendation + explanation — advisory)
+[AI Stage 2]  External provider receives provenance-blind OPTION-A…E aliases
+(plan recommendation over compact summaries — advisory)
+        ↓
+Backend maps alias → real plan ID, binds authoritative metrics
         ↓
 Human approval
         ↓
@@ -520,10 +592,29 @@ SimulationResult  (delivered / deferred / failed products)
 
 | Layer | Responsibility |
 |---|---|
-| **Deterministic Python** | RF link calculations, candidate screening, plan evaluation, transmission simulation |
+| **Deterministic Python** | RF link calculations, candidate screening, plan evaluation, mission outcome, transmission simulation |
 | **AI Stage 1** | Semantic product ranking over the bounded candidate set (advisory) |
-| **AI Stage 2** | Plan recommendation and explanation over evaluated plans (advisory) |
+| **AI Stage 2** | Plan selection from provenance-blind option summaries (advisory; cannot see plan origin) |
 | **Human operator** | Final approval authority; can modify or reject AI recommendation |
+
+### AI Trust Boundary (Phase 2A)
+
+The architecture enforces a clear trust boundary:
+
+**AI MAY produce:**
+- Semantic ranking and prioritization reasoning
+- Trade-off explanation and advisory plan recommendation
+- Per-product decision rationale
+
+**Backend is AUTHORITATIVE for:**
+- Packet identity, subsystem, and actual anomaly linkage (not LLM-supplied)
+- Product description (forwarded from DataProduct, not LLM-generated)
+- Physical feasibility and risk metrics (PlanEvaluator)
+- Scientific value, required-product status, anomaly coverage (MissionOutcomeEvaluator)
+- Plan membership and transmission outcome
+- Stage-2 recommendation binding (real plan ID, risk score, packet actions)
+
+The LLM controls *why* to prioritize. The backend controls *what is true*.
 
 For the telecom model reference, see [`docs/telecom_model.md`](docs/telecom_model.md).
 

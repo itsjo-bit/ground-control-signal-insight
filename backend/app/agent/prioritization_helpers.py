@@ -164,12 +164,19 @@ def parse_prioritization_response(
                               missing, product IDs are hallucinated, or
                               priorities are duplicated.
     """
-    # Build product_id → description lookup when candidates are supplied.
-    desc_map: dict[str, str] = (
-        {cs.product_id: cs.description for cs in candidates}
-        if candidates
-        else {}
-    )
+    # Build authoritative lookup maps from CandidateSummary when candidates are supplied.
+    # These are used to override LLM-fabricated factual metadata (subsystem, anomaly_id).
+    desc_map: dict[str, str] = {}
+    authoritative_subsystem: dict[str, str] = {}
+    authoritative_anomaly_ids: dict[str, list[str]] = {}
+    if candidates:
+        for cs in candidates:
+            desc_map[cs.product_id] = cs.description
+            authoritative_subsystem[cs.product_id] = cs.subsystem
+            # The authoritative anomaly link from DataProduct (via CandidateSummary)
+            authoritative_anomaly_ids[cs.product_id] = (
+                [cs.anomaly_id] if cs.anomaly_id else []
+            )
     # Import here to avoid circular imports; GraniteResponseError is the
     # canonical structured error for prioritization validation failures.
     from .granite_agent import GraniteResponseError  # noqa: PLC0415
@@ -237,12 +244,26 @@ def parse_prioritization_response(
             factors = []
         factors = [str(f) for f in factors if f]
 
-        anomaly_ids = item.get("anomaly_ids", [])
-        if not isinstance(anomaly_ids, list):
-            anomaly_ids = []
-        anomaly_ids = [str(a) for a in anomaly_ids if a]
+        # Override factual fields with authoritative candidate data when available.
+        # The LLM controls reasoning/priority but must not fabricate factual metadata.
+        if pid in authoritative_subsystem:
+            subsystem = authoritative_subsystem[pid]
+        else:
+            subsystem = str(item.get("subsystem", ""))
 
-        subsystem = str(item.get("subsystem", ""))
+        # Validate LLM-provided anomaly_ids: keep only IDs that match the
+        # authoritative anomaly linkage for this product.  This prevents
+        # hallucinated anomaly IDs from becoming trusted mission facts.
+        llm_anomaly_ids_raw = item.get("anomaly_ids", [])
+        if not isinstance(llm_anomaly_ids_raw, list):
+            llm_anomaly_ids_raw = []
+        llm_anomaly_ids = [str(a) for a in llm_anomaly_ids_raw if a]
+
+        if pid in authoritative_anomaly_ids:
+            # Use authoritative linkage, not LLM-supplied value
+            anomaly_ids = authoritative_anomaly_ids[pid]
+        else:
+            anomaly_ids = llm_anomaly_ids
 
         item_confidence = item.get("confidence")
         per_confidence: float | None = None

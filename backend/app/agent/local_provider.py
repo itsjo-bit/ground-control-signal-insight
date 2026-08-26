@@ -5,8 +5,8 @@ by reasoning over the pre-computed ``EvaluationResult`` objects produced by
 ``PlanEvaluator``.  It requires no API key, no running model, and no internet
 connection.
 
-Algorithm
----------
+Algorithm — recommend()
+-----------------------
 1. Select the plan with the lowest ``risk_score`` from the evaluations.
    Ties are broken by highest ``mission_value``, then by stable plan order.
 2. Select the plan with the second-best risk/mission-value trade-off as the
@@ -17,13 +17,28 @@ Algorithm
    the provided ``LinkState``, ``MissionState``, and ``EvaluationResult``.
 5. Return a fully validated ``AIRecommendation``.
 
+Supports an arbitrary number of plans (4, 5, or more).  No hard-coded
+assumption about the count.
+
+Algorithm — prioritize_candidates()
+------------------------------------
+Delegates to
+:class:`~backend.app.agent.semantic_rule_prioritizer.SemanticRulePrioritizer`
+so the deterministic semantic ordering logic lives in one canonical place.
+
+This method is a **deterministic fallback** — it performs no semantic
+reasoning and does not invoke any LLM.  Its purpose is to keep the
+system functional when no AI provider is available, and to serve as a
+stable baseline for testing.  It is NOT a substitute for genuine AI
+semantic prioritization.
+
 This provider is intentionally conservative: it never fabricates values and
 never deviates from the facts already computed by the deterministic pipeline.
 
 Why not a mock?
 ---------------
 The ``LocalRuleBasedProvider`` is NOT a mock.  It performs real reasoning:
-it compares all four candidate plans across two objective metrics
+it compares all candidate plans across two objective metrics
 (risk_score, mission_value), constructs structured evidence that cites actual
 field values from the provided state, and produces a recommendation that would
 change if the inputs changed.  The output is deterministic given the same
@@ -36,7 +51,7 @@ from typing import Sequence
 
 from ..models.anomaly_event import AnomalyEvent
 from ..models.candidate_plan import CandidatePlan
-from ..models.candidate_prioritization import CandidatePrioritization, RankedProduct
+from ..models.candidate_prioritization import CandidatePrioritization
 from ..models.candidate_summary import CandidateSummary
 from ..models.evaluation_result import EvaluationResult
 from ..models.evidence_item import EvidenceItem
@@ -45,6 +60,7 @@ from ..models.mission_state import MissionState
 from ..models.recommendation import AIRecommendation
 from ..models.risk_level import RiskLevel
 from .base_provider import AIProviderError, AIResponseError, BaseAIProvider
+from .semantic_rule_prioritizer import SemanticRulePrioritizer
 
 
 def _risk_level_from_score(score: float) -> RiskLevel:
@@ -274,146 +290,39 @@ class LocalRuleBasedProvider(BaseAIProvider):
     ) -> CandidatePrioritization:
         """Rank candidates deterministically by composite urgency score.
 
+        Delegates to :class:`~backend.app.agent.semantic_rule_prioritizer.SemanticRulePrioritizer`
+        so the deterministic semantic ordering logic lives in one canonical place.
+
         This is a **deterministic fallback** — it performs no semantic
         reasoning and does not invoke any LLM.  Its purpose is to keep the
         system functional when no AI provider is available, and to serve as a
-        stable baseline for testing.
+        stable baseline for testing.  It is NOT a substitute for genuine AI
+        semantic prioritization.
 
-        Algorithm
-        ---------
-        1. Products with an ``anomaly_id`` linking them to a high-severity
-           anomaly are ranked first (severity descending).
-        2. Remaining products are ranked by a composite score:
-           ``0.35 * criticality + 0.30 * mission_relevance
-             + 0.20 * scientific_value + 0.15 * deadline_urgency``
-           where ``deadline_urgency = max(0, 1 - deadline_s / 600)``.
-        3. Ties are broken by ``product_id`` for determinism.
-
-        The reasoning for each product explicitly notes that this is a
-        deterministic ranking, not semantic AI reasoning.
+        The ``distance_km`` parameter is used to append a spacecraft geometry
+        sentence to the overall_reasoning when provided.
         """
-        if not candidates:
-            return CandidatePrioritization(
-                ranked_products=[],
-                overall_reasoning=(
-                    "No candidates supplied to LocalRuleBasedProvider. "
-                    "This is a deterministic fallback — not AI reasoning."
-                ),
-                confidence=0.5,
-                decision_factors=[],
-                candidate_count=0,
-            )
+        prioritizer = SemanticRulePrioritizer()
+        result = prioritizer.prioritize(candidates, anomalies=list(anomalies) if anomalies else [])
 
-        # Build anomaly severity lookup
-        severity_map: dict[str, float] = {}
-        if anomalies:
-            for ae in anomalies:
-                severity_map[ae.anomaly_id] = ae.severity
-
-        def _sort_key(cs: CandidateSummary) -> tuple:
-            anomaly_severity = severity_map.get(cs.anomaly_id or "", 0.0)
-            deadline_urgency = max(0.0, 1.0 - cs.deadline_s / 600.0)
-            composite = (
-                0.35 * cs.criticality
-                + 0.30 * cs.mission_relevance
-                + 0.20 * cs.scientific_value
-                + 0.15 * deadline_urgency
-            )
-            # Negate so higher values sort first
-            return (-anomaly_severity, -composite, cs.product_id)
-
-        ranked = sorted(candidates, key=_sort_key)
-
-        ranked_products: list[RankedProduct] = []
-        for priority, cs in enumerate(ranked, start=1):
-            anom_severity = severity_map.get(cs.anomaly_id or "", None)
-            # Build structured decision factors (Phase 2D)
-            factors: list[str] = []
-            if cs.anomaly_id and anom_severity is not None:
-                factors.append("active anomaly")
-                if anom_severity >= 0.75:
-                    factors.append("high severity anomaly")
-            if cs.criticality >= 0.75:
-                factors.append("high criticality")
-            elif cs.criticality >= 0.5:
-                factors.append("medium criticality")
-            if cs.deadline_s <= 120.0:
-                factors.append("deadline urgency")
-            if cs.mission_relevance >= 0.75:
-                factors.append("mission relevance")
-            if cs.scientific_value >= 0.75:
-                factors.append("scientific value")
-            if cs.related_ids:
-                factors.append("related products")
-            if not factors:
-                factors.append("routine housekeeping")
-
-            if cs.anomaly_id and anom_severity is not None:
-                reason = (
-                    f"[Deterministic ranking] Anomaly-linked product ({cs.anomaly_id}, "
-                    f"severity={anom_severity:.2f}); subsystem={cs.subsystem}; "
-                    f"criticality={cs.criticality:.2f}."
-                )
-            else:
-                reason = (
-                    f"[Deterministic ranking] subsystem={cs.subsystem}; "
-                    f"criticality={cs.criticality:.2f}; "
-                    f"mission_relevance={cs.mission_relevance:.2f}; "
-                    f"scientific_value={cs.scientific_value:.2f}; "
-                    f"deadline_s={cs.deadline_s:.0f}."
-                )
-            ranked_products.append(
-                RankedProduct(
-                    product_id=cs.product_id,
-                    priority=priority,
-                    reason=reason,
-                    # Phase 2E-D3: forward description from CandidateSummary
-                    description=cs.description,
-                    factors=factors,
-                    anomaly_ids=[cs.anomaly_id] if cs.anomaly_id else [],
-                    subsystem=cs.subsystem,
-                    # Local provider does not report per-product confidence
-                    confidence=None,
-                )
-            )
-
-        n_anomaly = sum(1 for cs in candidates if cs.anomaly_id is not None)
-        # Speed of light (m/s) — same constant as routes_state._SPEED_OF_LIGHT_M_S
-        _C = 299_792_458.0
-        geometry_sentence = ""
+        # Append geometry sentence to overall_reasoning when distance is known.
+        # This matches the original LocalRuleBasedProvider behaviour for backwards
+        # compatibility with existing tests and UI display.
         if distance_km is not None:
+            _C = 299_792_458.0
             propagation_delay_s = (distance_km * 1_000.0) / _C
             geometry_sentence = (
                 f"  Spacecraft is {distance_km / 1_000_000:.1f} million km from Earth; "
                 f"one-way signal propagation ≈ {propagation_delay_s:.0f} s."
             )
-        overall_reasoning = (
-            f"Deterministic fallback ranking of {len(candidates)} candidate(s). "
-            f"{n_anomaly} product(s) are linked to active anomalies and were ranked first "
-            f"by anomaly severity. Remaining products ranked by composite urgency score "
-            f"(criticality × mission_relevance × scientific_value × deadline urgency). "
-            f"NOTE: This is NOT semantic AI reasoning. "
-            f"Use a real AI provider (Granite, Gemini, Ollama) for genuine prioritization."
-            f"{geometry_sentence}"
-        )
-
-        # Top-level decision factors for the overall prioritization
-        top_factors: list[str] = []
-        if n_anomaly > 0:
-            top_factors.append("active anomaly")
-        if any(cs.criticality >= 0.75 for cs in candidates):
-            top_factors.append("high criticality")
-        if any(cs.deadline_s <= 120.0 for cs in candidates):
-            top_factors.append("deadline urgency")
-        if any(cs.mission_relevance >= 0.75 for cs in candidates):
-            top_factors.append("mission relevance")
-        if not top_factors:
-            top_factors.append("composite urgency score")
-
-        return CandidatePrioritization(
-            ranked_products=ranked_products,
-            overall_reasoning=overall_reasoning,
-            confidence=0.60,
-            decision_factors=top_factors,
-            candidate_count=len(candidates),
-        )
+            # Rebuild result with appended reasoning (CandidatePrioritization is immutable
+            # via Pydantic, so we recreate it)
+            from ..models.candidate_prioritization import CandidatePrioritization as _CP
+            result = _CP(
+                ranked_products=result.ranked_products,
+                overall_reasoning=result.overall_reasoning + geometry_sentence,
+                confidence=result.confidence,
+                decision_factors=result.decision_factors,
+                candidate_count=result.candidate_count,
+            )
+        return result

@@ -834,9 +834,10 @@ class TestPhase2CPipelineIntegration:
         assert len(result.ranked_products) == len(candidates)
 
     def test_prioritization_result_flows_to_bridge_ordering(self):
-        """AI ranking drives packet ordering for deterministic evaluation."""
+        """AI ranking drives packet ordering via build_ai_prioritized_plan."""
         from backend.app.models.bridge import data_products_to_packets
-        from backend.app.api.routes_agent import _reorder_packets_by_ai
+        from backend.app.candidate_generator.ai_plan_builder import build_ai_prioritized_plan
+        from backend.app.config import SchedulerWeights
 
         # 3 products; AI ranks them in reverse order
         products = [make_dp(product_id=f"PROD-{i:02d}") for i in range(3)]
@@ -851,13 +852,16 @@ class TestPhase2CPipelineIntegration:
             overall_reasoning="Reverse order test.",
             confidence=0.9,
         )
-        reordered = _reorder_packets_by_ai(packets, prioritization)
-        assert [p.packet_id for p in reordered] == ["PROD-02", "PROD-01", "PROD-00"]
+        plan = build_ai_prioritized_plan(
+            packets, prioritization, make_link_state(), make_mission_state(), SchedulerWeights()
+        )
+        assert [p.packet_id for p in plan.packets] == ["PROD-02", "PROD-01", "PROD-00"]
 
     def test_unranked_packets_appended_to_end(self):
         """Packets not mentioned by AI ranking must be appended after ranked ones."""
         from backend.app.models.bridge import data_products_to_packets
-        from backend.app.api.routes_agent import _reorder_packets_by_ai
+        from backend.app.candidate_generator.ai_plan_builder import build_ai_prioritized_plan
+        from backend.app.config import SchedulerWeights
 
         products = [make_dp(product_id=f"P-{i:02d}") for i in range(5)]
         packets = data_products_to_packets(products)
@@ -871,8 +875,10 @@ class TestPhase2CPipelineIntegration:
             overall_reasoning="Partial ranking.",
             confidence=0.7,
         )
-        reordered = _reorder_packets_by_ai(packets, prioritization)
-        ids = [p.packet_id for p in reordered]
+        plan = build_ai_prioritized_plan(
+            packets, prioritization, make_link_state(), make_mission_state(), SchedulerWeights()
+        )
+        ids = [p.packet_id for p in plan.packets]
         assert ids[0] == "P-04"
         assert ids[1] == "P-02"
         # Remaining three should appear (in any order) after

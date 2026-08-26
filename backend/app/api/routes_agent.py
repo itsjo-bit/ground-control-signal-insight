@@ -17,11 +17,17 @@ Three stages
      authoritative packet set, independent of AI ranking.
    - One AI-prioritized plan is built from the Stage-1 ranking via
      :func:`~backend.app.candidate_generator.ai_plan_builder.build_ai_prioritized_plan`.
-   All five plans are evaluated identically by ``PlanEvaluator``.
+   All five plans are evaluated identically by ``PlanEvaluator`` (telecom /
+   feasibility) and ``MissionOutcomeEvaluator`` (semantic mission outcome).
 
 3. **AI Stage 2 — Plan Recommendation**
-   After evaluation, ``provider.recommend()`` receives all five plans and
-   their evaluations and returns an advisory recommendation.
+   For **external** providers (Granite, Gemini, Ollama), plans are anonymised
+   as opaque options (OPTION-A … OPTION-E) before sending to the LLM so the
+   model cannot identify which plan was AI-generated.  The model's choice is
+   mapped back to the real plan_id by the trusted backend.
+
+   ``LocalRuleBasedProvider`` is deterministic and is not provenance-blind
+   (it does not reason in a way that would be biased by plan names).
 
 Architecture principle
 ----------------------
@@ -31,6 +37,17 @@ Architecture principle
    and remain independent of Stage-1 AI output.  This provides a clean
    scientific control group: changing the AI ranking changes the AI plan but
    must NOT change any deterministic baseline.
+
+Two evaluation layers
+---------------------
+Both layers are AI-provenance-agnostic::
+
+    CandidatePlan
+    ├─ PlanEvaluator           ← physical / telecom feasibility
+    └─ MissionOutcomeEvaluator ← semantic mission outcome
+
+``PlanEvaluator`` determines WHAT CAN BE DELIVERED (telecom physics).
+``MissionOutcomeEvaluator`` determines WHAT THAT DELIVERY MEANS (mission value).
 
 Graceful fallback
 -----------------
@@ -58,11 +75,20 @@ from fastapi import APIRouter, HTTPException
 from .. import state
 from ..agent.base_provider import AIHallucinationError, AIPrioritizationError, AIProviderError, AIResponseError
 from ..agent.candidate_prioritizer import CandidatePrioritizer
+from ..agent.local_provider import LocalRuleBasedProvider
 from ..agent.provider_factory import get_provider
+from ..agent.stage2_blinding import (
+    InvalidStage2AliasError,
+    build_blind_mapping,
+    build_stage2_summaries,
+    build_blind_context_json,
+    map_alias_to_plan_id,
+)
 from ..config import SchedulerWeights
 from ..candidate_generator.generator import CandidateGenerator
 from ..candidate_generator.ai_plan_builder import build_ai_prioritized_plan
 from ..evaluator.plan_evaluator import PlanEvaluator
+from ..evaluator.mission_outcome_evaluator import MissionOutcomeEvaluator, MissionOutcomeResult
 from ..models.anomaly_event import AnomalyEvent
 from ..models.bridge import data_products_to_packets
 from ..models.candidate_plan import CandidatePlan
@@ -110,6 +136,9 @@ class RecommendResponse(BaseModel):
 
     ``ai_evaluation`` — deterministic evaluation of ``ai_plan`` (v2/v3 path only).
     ``None`` for legacy scenarios.
+
+    ``ai_mission_outcome`` — deterministic mission-outcome evaluation of ``ai_plan``
+    (v2/v3 path only).  ``None`` for legacy scenarios.
     """
     provider: str
     """Backwards-compatible: equals actual_provider."""
@@ -129,7 +158,9 @@ class RecommendResponse(BaseModel):
     ai_plan: CandidatePlan | None = None
     """The AI-prioritized transmission plan (v2/v3 path). Null for legacy scenarios."""
     ai_evaluation: EvaluationResult | None = None
-    """Deterministic evaluation of ai_plan (v2/v3 path). Null for legacy scenarios."""
+    """Deterministic PlanEvaluator evaluation of ai_plan (v2/v3 path). Null for legacy scenarios."""
+    ai_mission_outcome: MissionOutcomeResult | None = None
+    """Deterministic MissionOutcomeEvaluator result for ai_plan (v2/v3 path). Null for legacy scenarios."""
 
 
 def _effective_packets(scenario) -> list[Packet]:
@@ -143,46 +174,172 @@ def _effective_packets(scenario) -> list[Packet]:
     return data_products_to_packets(scenario.data_products)
 
 
-def _reorder_packets_by_ai(
-    packets: list[Packet],
-    prioritization: CandidatePrioritization,
-) -> list[Packet]:
-    """Reorder bridged packets using the AI priority ranking.
+def _is_local_provider(provider) -> bool:
+    """Return True when *provider* is the deterministic LocalRuleBasedProvider.
 
-    Products included in the AI ranking are placed first in ascending priority
-    order.  Products not mentioned by the AI (because they were outside the
-    candidate set, or the AI chose not to rank them) are appended at the end
-    in their original order.
+    The local provider does not exhibit self-preference and does not need
+    provenance blinding for Stage-2 recommendation.
+    """
+    return isinstance(provider, LocalRuleBasedProvider)
 
-    Args:
-        packets:         Full bridged packet list.
-        prioritization:  AI prioritization result.
+
+def _build_blind_recommend(
+    provider,
+    fallback_provider: LocalRuleBasedProvider,
+    all_plans: list[CandidatePlan],
+    all_evals: list[EvaluationResult],
+    all_outcomes: list[MissionOutcomeResult],
+    scenario_id: str,
+    *,
+    link_state,
+    mission_state,
+    anomalies: list[AnomalyEvent],
+) -> tuple[AIRecommendation, str | None]:
+    """Run Stage-2 recommendation with provenance blinding for external providers.
+
+    For external LLM providers (non-local), wraps plans in opaque option aliases
+    before passing to the provider.  The provider's choice is mapped back to
+    the real plan_id.
 
     Returns:
-        A new list of the same Packet objects in AI-driven order.
+        (recommendation, fallback_reason) — fallback_reason is None when the
+        primary provider succeeded.
     """
-    # Build a lookup: packet_id → Packet
-    pkt_map: dict[str, Packet] = {p.packet_id: p for p in packets}
+    # Build the alias map: OPTION-A … OPTION-E → real plan_id
+    alias_map = build_blind_mapping(all_plans, scenario_id=scenario_id)
+    # Build reversed map: real plan_id → alias
+    reverse_alias_map = {v: k for k, v in alias_map.items()}
 
-    # Sort ranked products by priority ascending (1 = most important)
-    ranked_sorted = sorted(
-        prioritization.ranked_products, key=lambda rp: rp.priority
+    # Build compact summaries keyed by alias (no provenance)
+    summaries = build_stage2_summaries(alias_map, all_plans, all_evals, all_outcomes)
+
+    # Remap plans and evaluations so their plan_id fields are the aliases.
+    # The external provider will see OPTION-A etc. in the plan_id fields.
+    aliased_plans: list[CandidatePlan] = []
+    aliased_evals: list[EvaluationResult] = []
+    for plan in all_plans:
+        alias = reverse_alias_map[plan.plan_id]
+        # Create an alias-keyed plan with no provenance in metadata
+        aliased_plan = CandidatePlan(
+            plan_id=alias,
+            strategy="option",          # generic — no provenance
+            packets=[],                 # no packet list — compact context only
+            generated_by="stage2_blind",
+            metadata={},
+        )
+        aliased_plans.append(aliased_plan)
+        # Create an alias-keyed evaluation
+        ev = next(e for e in all_evals if e.plan_id == plan.plan_id)
+        aliased_eval = EvaluationResult(
+            plan_id=alias,
+            mission_value=ev.mission_value,
+            critical_packets_delivered=ev.critical_packets_delivered,
+            total_critical_packets=ev.total_critical_packets,
+            deadline_misses=ev.deadline_misses,
+            avg_packet_delay_s=ev.avg_packet_delay_s,
+            bandwidth_utilization=ev.bandwidth_utilization,
+            retransmission_overhead=ev.retransmission_overhead,
+            risk_score=ev.risk_score,
+            risk_level=ev.risk_level,
+            deferred_packets=[],        # not needed by Stage-2 reasoning
+            deadline_miss_rate=ev.deadline_miss_rate,
+            critical_deficit=ev.critical_deficit,
+            window_pressure=ev.window_pressure,
+        )
+        aliased_evals.append(aliased_eval)
+
+    fallback_reason: str | None = None
+
+    # Call external provider with aliased plans/evals
+    try:
+        aliased_rec = provider.recommend(
+            link_state,
+            mission_state,
+            aliased_plans,
+            aliased_evals,
+            anomalies=anomalies,
+        )
+    except (AIProviderError, AIResponseError, AIHallucinationError) as exc:
+        logger.error(
+            "AI provider '%s' failed blind Stage-2 recommendation: %s. "
+            "Falling back to LocalRuleBasedProvider.",
+            provider.provider_name, exc,
+        )
+        # Fallback: local provider uses real plans/evals (it's provenance-agnostic)
+        try:
+            aliased_rec = fallback_provider.recommend(
+                link_state, mission_state, aliased_plans, aliased_evals, anomalies=anomalies
+            )
+            fallback_reason = (
+                f"AI provider '{provider.provider_name}' unavailable for plan "
+                "recommendation. Local rule-based recommendation is in use."
+            )
+        except Exception as fallback_exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"Both primary provider '{provider.provider_name}' and Local "
+                    f"fallback failed: {fallback_exc}"
+                ),
+            ) from fallback_exc
+
+    # Map the recommended alias back to the real plan_id
+    recommended_alias = aliased_rec.recommended_plan_id
+    try:
+        real_plan_id = map_alias_to_plan_id(recommended_alias, alias_map)
+    except InvalidStage2AliasError as exc:
+        logger.error(
+            "Stage-2 provider '%s' returned invalid alias '%s': %s. "
+            "Falling back to LocalRuleBasedProvider.",
+            provider.provider_name, recommended_alias, exc,
+        )
+        # Fall back — local provider with real plans
+        try:
+            local_rec = fallback_provider.recommend(
+                link_state, mission_state, all_plans, all_evals, anomalies=anomalies
+            )
+            if fallback_reason is None:
+                fallback_reason = (
+                    f"AI provider '{provider.provider_name}' returned invalid option alias "
+                    f"'{recommended_alias}'. Local deterministic recommendation is in use."
+                )
+            return local_rec, fallback_reason
+        except Exception as fallback_exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=502,
+                detail=f"Fallback failed after invalid alias: {fallback_exc}",
+            ) from fallback_exc
+
+    # Translate recommendation back to real plan identity
+    real_plan = next(p for p in all_plans if p.plan_id == real_plan_id)
+    real_eval = next(e for e in all_evals if e.plan_id == real_plan_id)
+
+    # Alternative plan: map alias to real plan_id if present
+    real_alt_plan_id: str | None = None
+    if aliased_rec.alternative_plan_id:
+        try:
+            real_alt_plan_id = map_alias_to_plan_id(aliased_rec.alternative_plan_id, alias_map)
+        except InvalidStage2AliasError:
+            real_alt_plan_id = None  # silently drop invalid alternative alias
+
+    # Rebuild packet_actions from the real plan
+    packet_actions = [
+        {"packet_id": pkt.packet_id, "action": "transmit", "rank": rank}
+        for rank, pkt in enumerate(real_plan.packets, start=1)
+    ]
+
+    from ..models.recommendation import AIRecommendation as _AIRec
+    recommendation = _AIRec(
+        recommended_plan_id=real_plan_id,
+        packet_actions=packet_actions,
+        reasoning=aliased_rec.reasoning,
+        confidence=aliased_rec.confidence,
+        risk_score=real_eval.risk_score,
+        risk_level=real_eval.risk_level,
+        evidence=aliased_rec.evidence,
+        alternative_plan_id=real_alt_plan_id,
     )
-
-    ordered: list[Packet] = []
-    seen: set[str] = set()
-
-    for rp in ranked_sorted:
-        if rp.product_id in pkt_map:
-            ordered.append(pkt_map[rp.product_id])
-            seen.add(rp.product_id)
-
-    # Append unranked packets in original order
-    for pkt in packets:
-        if pkt.packet_id not in seen:
-            ordered.append(pkt)
-
-    return ordered
+    return recommendation, fallback_reason
 
 
 @router.post("/agent/recommend", response_model=RecommendResponse)
@@ -204,10 +361,12 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
        :func:`~backend.app.candidate_generator.ai_plan_builder.build_ai_prioritized_plan`:
        AI-ranked products appear first (priority 1 first); unranked products
        are appended in BaselineScheduler order.
-    4. All **five** plans are evaluated identically by ``PlanEvaluator``.
-    5. AI Stage 2 — AI reviews all five evaluated plans and returns an
-       advisory recommendation.  It may recommend any plan including the
-       AI-prioritized one or any deterministic baseline.
+    4. All **five** plans are evaluated identically by ``PlanEvaluator``
+       (telecom/feasibility) and ``MissionOutcomeEvaluator`` (mission outcome).
+    5. AI Stage 2 — External providers receive provenance-blind option aliases
+       (OPTION-A…OPTION-E) rather than real plan identities.  The model's choice
+       is mapped back to the real plan_id by the trusted backend.
+       LocalRuleBasedProvider operates on real plan data (deterministic, no bias).
 
     **Causal path**:
     Stage-1 AI ranking directly determines the ``ai-prioritized`` plan order,
@@ -231,14 +390,12 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
     anomalies: list[AnomalyEvent] = scenario.anomalies
     provider = get_provider()
 
-    # Import fallback provider once — used at both AI stages if needed.
-    from ..agent.local_provider import LocalRuleBasedProvider
+    # Import fallback provider — used at both AI stages if needed.
     _fallback = LocalRuleBasedProvider()
 
     requested_provider_name: str = provider.provider_name
 
     # Track which provider actually produces each result.
-    # Starts as the requested provider; updated to 'local' on fallback.
     actual_recommendation_provider: str = requested_provider_name
 
     # ── Spacecraft geometry context ───────────────────────────────────────────
@@ -252,13 +409,13 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
     prioritization_fallback_reason: str | None = None
     ai_plan: CandidatePlan | None = None
     ai_evaluation: EvaluationResult | None = None
+    ai_mission_outcome: MissionOutcomeResult | None = None
 
     weights = SchedulerWeights()
     gen = CandidateGenerator()
 
     if use_v2_path:
         # ── AI Stage 1: candidate prioritization ─────────────────────────
-        # Step 1: deterministic candidate selection (token-safe)
         prioritizer = CandidatePrioritizer()
         candidates: list[CandidateSummary] = prioritizer.select(
             scenario.data_products,
@@ -271,9 +428,6 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
             candidate_count, len(scenario.data_products),
         )
 
-        # Step 2: AI semantic prioritization with graceful fallback.
-        # Any provider failure falls back to LocalRuleBasedProvider so the
-        # mission workflow continues; fallback reason is surfaced in the response.
         actual_stage1_provider: str = requested_provider_name
         try:
             prioritization = provider.prioritize_candidates(
@@ -326,21 +480,13 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
                 "Deterministic candidate ordering is in use."
             )
 
-        # Step 3: Build ALL five plans.
-        #
-        # CRITICAL ARCHITECTURE PRINCIPLE:
-        # The four deterministic baselines are generated from the ORIGINAL
+        # ── Step 3: Build ALL five plans ──────────────────────────────────
+        # CRITICAL: The four deterministic baselines use the ORIGINAL
         # authoritative packet set, completely independent of AI ranking.
-        # This is the scientific control group.  Changing the AI ranking
-        # must NOT change any deterministic baseline plan.
         all_packets = data_products_to_packets(scenario.data_products)
 
-        # Four deterministic baselines — from original packets, AI-agnostic.
         plans = gen.generate(all_packets, link_state, scenario.mission_state, weights)
 
-        # Fifth plan: AI-prioritized — built from Stage-1 semantic ranking.
-        # AI-ranked products appear in priority order; unranked products
-        # are appended in BaselineScheduler order.
         ai_plan = build_ai_prioritized_plan(
             all_packets,
             prioritization,
@@ -353,8 +499,6 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
 
     else:
         # ── Legacy path: four deterministic plans only ─────────────────────
-        # No AI plan for legacy scenarios — Stage-1 prioritization is
-        # unavailable when only legacy packets are present.
         plans = gen.generate(
             _effective_packets(scenario),
             link_state,
@@ -362,10 +506,8 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
             weights,
         )
 
-    # ── Deterministic evaluation (both paths) ────────────────────────────────
-    # All plans are evaluated with the SAME PlanEvaluator instance under
-    # the SAME link/mission/risk parameters.  No AI bonus.  No special
-    # treatment for the AI plan.
+    # ── Deterministic evaluation: PlanEvaluator (both paths) ─────────────────
+    # Same PlanEvaluator for ALL plans.  No AI bonus.  No provenance check.
     ev = PlanEvaluator()
     evaluations = [
         ev.evaluate(plan, link_state, scenario.mission_state)
@@ -373,64 +515,96 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
     ]
 
     if use_v2_path and ai_plan is not None:
-        # Evaluate the AI plan with the same evaluator — no special treatment.
         ai_evaluation = ev.evaluate(ai_plan, link_state, scenario.mission_state)
-
-        # Include the AI plan and its evaluation in Stage 2.
         all_plans_for_stage2 = plans + [ai_plan]
         all_evals_for_stage2 = evaluations + [ai_evaluation]
     else:
         all_plans_for_stage2 = plans
         all_evals_for_stage2 = evaluations
 
-    # ── AI Stage 2: plan recommendation with graceful fallback ───────────────
-    # Stage 2 receives ALL five evaluated plans (four deterministic + ai plan).
-    # It may recommend any plan — including the AI-prioritized plan or any
-    # deterministic baseline.  The recommendation is based solely on
-    # deterministic evaluation evidence.
+    # ── Deterministic evaluation: MissionOutcomeEvaluator (v2/v3 path) ───────
+    # Second evaluation layer — semantic mission outcomes.
+    # Only available on v2/v3 path (data_products provides the authoritative metadata).
+    mission_outcomes: list[MissionOutcomeResult] = []
+    if use_v2_path:
+        outcome_ev = MissionOutcomeEvaluator()
+        mission_outcomes = [
+            outcome_ev.evaluate(
+                plan,
+                eval_result,
+                scenario.data_products,
+                anomalies,
+            )
+            for plan, eval_result in zip(all_plans_for_stage2, all_evals_for_stage2)
+        ]
+        # Store the AI plan's outcome separately for the response
+        if ai_plan is not None and ai_evaluation is not None:
+            ai_mission_outcome = next(
+                (mo for mo in mission_outcomes if mo.plan_id == ai_plan.plan_id), None
+            )
+
+    # ── AI Stage 2: plan recommendation ──────────────────────────────────────
     recommendation_fallback_reason: str | None = None
-    try:
-        recommendation = provider.recommend(
-            link_state,
-            scenario.mission_state,
+
+    if use_v2_path and not _is_local_provider(provider):
+        # External LLM: use provenance-blind Stage-2 recommendation.
+        scenario_id = scenario.scenario_id
+        recommendation, recommendation_fallback_reason = _build_blind_recommend(
+            provider,
+            _fallback,
             all_plans_for_stage2,
             all_evals_for_stage2,
+            mission_outcomes,
+            scenario_id,
+            link_state=link_state,
+            mission_state=scenario.mission_state,
             anomalies=anomalies,
         )
-    except (AIProviderError, AIResponseError, AIHallucinationError) as exc:
-        logger.error(
-            "AI provider '%s' failed plan recommendation: %s. "
-            "Falling back to LocalRuleBasedProvider.",
-            provider.provider_name, exc,
-        )
+        if recommendation_fallback_reason:
+            actual_recommendation_provider = _fallback.provider_name
+    else:
+        # Local provider or legacy path: use direct recommendation (no blinding needed)
         try:
-            recommendation = _fallback.recommend(
+            recommendation = provider.recommend(
                 link_state,
                 scenario.mission_state,
                 all_plans_for_stage2,
                 all_evals_for_stage2,
                 anomalies=anomalies,
             )
-            actual_recommendation_provider = _fallback.provider_name
-            recommendation_fallback_reason = (
-                f"AI provider '{provider.provider_name}' unavailable for plan "
-                "recommendation. Local rule-based recommendation is in use."
+        except (AIProviderError, AIResponseError, AIHallucinationError) as exc:
+            logger.error(
+                "AI provider '%s' failed plan recommendation: %s. "
+                "Falling back to LocalRuleBasedProvider.",
+                provider.provider_name, exc,
             )
-        except Exception as fallback_exc:  # noqa: BLE001
-            # Local fallback should never fail on valid inputs.
-            raise HTTPException(
-                status_code=502,
-                detail=(
-                    f"Both primary provider '{provider.provider_name}' and Local "
-                    f"fallback failed: {fallback_exc}"
-                ),
-            ) from fallback_exc
+            try:
+                recommendation = _fallback.recommend(
+                    link_state,
+                    scenario.mission_state,
+                    all_plans_for_stage2,
+                    all_evals_for_stage2,
+                    anomalies=anomalies,
+                )
+                actual_recommendation_provider = _fallback.provider_name
+                recommendation_fallback_reason = (
+                    f"AI provider '{provider.provider_name}' unavailable for plan "
+                    "recommendation. Local rule-based recommendation is in use."
+                )
+            except Exception as fallback_exc:  # noqa: BLE001
+                raise HTTPException(
+                    status_code=502,
+                    detail=(
+                        f"Both primary provider '{provider.provider_name}' and Local "
+                        f"fallback failed: {fallback_exc}"
+                    ),
+                ) from fallback_exc
 
     # ── Determine the reported actual_provider ────────────────────────────────
     actual_provider_name = actual_recommendation_provider
 
     return RecommendResponse(
-        provider=actual_provider_name,           # backwards-compatible
+        provider=actual_provider_name,
         requested_provider=requested_provider_name,
         actual_provider=actual_provider_name,
         recommendation=recommendation,
@@ -438,9 +612,8 @@ def recommend(req: RecommendRequest | None = None) -> RecommendResponse:  # noqa
         candidate_count=candidate_count,
         prioritization_fallback_reason=prioritization_fallback_reason,
         recommendation_fallback_reason=recommendation_fallback_reason,
-        # Backwards-compatible alias
         prioritization_error=prioritization_fallback_reason,
-        # AI plan surface — v2/v3 path only
         ai_plan=ai_plan,
         ai_evaluation=ai_evaluation,
+        ai_mission_outcome=ai_mission_outcome,
     )
