@@ -180,20 +180,29 @@ class SemanticRulePrioritizer:
                 confidence=None,  # deterministic ranking does not report per-item confidence
             ))
 
-        n_anomaly = sum(1 for cs in candidates if cs.anomaly_id is not None)
+        # Count products actually linked to an APPLICABLE anomaly.
+        # A product with anomaly_id that is absent from severity_map (resolved or
+        # unknown) is NOT counted as active-anomaly-linked here.
+        n_anomaly = sum(
+            1 for cs in candidates
+            if cs.anomaly_id is not None and cs.anomaly_id in severity_map
+        )
         n_candidates = len(candidates)
 
         overall_reasoning = (
             f"Deterministic semantic-rule ranking of {n_candidates} candidate(s). "
-            f"{n_anomaly} product(s) are linked to active anomalies and were ranked first "
-            f"by anomaly severity.  Remaining products ranked by composite urgency score "
+            f"{n_anomaly} product(s) are linked to APPLICABLE (active/monitoring) anomalies "
+            f"and were ranked first by anomaly severity.  Products with non-null anomaly_id "
+            f"that are absent from the applicable anomaly set were NOT treated as "
+            f"active-anomaly-linked (their anomaly may be resolved or historical only).  "
+            f"Remaining products ranked by composite urgency score "
             f"(0.35×criticality + 0.30×mission_relevance + 0.20×scientific_value + "
             f"0.15×deadline_urgency).  Ties broken by product_id.  "
             f"NOTE: This is deterministic semantic-rule prioritization — NOT AI/LLM reasoning.  "
             f"Use this for scientific comparison with LLM-based prioritization."
         )
 
-        # Top-level decision factors
+        # Top-level decision factors — only when APPLICABLE anomalies exist.
         top_factors: list[str] = []
         if n_anomaly > 0:
             top_factors.append("active anomaly")

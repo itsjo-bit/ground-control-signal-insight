@@ -60,6 +60,9 @@ import hashlib
 import json
 from typing import Optional, Sequence
 
+# Sentinel used by parse_stage2_response to distinguish "attribute absent" from None.
+_SENTINEL = object()
+
 from pydantic import BaseModel, Field
 
 from ..domain.anomaly_policy import is_applicable_anomaly
@@ -590,6 +593,10 @@ def is_valid_source_field(source: str, field: str) -> bool:
       backwards compatibility with legacy recommendation paths that use
       source names such as ``"evaluation_result"``.
 
+    This function is used by the LEGACY recommend() path.  For the compact
+    external Stage-2 parser (:func:`parse_stage2_response`) use the stricter
+    :func:`is_valid_source_field_strict` which rejects unknown sources.
+
     Args:
         source: Evidence source string.
         field:  Field name to validate.
@@ -604,9 +611,40 @@ def is_valid_source_field(source: str, field: str) -> bool:
     return field in allowed
 
 
+def is_valid_source_field_strict(source: str, field: str) -> bool:
+    """Return ``True`` when *source* is a known Stage-2 source AND *field* is valid.
+
+    Unlike :func:`is_valid_source_field`, this function rejects unknown sources.
+    Only the three sources that appear in the Stage-2 external prompt are
+    permitted:
+
+    * ``candidate_option``
+    * ``link_state``
+    * ``mission_state``
+
+    Evidence from any other source name (e.g. ``"space_magic"``,
+    ``"unknown_source"``, ``"evaluation_result"``) is dropped.  This is the
+    correct policy for the compact external Stage-2 parser, where evidence must
+    cite only data the model actually received.
+
+    Args:
+        source: Evidence source string.
+        field:  Field name to validate.
+
+    Returns:
+        ``True`` when the source is known AND the field is valid for that source.
+    """
+    allowed = _SOURCE_FIELD_REGISTRY.get(source)
+    if allowed is None:
+        # Unknown source — not in the Stage-2 prompt whitelist; reject.
+        return False
+    return field in allowed
+
+
 def parse_stage2_response(
     raw: str,
     alias_map: dict[str, str],
+    summaries: "list[Stage2PlanSummary] | None" = None,
 ) -> tuple[str, str, float, list[dict], str | None]:
     """Parse and validate a raw Stage-2 LLM response.
 
@@ -615,19 +653,29 @@ def parse_stage2_response(
     * ``recommended_option_id`` is a valid current alias
     * ``confidence`` is in [0, 1]
     * ``alternative_option_id`` is null or a valid current alias
-    * Evidence source/field pairs are source-specifically valid
+    * Evidence source/field pairs are source-specifically valid (STRICT whitelist:
+      unknown source names are rejected — Gate 0.1)
+    * ``candidate_option`` evidence is valid only when the cited field has a
+      non-null value for that specific option (Gate 0.4)
 
     Evidence option_id handling
     ---------------------------
     * ``candidate_option`` evidence: ``option_id`` must be a valid alias from
       ``alias_map``.  Evidence with a missing or invalid ``option_id`` is
       **dropped** (incomplete evidence cannot be bound to the correct option).
+      Additionally, if ``summaries`` are supplied and the field value is ``None``
+      for that option, the evidence is dropped (Gate 0.4).
     * ``link_state`` / ``mission_state`` evidence: ``option_id`` is stripped
       (non-option-specific evidence must not carry option identity).
+    * Unknown source names are dropped (Gate 0.1 strict whitelist).
 
     Args:
         raw:       Raw text from the LLM.
         alias_map: The alias → real_plan_id mapping for this request.
+        summaries: Optional list of :class:`Stage2PlanSummary` objects, used to
+                   validate that candidate_option evidence cites only metrics that
+                   have authoritative non-null values for the referenced option
+                   (Gate 0.4).  When ``None``, this validation is skipped.
 
     Returns:
         Tuple of (recommended_option_id, reasoning, confidence, evidence_dicts,
@@ -638,6 +686,11 @@ def parse_stage2_response(
         InvalidStage2AliasError: If ``recommended_option_id`` is not a valid alias.
         ValueError:              If JSON parsing fails or required fields are missing.
     """
+    # Build alias → summary lookup for nullable-metric Gate 0.4 validation.
+    summary_by_alias: dict[str, Stage2PlanSummary] = {}
+    if summaries:
+        summary_by_alias = {s.option_id: s for s in summaries}
+
     text = raw.strip()
     if text.startswith("```"):
         text = text.split("```", 2)[1]
@@ -683,14 +736,15 @@ def parse_stage2_response(
 
     # Validate and filter evidence with source-specific field rules and
     # option_id semantics.
+    # Gate 0.1: Use the STRICT validator — unknown sources are rejected (dropped).
     evidence_out: list[dict] = []
     for item in data.get("evidence", []):
         source = item.get("source", "candidate_option")
         field_name = item.get("field", "")
 
-        # Source-specific field validation — must be a field the model actually saw
-        if not is_valid_source_field(source, field_name):
-            continue  # silently drop invalid source/field pairs
+        # Gate 0.1: strict source/field validation — unknown sources are dropped.
+        if not is_valid_source_field_strict(source, field_name):
+            continue  # unknown source or invalid field — drop
 
         raw_option_id = item.get("option_id")
 
@@ -703,6 +757,17 @@ def parse_stage2_response(
             option_id_str = str(raw_option_id)
             if option_id_str not in alias_map:
                 continue  # invalid alias — drop (policy: do not rebind to recommended)
+
+            # Gate 0.4: drop evidence when the metric is not available (None) for
+            # this specific option.  A None value was not serialized into the prompt
+            # and cannot be valid evidence.
+            if summary_by_alias:
+                ev_summary = summary_by_alias.get(option_id_str)
+                if ev_summary is not None:
+                    metric_val = getattr(ev_summary, field_name, _SENTINEL)
+                    if metric_val is _SENTINEL or metric_val is None:
+                        continue  # field absent or None for this option — drop
+
             item_option_id: str | None = option_id_str
         else:
             # link_state / mission_state evidence is not option-specific.

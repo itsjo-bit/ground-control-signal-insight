@@ -215,8 +215,14 @@ COMMUNICATION GEOMETRY (Phase 2E-C3-E):
 - Do NOT invent distance values, propagation delays, or RTT values not supplied in this object.
 
 PRIORITIZATION GUIDANCE:
-- Products linked to active anomalies (anomaly_id != null) are operationally urgent.
-  Higher anomaly severity means higher urgency.
+- `anomaly_id` represents authoritative spacecraft history/linkage for a product.
+  A product has an ACTIVE/APPLICABLE anomaly only when its `anomaly_id` ALSO appears
+  in the supplied `active_anomalies` list.
+  If `anomaly_id` is non-null but that ID is absent from `active_anomalies`, do NOT
+  grant active-anomaly urgency — the anomaly may be resolved or historical only.
+  Historical linkage (anomaly_id present, not in active_anomalies) is still visible
+  context but must NOT be treated as an active operational emergency.
+  Higher anomaly severity (from `active_anomalies`) means higher urgency.
 - Products with high criticality represent operational necessity.
 - Products with high mission_relevance directly serve the current mission objective.
 - Products with high scientific_value contribute to the science goals.
@@ -434,7 +440,7 @@ class GraniteAgent:
             summaries, link_state, mission_state, anomalies
         )
         raw = self._call_stage2_api(user_message)
-        return self._parse_stage2_response(raw, alias_map)
+        return self._parse_stage2_response(raw, alias_map, summaries=summaries)
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -758,11 +764,17 @@ class GraniteAgent:
         self,
         raw: str,
         alias_map: dict[str, str],
+        summaries: "list[Stage2PlanSummary] | None" = None,
     ) -> AIRecommendation:
         """Parse and validate a Stage-2 Granite response into an AIRecommendation.
 
         The returned ``recommended_plan_id`` is an OPTION alias.  The caller is
         responsible for mapping it to the real plan identity.
+
+        Args:
+            raw:       Raw text from the LLM.
+            alias_map: The alias → real_plan_id (or alias→alias) mapping.
+            summaries: Optional summaries for Gate 0.4 nullable-metric validation.
 
         Raises:
             GraniteResponseError: If the JSON is malformed, fields are missing,
@@ -771,7 +783,7 @@ class GraniteAgent:
         from .stage2_blinding import InvalidStage2AliasError as _InvalidAlias
         try:
             rec_alias, reasoning, confidence, evidence_dicts, alt_alias = parse_stage2_response(
-                raw, alias_map
+                raw, alias_map, summaries=summaries
             )
         except _InvalidAlias as exc:
             raise GraniteResponseError(str(exc)) from exc

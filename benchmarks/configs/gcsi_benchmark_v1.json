@@ -1,0 +1,78 @@
+{
+  "_comment": "GCSI Phase 2B Scientific Benchmark Configuration v1. FROZEN before results. Do not edit after running.",
+  "benchmark_version": "gcsi_benchmark_v1",
+  "base_scenario": "data/scenarios/mission_data_v3.json",
+  "capacity_ratios": [0.35, 0.60, 0.90, 1.20],
+  "anomaly_modes": ["ORIGINAL", "NOANOM", "DECOY"],
+  "deadline_modes": [1.0],
+  "repetitions": 5,
+  "repetitions_quick": 3,
+  "candidate_limit": 50,
+  "provider": "Granite",
+  "model": "ibm/granite-4-h-small",
+  "retry_policy": {
+    "max_attempts": 2,
+    "delay_between_attempts_s": 1.0,
+    "_note": "Only transport failures are retried. Valid model outputs are accepted as-is."
+  },
+  "primary_metrics": {
+    "maximize": [
+      "mission_value",
+      "critical_delivery_rate",
+      "scientific_value_capture_rate",
+      "required_delivery_rate",
+      "active_anomaly_delivery_rate",
+      "high_severity_anomaly_coverage_rate",
+      "anomaly_weighted_coverage"
+    ],
+    "minimize": [
+      "risk_score",
+      "deadline_miss_rate"
+    ]
+  },
+  "secondary_metrics_descriptive": [
+    "delivery_rate",
+    "average_delivered_age_s",
+    "bandwidth_utilization",
+    "window_pressure",
+    "retransmission_overhead",
+    "deferred_count"
+  ],
+  "ablation_configuration": {
+    "ablation_a": {
+      "name": "no_description",
+      "description": "Replace CandidateSummary.description with empty string. LLM still receives all numeric fields."
+    },
+    "ablation_b": {
+      "name": "no_anomaly_context",
+      "description": "Remove active_anomalies from Stage-1 LLM context. Candidate anomaly_id links are still visible."
+    },
+    "ablation_scenarios": [
+      "CAP035_ORIGINAL",
+      "CAP060_ORIGINAL",
+      "CAP035_NOANOM",
+      "CAP060_DECOY"
+    ]
+  },
+  "comparison_tolerance": 1e-9,
+  "pareto_analysis": true,
+  "win_tie_loss_analysis": true,
+  "capacity_stress_analysis": true,
+  "anomaly_mode_analysis": true,
+  "negative_control_scenario": "CAP120_NOANOM",
+  "headline_comparator": "Granite vs semantic-rule-based",
+  "fairness_controls": {
+    "same_candidate_set": true,
+    "same_ranked_prefix_builder": true,
+    "same_plan_evaluator": true,
+    "same_mission_outcome_evaluator": true,
+    "no_ai_scoring_bonus": true,
+    "no_local_fallback_as_granite": true
+  },
+  "integrity_gates_passed": {
+    "gate_0_1": "compact Stage-2 unknown evidence sources rejected",
+    "gate_0_2": "Stage-1 prompt distinguishes historical from applicable anomaly",
+    "gate_0_3": "SemanticRulePrioritizer counts only applicable anomaly products",
+    "gate_0_4": "None candidate metrics cannot become evidence"
+  }
+}

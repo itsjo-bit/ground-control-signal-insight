@@ -415,7 +415,7 @@ class GeminiProvider(BaseAIProvider):
 
         try:
             rec_alias, reasoning, confidence, evidence_dicts, alt_alias = parse_stage2_response(
-                raw, alias_map
+                raw, alias_map, summaries=summaries
             )
         except InvalidStage2AliasError as exc:
             raise AIResponseError(str(exc)) from exc
