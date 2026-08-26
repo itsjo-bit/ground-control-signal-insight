@@ -124,30 +124,27 @@ from ..models.evaluation_result import EvaluationResult
 DEFAULT_HIGH_SEVERITY_THRESHOLD: float = 0.75
 
 # ---------------------------------------------------------------------------
-# Applicable anomaly statuses
+# Applicable anomaly policy — re-exported from shared domain helper
 # ---------------------------------------------------------------------------
+# The canonical definitions live in backend.app.domain.anomaly_policy.
+# They are re-exported here so existing tests and imports that reference
+# is_applicable_anomaly / APPLICABLE_ANOMALY_STATUSES from this module
+# continue to work without modification.
 
-#: Anomaly statuses that count as "active" for coverage metrics.
-#: "resolved" anomalies are excluded — their data delivery is no longer urgent.
-APPLICABLE_ANOMALY_STATUSES: frozenset[str] = frozenset({"active", "monitoring"})
+from ..domain.anomaly_policy import (  # noqa: E402  (import after module-level constants)
+    APPLICABLE_ANOMALY_STATUSES,
+    is_applicable_anomaly,
+)
 
-
-def is_applicable_anomaly(anomaly: AnomalyEvent) -> bool:
-    """Return True when *anomaly* should be counted in coverage metrics.
-
-    An anomaly is applicable when its status is ``"active"`` or
-    ``"monitoring"``.  Resolved anomalies are excluded.
-
-    This is the single canonical status filter.  Use it everywhere
-    anomaly coverage is computed — do not duplicate the status logic.
-
-    Args:
-        anomaly: The anomaly event to test.
-
-    Returns:
-        True when the anomaly status is in :data:`APPLICABLE_ANOMALY_STATUSES`.
-    """
-    return anomaly.status in APPLICABLE_ANOMALY_STATUSES
+__all__ = [
+    "DEFAULT_HIGH_SEVERITY_THRESHOLD",
+    "APPLICABLE_ANOMALY_STATUSES",
+    "is_applicable_anomaly",
+    "MissionOutcomeEvaluationError",
+    "AnomalyCoverageDetail",
+    "MissionOutcomeResult",
+    "MissionOutcomeEvaluator",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -450,12 +447,43 @@ class MissionOutcomeEvaluator:
                 "Dictionary construction would silently overwrite products and corrupt denominators."
             )
 
+        # 2b. Reject duplicate authoritative anomaly IDs
+        seen_anomaly_ids: set[str] = set()
+        duplicate_anomaly_ids: list[str] = []
+        for ae in anomalies:
+            if ae.anomaly_id in seen_anomaly_ids:
+                duplicate_anomaly_ids.append(ae.anomaly_id)
+            seen_anomaly_ids.add(ae.anomaly_id)
+        if duplicate_anomaly_ids:
+            raise MissionOutcomeEvaluationError(
+                f"Authoritative anomalies contains duplicate anomaly_ids: "
+                f"{sorted(set(duplicate_anomaly_ids))}. "
+                "Duplicate anomaly IDs would silently overwrite severity/status values "
+                "and corrupt coverage metrics."
+            )
+
         # ── Build authoritative lookup ────────────────────────────────────────
         # product_id → DataProduct (authoritative metadata for all scenario products)
         product_map: dict[str, DataProduct] = {dp.product_id: dp for dp in data_products}
 
-        # 3. Reject plan packets that reference unknown authoritative products
-        plan_packet_ids: list[str] = [pkt.packet_id for pkt in plan.packets]
+        # 3. Reject duplicate packet IDs inside the CandidatePlan
+        plan_packet_ids_raw: list[str] = [pkt.packet_id for pkt in plan.packets]
+        seen_plan_pkt_ids: set[str] = set()
+        duplicate_plan_pkt_ids: list[str] = []
+        for pid in plan_packet_ids_raw:
+            if pid in seen_plan_pkt_ids:
+                duplicate_plan_pkt_ids.append(pid)
+            seen_plan_pkt_ids.add(pid)
+        if duplicate_plan_pkt_ids:
+            raise MissionOutcomeEvaluationError(
+                f"CandidatePlan '{plan.plan_id}' contains duplicate packet_ids: "
+                f"{sorted(set(duplicate_plan_pkt_ids))}. "
+                "Duplicate packet IDs would produce inconsistent physical and semantic "
+                "evaluation results."
+            )
+
+        # 4. Reject plan packets that reference unknown authoritative products
+        plan_packet_ids: list[str] = plan_packet_ids_raw
         unknown_plan_ids: list[str] = [
             pid for pid in plan_packet_ids if pid not in product_map
         ]
@@ -466,7 +494,7 @@ class MissionOutcomeEvaluator:
                 "A plan being evaluated must reference authoritative mission data only."
             )
 
-        # 4. Reject deferred IDs that are not in the plan
+        # 5. Reject deferred IDs that are not in the plan
         plan_packet_id_set: set[str] = set(plan_packet_ids)
         unknown_deferred: list[str] = [
             pid for pid in evaluation_result.deferred_packets

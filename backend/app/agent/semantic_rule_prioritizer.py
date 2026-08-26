@@ -48,6 +48,7 @@ from __future__ import annotations
 
 from typing import Sequence
 
+from ..domain.anomaly_policy import is_applicable_anomaly
 from ..models.anomaly_event import AnomalyEvent
 from ..models.candidate_prioritization import CandidatePrioritization, RankedProduct
 from ..models.candidate_summary import CandidateSummary
@@ -104,11 +105,15 @@ class SemanticRulePrioritizer:
                 candidate_count=0,
             )
 
-        # Build anomaly severity lookup
+        # Build anomaly severity lookup — APPLICABLE anomalies only.
+        # Resolved anomalies do NOT contribute to severity ranking.
+        # Products linked to resolved anomalies are ranked through the composite
+        # urgency score (criticality, mission_relevance, etc.) only.
         severity_map: dict[str, float] = {}
         if anomalies:
             for ae in anomalies:
-                severity_map[ae.anomaly_id] = ae.severity
+                if is_applicable_anomaly(ae):
+                    severity_map[ae.anomaly_id] = ae.severity
 
         def _sort_key(cs: CandidateSummary) -> tuple:
             anomaly_severity = severity_map.get(cs.anomaly_id or "", 0.0)

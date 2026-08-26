@@ -72,6 +72,7 @@ import logging
 from typing import Sequence
 
 from ..config import AICandidateConfig
+from ..domain.anomaly_policy import is_applicable_anomaly
 from ..models.anomaly_event import AnomalyEvent
 from ..models.candidate_summary import CandidateSummary
 from ..models.data_product import DataProduct
@@ -196,10 +197,15 @@ class CandidatePrioritizer:
             return []
 
         # Build anomaly severity lookup: anomaly_id → severity
+        # Only APPLICABLE anomalies (active + monitoring) participate.
+        # Resolved anomalies must NOT grant "anomaly-linked" protection to products.
+        # Unknown anomaly references (anomaly_id not in severity_map) also get no
+        # protection — applicability cannot be established authoritatively.
         severity_map: dict[str, float] = {}
         if anomalies:
             for ae in anomalies:
-                severity_map[ae.anomaly_id] = ae.severity
+                if is_applicable_anomaly(ae):
+                    severity_map[ae.anomaly_id] = ae.severity
 
         product_map: dict[str, DataProduct] = {dp.product_id: dp for dp in products}
 
@@ -217,9 +223,13 @@ class CandidatePrioritizer:
             return True
 
         # ── Stage 1: Anomaly-linked products ─────────────────────────────
+        # Only products linked to APPLICABLE anomalies (active + monitoring)
+        # receive this protected slot.  Products linked to resolved anomalies
+        # or unknown anomaly IDs are NOT included here — they may still be
+        # selected by subsequent stages (criticality, relevance, etc.).
         anomaly_linked = [
             dp for dp in products
-            if dp.anomaly_id is not None
+            if dp.anomaly_id is not None and dp.anomaly_id in severity_map
         ]
         # Sort by linked anomaly severity desc, then product_id for determinism
         anomaly_linked.sort(

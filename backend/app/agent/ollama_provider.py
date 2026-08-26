@@ -329,8 +329,11 @@ class OllamaProvider(BaseAIProvider):
             raise AIResponseError(str(exc)) from exc
 
         from ..models.evidence_item import EvidenceItem as _EI
+        # Preserve option_id from the parser (OPTION alias at this point).
+        # Routes_agent maps it to the real plan identity after binding.
         evidence_items = [
             _EI(
+                option_id=item.get("option_id"),     # preserved OPTION alias
                 source=item.get("source", "candidate_option"),
                 field=item["field"],
                 value=None,  # backend will rebind from authoritative data

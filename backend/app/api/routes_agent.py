@@ -79,6 +79,8 @@ from ..agent.local_provider import LocalRuleBasedProvider
 from ..agent.provider_factory import get_provider
 from ..agent.stage2_blinding import (
     InvalidStage2AliasError,
+    Stage2PlanSummary,
+    Stage2SummaryBuildError,
     build_blind_mapping,
     build_stage2_summaries,
     map_alias_to_plan_id,
@@ -86,11 +88,11 @@ from ..agent.stage2_blinding import (
 from ..config import SchedulerWeights
 from ..candidate_generator.generator import CandidateGenerator
 from ..candidate_generator.ai_plan_builder import build_ai_prioritized_plan
+from ..domain.anomaly_policy import is_applicable_anomaly
 from ..evaluator.plan_evaluator import PlanEvaluator
 from ..evaluator.mission_outcome_evaluator import (
     MissionOutcomeEvaluator,
     MissionOutcomeResult,
-    is_applicable_anomaly,
 )
 from ..models.anomaly_event import AnomalyEvent
 from ..models.bridge import data_products_to_packets
@@ -223,7 +225,10 @@ def _build_blind_recommend(
     # Build compact summaries keyed by alias (no provenance)
     summaries = build_stage2_summaries(alias_map, all_plans, all_evals, all_outcomes)
 
-    # Only pass applicable anomalies to the external LLM context
+    # Pre-filter to applicable anomalies before passing to the provider.
+    # build_stage2_user_message also applies this filter internally, but we
+    # filter here too so providers receive clean input regardless of
+    # whether they forward it directly or use it for other purposes.
     applicable_anomalies = [ae for ae in anomalies if is_applicable_anomaly(ae)]
 
     fallback_reason: str | None = None
@@ -327,30 +332,53 @@ def _build_blind_recommend(
         for rank, pkt in enumerate(real_plan.packets, start=1)
     ]
 
-    # Rebind evidence values from authoritative data
-    # For each evidence item citing a candidate_option field, bind the value
-    # from the authoritative summary for the recommended option.
-    rec_summary = next((s for s in summaries if s.option_id == recommended_alias), None)
+    # Build alias → summary lookup for fast per-option evidence binding.
+    summary_by_alias: dict[str, "Stage2PlanSummary"] = {s.option_id: s for s in summaries}  # type: ignore[name-defined]
+
+    # Rebind evidence values from authoritative data.
+    # Each evidence item carries its own option_id (which OPTION alias it cited).
+    # For candidate_option evidence we bind the value from THAT option's summary,
+    # NOT unconditionally from the recommended option.
+    # After binding, the OPTION alias is translated to the real plan_id.
     bound_evidence = []
     for item in aliased_rec.evidence:
         bound_val = item.value
-        if item.source in ("candidate_option",) and rec_summary is not None:
-            auth_val = getattr(rec_summary, item.field, None)
-            if auth_val is not None:
-                bound_val = auth_val
+
+        if item.source == "candidate_option":
+            # Bind from the specific option this evidence item refers to.
+            ev_alias = item.option_id  # OPTION-X alias preserved by parser
+            ev_summary = summary_by_alias.get(ev_alias) if ev_alias else None
+            if ev_summary is not None:
+                auth_val = getattr(ev_summary, item.field, None)
+                if auth_val is not None:
+                    bound_val = auth_val
+            # Translate the OPTION alias to the real plan_id for operator output.
+            real_ev_option_id: str | None = None
+            if ev_alias is not None:
+                try:
+                    real_ev_option_id = map_alias_to_plan_id(ev_alias, alias_map)
+                except InvalidStage2AliasError:
+                    real_ev_option_id = None  # alias was invalid; drop identity
         elif item.source == "evaluation_result":
             auth_val = getattr(real_eval, item.field, None)
             if auth_val is not None:
                 bound_val = auth_val
+            real_ev_option_id = None
         elif item.source == "link_state":
             auth_val = getattr(link_state, item.field, None)
             if auth_val is not None:
                 bound_val = auth_val
+            real_ev_option_id = None
         elif item.source == "mission_state":
             auth_val = getattr(mission_state, item.field, None)
             if auth_val is not None:
                 bound_val = auth_val
+            real_ev_option_id = None
+        else:
+            real_ev_option_id = None
+
         bound_evidence.append(EvidenceItem(
+            option_id=real_ev_option_id,  # real plan identity (not OPTION alias)
             source=item.source,
             field=item.field,
             value=bound_val,

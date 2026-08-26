@@ -778,9 +778,13 @@ class GraniteAgent:
         except ValueError as exc:
             raise GraniteResponseError(str(exc)) from exc
 
-        # Build EvidenceItems — no value binding here (values will be rebound by routes_agent)
+        # Build EvidenceItems — preserve option_id from the parser.
+        # Values are NOT set here; the backend (routes_agent) rebinds them from
+        # authoritative data.  The option_id is the OPTION alias at this point;
+        # routes_agent maps it to the real plan identity.
         evidence_items: list[EvidenceItem] = [
             EvidenceItem(
+                option_id=item.get("option_id"),     # preserved OPTION alias
                 source=item.get("source", "candidate_option"),
                 field=item["field"],
                 value=None,  # backend will rebind from authoritative data

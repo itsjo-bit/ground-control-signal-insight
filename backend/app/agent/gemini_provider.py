@@ -422,8 +422,11 @@ class GeminiProvider(BaseAIProvider):
         except ValueError as exc:
             raise AIResponseError(str(exc)) from exc
 
+        # Preserve option_id from the parser (OPTION alias at this point).
+        # Routes_agent maps it to the real plan identity after binding.
         evidence_items = [
             EvidenceItem(
+                option_id=item.get("option_id"),     # preserved OPTION alias
                 source=item.get("source", "candidate_option"),
                 field=item["field"],
                 value=None,  # backend will rebind from authoritative data

@@ -62,6 +62,7 @@ from typing import Optional, Sequence
 
 from pydantic import BaseModel, Field
 
+from ..domain.anomaly_policy import is_applicable_anomaly
 from ..models.anomaly_event import AnomalyEvent
 from ..models.candidate_plan import CandidatePlan
 from ..models.evaluation_result import EvaluationResult
@@ -162,6 +163,24 @@ supply authoritative values. Do NOT echo metric values; provide only interpretat
 
 class InvalidStage2AliasError(Exception):
     """Raised when an external provider returns an alias not in the mapping."""
+
+
+class Stage2SummaryBuildError(Exception):
+    """Raised when build_stage2_summaries detects an incomplete comparison set.
+
+    This is a hard failure — a scientific comparison cannot proceed when any
+    candidate plan is missing its evaluation or mission-outcome data.
+
+    Conditions that trigger this error:
+
+    * An alias in ``alias_map`` maps to a plan_id that is not in ``plans``.
+    * A plan in ``alias_map`` has no corresponding :class:`EvaluationResult`.
+    * The high-volume five-plan path requires :class:`MissionOutcomeResult` for
+      all plans but one or more are missing.
+    * Duplicate ``plan_id`` values in ``plans``.
+    * Duplicate ``plan_id`` values in ``evaluations``.
+    * Duplicate ``plan_id`` values in ``mission_outcomes``.
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -283,22 +302,76 @@ def build_stage2_summaries(
 ) -> list[Stage2PlanSummary]:
     """Build compact plan summaries for external Stage-2 providers.
 
+    Fail-fast policy
+    ----------------
+    A scientific comparison cannot proceed when any candidate is missing its
+    evaluation or mission-outcome data.  This function raises
+    :class:`Stage2SummaryBuildError` instead of silently omitting candidates.
+
+    For the high-volume five-plan external path, ``mission_outcomes`` must
+    contain a result for every plan referenced in ``alias_map``.
+
     Args:
         alias_map:        Alias → real plan_id mapping from :func:`build_blind_mapping`.
         plans:            All candidate plans (used to get packet count).
         evaluations:      Deterministic PlanEvaluator results.
         mission_outcomes: Optional MissionOutcomeEvaluator results.  When provided,
                           semantic metrics are included in the summaries.
+                          When provided, EVERY plan in ``alias_map`` must have
+                          a corresponding result.
 
     Returns:
         List of :class:`Stage2PlanSummary` objects keyed by their alias.
+
+    Raises:
+        Stage2SummaryBuildError: When any required input is missing or when
+            duplicate plan/evaluation/outcome IDs are detected.
     """
+    from ..evaluator.mission_outcome_evaluator import MissionOutcomeResult
+
+    # ── Duplicate-ID guards ───────────────────────────────────────────────────
+    seen_plan_ids: set[str] = set()
+    dup_plan_ids: list[str] = []
+    for p in plans:
+        if p.plan_id in seen_plan_ids:
+            dup_plan_ids.append(p.plan_id)
+        seen_plan_ids.add(p.plan_id)
+    if dup_plan_ids:
+        raise Stage2SummaryBuildError(
+            f"Duplicate plan_ids in plans: {sorted(set(dup_plan_ids))}. "
+            "Scientific comparison requires a one-to-one plan identity."
+        )
+
+    seen_eval_ids: set[str] = set()
+    dup_eval_ids: list[str] = []
+    for e in evaluations:
+        if e.plan_id in seen_eval_ids:
+            dup_eval_ids.append(e.plan_id)
+        seen_eval_ids.add(e.plan_id)
+    if dup_eval_ids:
+        raise Stage2SummaryBuildError(
+            f"Duplicate plan_ids in evaluations: {sorted(set(dup_eval_ids))}. "
+            "Scientific comparison requires a one-to-one evaluation identity."
+        )
+
+    if mission_outcomes:
+        seen_mo_ids: set[str] = set()
+        dup_mo_ids: list[str] = []
+        for mo in mission_outcomes:
+            if mo.plan_id in seen_mo_ids:
+                dup_mo_ids.append(mo.plan_id)
+            seen_mo_ids.add(mo.plan_id)
+        if dup_mo_ids:
+            raise Stage2SummaryBuildError(
+                f"Duplicate plan_ids in mission_outcomes: {sorted(set(dup_mo_ids))}. "
+                "Scientific comparison requires a one-to-one outcome identity."
+            )
+
     # Build lookups keyed by real plan_id
     plan_map: dict[str, CandidatePlan] = {p.plan_id: p for p in plans}
     eval_map: dict[str, EvaluationResult] = {e.plan_id: e for e in evaluations}
 
     # Build mission outcome lookup if provided
-    from ..evaluator.mission_outcome_evaluator import MissionOutcomeResult
     outcome_map: dict[str, MissionOutcomeResult] = {}
     if mission_outcomes:
         outcome_map = {mo.plan_id: mo for mo in mission_outcomes}
@@ -306,11 +379,27 @@ def build_stage2_summaries(
     summaries: list[Stage2PlanSummary] = []
     for alias, real_plan_id in alias_map.items():
         plan = plan_map.get(real_plan_id)
+        if plan is None:
+            raise Stage2SummaryBuildError(
+                f"Alias '{alias}' maps to plan_id '{real_plan_id}' but no matching "
+                f"CandidatePlan was found. Available plan_ids: {sorted(plan_map.keys())}. "
+                "A scientific comparison cannot proceed with a missing candidate."
+            )
         ev = eval_map.get(real_plan_id)
-        if plan is None or ev is None:
-            continue  # should not happen in normal operation
+        if ev is None:
+            raise Stage2SummaryBuildError(
+                f"Alias '{alias}' maps to plan_id '{real_plan_id}' but no matching "
+                f"EvaluationResult was found. Available eval plan_ids: {sorted(eval_map.keys())}. "
+                "A scientific comparison cannot proceed with a missing evaluation."
+            )
 
         mo = outcome_map.get(real_plan_id)
+        if mission_outcomes is not None and mo is None:
+            raise Stage2SummaryBuildError(
+                f"Alias '{alias}' maps to plan_id '{real_plan_id}' but no matching "
+                f"MissionOutcomeResult was found. Available outcome plan_ids: {sorted(outcome_map.keys())}. "
+                "When mission_outcomes is provided, all alias-mapped plans require a result."
+            )
 
         summaries.append(Stage2PlanSummary(
             option_id=alias,
@@ -371,11 +460,17 @@ def build_stage2_user_message(
     """Build the complete user message sent to an external Stage-2 provider.
 
     Produces a single JSON string containing:
-    - ``mission_context``: compact mission snapshot (no raw scores except what
-      the LLM may use for context)
+    - ``mission_context``: compact mission snapshot
     - ``link_context``: key link parameters
     - ``active_anomalies``: applicable anomalies (id, severity, subsystem)
     - ``candidate_options``: the compact provenance-blind metrics per option
+
+    Anomaly filtering
+    -----------------
+    This function applies the shared anomaly applicability policy internally.
+    Only applicable anomalies (``active`` + ``monitoring``) are serialized
+    under ``active_anomalies``, regardless of what the caller passes.
+    This prevents callers from accidentally including resolved anomalies.
 
     This is the SOLE source of the external LLM user message for Stage-2.
     Both ``build_stage2_summaries()`` and ``build_blind_context_json()``
@@ -385,12 +480,15 @@ def build_stage2_user_message(
         summaries:     Compact summaries from :func:`build_stage2_summaries`.
         link_state:    Current link snapshot.
         mission_state: Current mission snapshot.
-        anomalies:     Anomaly events to include (any status; callers should
-                       supply applicable anomalies only).
+        anomalies:     Anomaly events to filter and include.  Only applicable
+                       anomalies (active + monitoring) are serialized.
 
     Returns:
         JSON string for use as the LLM user message.  Contains no provenance.
     """
+    # Apply shared anomaly policy: only applicable anomalies in the LLM context.
+    applicable = [ae for ae in (anomalies or []) if is_applicable_anomaly(ae)]
+
     ctx: dict = {
         "mission_context": {
             "mission_phase": mission_state.mission_phase,
@@ -410,7 +508,7 @@ def build_stage2_user_message(
                 "subsystem": ae.subsystem,
                 "status": ae.status,
             }
-            for ae in (anomalies or [])
+            for ae in applicable
         ],
         "candidate_options": json.loads(build_blind_context_json(summaries)),
     }
@@ -418,38 +516,92 @@ def build_stage2_user_message(
 
 
 # ---------------------------------------------------------------------------
-# Stage-2 evidence field registry
+# Stage-2 evidence field registry — source-specific
 # ---------------------------------------------------------------------------
+# Evidence must only cite fields that were ACTUALLY PRESENT in the external
+# Stage-2 prompt.  We derive these from the exact context structures serialized
+# by build_stage2_user_message():
+#
+#   candidate_option  → Stage2PlanSummary fields (except option_id itself)
+#   link_state        → fields actually in the link_context dict
+#   mission_state     → fields actually in the mission_context dict
+#
+# This prevents the model from citing hidden backend fields that were not
+# visible in the prompt.
 
-# Fields that Stage-2 evidence may cite from Stage2PlanSummary (candidate_option)
+# candidate_option: every Stage2PlanSummary metric field (excludes option_id)
 _STAGE2_CANDIDATE_FIELDS: frozenset[str] = frozenset(
     f for f in Stage2PlanSummary.model_fields if f != "option_id"
 )
 
-# Fields from LinkState that Stage-2 evidence may cite
-# (imported lazily to avoid circular imports)
-def _get_stage2_link_fields() -> frozenset[str]:
-    from ..models.link_state import LinkState as _LS
-    return frozenset(_LS.model_fields.keys())
+# link_state: only fields actually in the link_context dict sent to the LLM
+# See build_stage2_user_message(): remaining_window_s, ber, link_goodput_bps
+_STAGE2_LINK_FIELDS: frozenset[str] = frozenset({
+    "remaining_window_s",
+    "ber",
+    "link_goodput_bps",
+})
 
+# mission_state: only fields actually in the mission_context dict sent to the LLM
+# See build_stage2_user_message(): mission_phase, current_event,
+# comm_window_remaining_s, risk_level
+_STAGE2_MISSION_FIELDS: frozenset[str] = frozenset({
+    "mission_phase",
+    "current_event",
+    "comm_window_remaining_s",
+    "risk_level",
+})
 
-def _get_stage2_mission_fields() -> frozenset[str]:
-    from ..models.mission_state import MissionState as _MS
-    return frozenset(_MS.model_fields.keys())
+# Source-to-allowed-fields registry (authoritative)
+_SOURCE_FIELD_REGISTRY: dict[str, frozenset[str]] = {
+    "candidate_option": _STAGE2_CANDIDATE_FIELDS,
+    "link_state": _STAGE2_LINK_FIELDS,
+    "mission_state": _STAGE2_MISSION_FIELDS,
+}
 
 
 def get_stage2_citeable_fields() -> frozenset[str]:
-    """Return the complete set of field names that Stage-2 evidence may cite.
+    """Return the complete set of field names citeable across all Stage-2 sources.
 
-    Includes:
-    * All :class:`Stage2PlanSummary` metric fields (except ``option_id``)
-    * All :class:`~backend.app.models.link_state.LinkState` fields
-    * All :class:`~backend.app.models.mission_state.MissionState` fields
+    This is the UNION for backwards-compatible callers that do not care about
+    source-field pairing.  Use :func:`is_valid_source_field` for strict
+    per-source validation.
 
     Returns:
-        Frozenset of valid citeable field names for Stage-2 evidence validation.
+        Frozenset of valid citeable field names across all sources.
     """
-    return _STAGE2_CANDIDATE_FIELDS | _get_stage2_link_fields() | _get_stage2_mission_fields()
+    return _STAGE2_CANDIDATE_FIELDS | _STAGE2_LINK_FIELDS | _STAGE2_MISSION_FIELDS
+
+
+def is_valid_source_field(source: str, field: str) -> bool:
+    """Return ``True`` when *field* is valid for the given *source*.
+
+    Enforces source-specific field constraints:
+
+    * ``candidate_option`` may only cite :class:`Stage2PlanSummary` metric
+      fields (as exposed in the prompt).
+    * ``link_state`` may only cite fields present in the ``link_context``
+      dict sent to the LLM (``remaining_window_s``, ``ber``,
+      ``link_goodput_bps``).
+    * ``mission_state`` may only cite fields present in the ``mission_context``
+      dict sent to the LLM (``mission_phase``, ``current_event``,
+      ``comm_window_remaining_s``, ``risk_level``).
+    * Unknown/legacy sources are accepted (no restriction) to preserve
+      backwards compatibility with legacy recommendation paths that use
+      source names such as ``"evaluation_result"``.
+
+    Args:
+        source: Evidence source string.
+        field:  Field name to validate.
+
+    Returns:
+        ``True`` when the source/field pair is permitted.
+    """
+    allowed = _SOURCE_FIELD_REGISTRY.get(source)
+    if allowed is None:
+        # Unknown source (e.g. legacy "evaluation_result") — no restriction.
+        return True
+    return field in allowed
 
 
 def parse_stage2_response(
@@ -463,7 +615,15 @@ def parse_stage2_response(
     * ``recommended_option_id`` is a valid current alias
     * ``confidence`` is in [0, 1]
     * ``alternative_option_id`` is null or a valid current alias
-    * Evidence field names are in the Stage-2 citeable set
+    * Evidence source/field pairs are source-specifically valid
+
+    Evidence option_id handling
+    ---------------------------
+    * ``candidate_option`` evidence: ``option_id`` must be a valid alias from
+      ``alias_map``.  Evidence with a missing or invalid ``option_id`` is
+      **dropped** (incomplete evidence cannot be bound to the correct option).
+    * ``link_state`` / ``mission_state`` evidence: ``option_id`` is stripped
+      (non-option-specific evidence must not carry option identity).
 
     Args:
         raw:       Raw text from the LLM.
@@ -521,16 +681,37 @@ def parse_stage2_response(
             alt_alias = alt_str
         # Invalid alternative is silently dropped (per policy: drop alternative only)
 
-    # Validate and filter evidence
-    citeable = get_stage2_citeable_fields()
+    # Validate and filter evidence with source-specific field rules and
+    # option_id semantics.
     evidence_out: list[dict] = []
     for item in data.get("evidence", []):
+        source = item.get("source", "candidate_option")
         field_name = item.get("field", "")
-        if field_name not in citeable:
-            continue  # silently drop unknown fields
+
+        # Source-specific field validation — must be a field the model actually saw
+        if not is_valid_source_field(source, field_name):
+            continue  # silently drop invalid source/field pairs
+
+        raw_option_id = item.get("option_id")
+
+        if source == "candidate_option":
+            # candidate_option evidence MUST carry a valid alias.
+            # Evidence with missing or invalid option_id cannot be bound to the
+            # correct authoritative option → drop it.
+            if raw_option_id is None:
+                continue  # missing option_id for candidate evidence — drop
+            option_id_str = str(raw_option_id)
+            if option_id_str not in alias_map:
+                continue  # invalid alias — drop (policy: do not rebind to recommended)
+            item_option_id: str | None = option_id_str
+        else:
+            # link_state / mission_state evidence is not option-specific.
+            # Strip any option alias the model may have incorrectly supplied.
+            item_option_id = None
+
         evidence_out.append({
-            "option_id": item.get("option_id"),
-            "source": item.get("source", "candidate_option"),
+            "option_id": item_option_id,
+            "source": source,
             "field": field_name,
             "interpretation": item.get("interpretation", ""),
         })

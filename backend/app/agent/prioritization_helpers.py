@@ -41,6 +41,7 @@ from __future__ import annotations
 import json
 from typing import Any, Sequence
 
+from ..domain.anomaly_policy import is_applicable_anomaly
 from ..models.anomaly_event import AnomalyEvent
 from ..models.candidate_prioritization import CandidatePrioritization, RankedProduct
 from ..models.candidate_summary import CandidateSummary
@@ -119,7 +120,11 @@ def build_prioritization_message(
         "communication_geometry": geometry,
         "candidates": [cs.model_dump(mode="json") for cs in candidates],
     }
-    if anomalies:
+    # Apply shared anomaly policy: only applicable anomalies in the AI context.
+    # The list is named "active_anomalies" in the prompt and must only contain
+    # genuinely applicable (active + monitoring) anomalies — never resolved ones.
+    applicable_anomalies = [ae for ae in (anomalies or []) if is_applicable_anomaly(ae)]
+    if applicable_anomalies:
         ctx["active_anomalies"] = [
             {
                 "anomaly_id": ae.anomaly_id,
@@ -128,7 +133,7 @@ def build_prioritization_message(
                 "status": ae.status,
                 "description": ae.description,
             }
-            for ae in anomalies
+            for ae in applicable_anomalies
         ]
     return json.dumps(ctx, indent=2)
 
