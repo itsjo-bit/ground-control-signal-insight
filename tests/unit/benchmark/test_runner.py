@@ -79,6 +79,8 @@ class TestStrictProviderMode:
         assert trial.status in (
             BenchmarkStatus.PROVIDER_ERROR, BenchmarkStatus.INVALID_RESPONSE,
             BenchmarkStatus.PARSE_ERROR, BenchmarkStatus.TIMEOUT,
+            BenchmarkStatus.SCHEMA_ERROR, BenchmarkStatus.PLAN_BUILD_ERROR,
+            BenchmarkStatus.EVALUATION_ERROR, BenchmarkStatus.PIPELINE_ERROR,
         )
         # No Local plan should be in plan results via this trial
         assert trial.ranked_count == 0
@@ -109,7 +111,7 @@ class TestStrictProviderMode:
 
 class TestRetryPolicy:
     def test_retry_policy_in_granite_provider(self):
-        """GraniteBenchmarkProvider retry loop: attempt 1 fails, attempt 2 succeeds."""
+        """GraniteBenchmarkProvider retry loop: attempt 1 fails (transport), attempt 2 succeeds."""
         from backend.app.agent.granite_agent import GraniteAPIError
         from backend.app.benchmark.runner import GraniteBenchmarkProvider
         from backend.app.models.candidate_prioritization import CandidatePrioritization
@@ -117,25 +119,36 @@ class TestRetryPolicy:
         from backend.app.models.mission_state import MissionState
         from backend.app.models.risk_level import RiskLevel
         from datetime import datetime, timezone
+        import json
 
         call_count = [0]
 
         class FlakyAgent:
-            """Fake Granite agent that fails on the first call."""
-            def prioritize_candidates(self, candidates, link_state, ms, anomalies, *, distance_km=None):
+            """Fake Granite agent that fails on the first low-level API call."""
+            _model_id = "test-model"
+
+            def _call_prioritization_api(self, user_message: str) -> str:
                 call_count[0] += 1
                 if call_count[0] < 2:
-                    raise GraniteAPIError("Transient failure")
+                    raise GraniteAPIError("HTTP 503 transient failure")
+                return json.dumps({
+                    "ranked_products": [],
+                    "overall_reasoning": "ok",
+                    "confidence": 0.6,
+                    "decision_factors": [],
+                })
+
+            def _parse_prioritization_response(self, raw: str, valid_ids, candidates):
                 return CandidatePrioritization(
                     ranked_products=[],
                     overall_reasoning="ok",
                     confidence=0.6,
                     decision_factors=[],
-                    candidate_count=len(candidates),
+                    candidate_count=0,
                 )
 
         # Inject the flaky agent directly into the provider
-        provider = GraniteBenchmarkProvider(max_attempts=2, agent=FlakyAgent())
+        provider = GraniteBenchmarkProvider(max_attempts=2, delay_s=0.0, agent=FlakyAgent())
 
         ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
         ls = LinkState(timestamp=ts, snr_db=10.0, eb_n0_db=10.0, ber=1e-5,
@@ -149,7 +162,8 @@ class TestRetryPolicy:
 
         result = provider.prioritize([], ls, ms, [])
         assert call_count[0] == 2
-        assert result is not None
+        assert result.attempt_count == 2
+        assert result.prioritization is not None
 
     def test_no_retry_for_valid_bad_plan(self):
         """A valid ranking with poor metrics must NOT be retried."""
@@ -217,7 +231,9 @@ class TestResultSchema:
             actual_capacity_ratio=0.35,
         )
         trial = BenchmarkTrial(
+            trial_id="test-run-001_CAP035_ORIGINAL_rep01",
             run_id="test-run-001",
+            benchmark_run_id="test-run-001",
             benchmark_version="gcsi_benchmark_v1",
             scenario_id="CAP035_ORIGINAL",
             scenario_variant=spec,
@@ -251,7 +267,8 @@ class TestResultSchema:
             scientific_value_capture_rate=0.75, required_delivery_rate=0.9,
         )
         pr = BenchmarkPlanResult(
-            run_id="test-run-001",
+            trial_id="test-run-001_CAP035_ORIGINAL_rep01",
+            run_id="test-run-001_CAP035_ORIGINAL_rep01",
             scenario_id="CAP035_ORIGINAL",
             repetition=1,
             plan_type=PlanType.AI_PRIORITIZED,

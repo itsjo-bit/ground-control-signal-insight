@@ -250,17 +250,16 @@ class ScenarioVariantGenerator:
         return variants
 
     def generate_core(self) -> list[BenchmarkScenarioVariant]:
-        """Generate the 12-scenario core benchmark matrix (deadline_scale=1.0 only)."""
-        gen = ScenarioVariantGenerator(
-            base_scenario_path="",  # unused — will override below
-            capacity_ratios=self._capacity_ratios,
-            anomaly_modes=self._anomaly_modes,
-            deadline_scales=(1.0,),
-        )
-        gen._base_scenario = self._base_scenario
-        gen._base_sha256 = self._base_sha256
-        gen._base_link_state = self._base_link_state
-        return gen.generate_all()
+        """Generate the 12-scenario core benchmark matrix (deadline_scale=1.0 only).
+
+        Returns only variants whose deadline_scale == 1.0, without constructing
+        an invalid empty-path generator.
+        """
+        return [
+            variant
+            for variant in self.generate_all()
+            if variant.spec.deadline_scale == 1.0
+        ]
 
     def _build_variant(
         self,

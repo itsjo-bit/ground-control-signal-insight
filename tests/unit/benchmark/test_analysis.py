@@ -87,6 +87,7 @@ def _make_result(
     mo: MissionOutcomeMetrics | None = None,
 ) -> BenchmarkPlanResult:
     return BenchmarkPlanResult(
+        trial_id=run_id,
         run_id=run_id,
         scenario_id=scenario_id,
         repetition=repetition,

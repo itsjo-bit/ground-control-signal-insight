@@ -53,7 +53,9 @@ def _spec():
 
 def _make_trial(status=BenchmarkStatus.SUCCESS) -> BenchmarkTrial:
     return BenchmarkTrial(
+        trial_id="test-run-001_CAP035_ORIGINAL_rep01",
         run_id="test-run-001",
+        benchmark_run_id="test-run-001",
         benchmark_version="gcsi_benchmark_v1",
         scenario_id="CAP035_ORIGINAL",
         scenario_variant=_spec(),
@@ -73,7 +75,8 @@ def _make_pr(plan_type: PlanType, **phys_kwargs) -> BenchmarkPlanResult:
     risk = phys_kwargs.get("risk_score", 0.3)
     mv = phys_kwargs.get("mission_value", 5.0)
     return BenchmarkPlanResult(
-        run_id="test-run-001",
+        trial_id="test-run-001_CAP035_ORIGINAL_rep01",
+        run_id="test-run-001_CAP035_ORIGINAL_rep01",
         scenario_id="CAP035_ORIGINAL",
         repetition=1,
         plan_type=plan_type,
@@ -181,6 +184,7 @@ class TestManifest:
         manifest = BenchmarkManifest(
             benchmark_version="gcsi_benchmark_v1",
             run_id="test-run-001",
+            benchmark_run_id="test-run-001",
             timestamp_utc="2024-06-15T09:41:00+00:00",
             git_commit_sha="abc123",
             base_scenario_sha256="sha256hex",
@@ -208,6 +212,7 @@ class TestManifest:
         manifest = BenchmarkManifest(
             benchmark_version="gcsi_benchmark_v1",
             run_id="test-run-001",
+            benchmark_run_id="test-run-001",
             timestamp_utc="2024-06-15T09:41:00+00:00",
             git_commit_sha="abc123",
             base_scenario_sha256="sha256hex",
