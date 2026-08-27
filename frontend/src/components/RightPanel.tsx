@@ -173,6 +173,12 @@ interface CommonProps {
   pendingExecutionPlan: CandidatePlan | null;
   /** Stable execution identifier — the single-shot approval guard. */
   executionId: string | null;
+  /**
+   * Phase 5.1G (WORKSTREAM A): Wall-clock ms when operator authorized the execution.
+   * Passed through to TransmissionSequencePanel to anchor absolute-time early phase derivation.
+   * Must be non-null when choreographyActive is true.
+   */
+  authorizedAtMs: number | null;
   /** Wall-clock ms when playback started (null if not yet started). */
   playbackStartedAtMs: number | null;
   /** Called to set playbackStartedAtMs in the coordinator (once per execution). */
@@ -1812,7 +1818,7 @@ function TransmissionSection(props: CommonProps) {
   // Show choreography sequence panel when active (survives navigation — executionId persists)
   // Phase 5.1F (WORKSTREAM A): Pass the application-level presentationPhase as initialPhase.
   // This ensures remounts resume at the correct phase instead of restarting at plan_uplink.
-  if (props.choreographyActive && props.executionId) {
+  if (props.choreographyActive && props.executionId && props.authorizedAtMs !== null) {
     return (
       <TransmissionSequencePanel
         initialPhase={props.presentationPhase}
@@ -1821,6 +1827,7 @@ function TransmissionSection(props: CommonProps) {
         propagationDelayS={props.propagationDelayS}
         availableCapacityBits={props.availableCapacityBits}
         executionId={props.executionId}
+        authorizedAtMs={props.authorizedAtMs}
         playbackStartedAtMs={props.playbackStartedAtMs}
         onSetPlaybackStarted={props.onSetPlaybackStarted}
         onExecuteApproval={props.onExecuteApproval}

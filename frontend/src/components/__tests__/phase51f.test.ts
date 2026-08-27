@@ -72,7 +72,9 @@ function makeSimResult(overrides: Partial<SimulationResult> = {}): SimulationRes
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('F21-F23 — buildVisualAttemptSegments: non-overlapping, one-per-event', () => {
-  const MIN_DURATION = 200;
+  // Phase 5.1G: argument is targetTotalMs (total visual budget), not per-segment minimum.
+  // The 50ms MIN_SEGMENT_MS floor is an internal constant.
+  const TARGET_TOTAL = 600; // 3 segments × 200ms — predictable for testing
 
   it('F22: segments[i+1].visualStartMs >= segments[i].visualEndMs (no overlap)', () => {
     // Fixture G from spec: simulator events that WOULD overlap with old algorithm
@@ -81,7 +83,7 @@ describe('F21-F23 — buildVisualAttemptSegments: non-overlapping, one-per-event
       makeAttemptEvent('A', 2, 0.01, 0.02, 'success'),
       makeAttemptEvent('B', 1, 0.02, 0.03, 'success'),
     ];
-    const segments = buildVisualAttemptSegments(events, MIN_DURATION);
+    const segments = buildVisualAttemptSegments(events, TARGET_TOTAL);
 
     // All segments non-overlapping
     for (let i = 0; i < segments.length - 1; i++) {
@@ -95,18 +97,22 @@ describe('F21-F23 — buildVisualAttemptSegments: non-overlapping, one-per-event
       makeAttemptEvent('A', 2, 1, 2, 'success'),
       makeAttemptEvent('B', 1, 2, 3, 'success'),
     ];
-    const segments = buildVisualAttemptSegments(events, MIN_DURATION);
+    const segments = buildVisualAttemptSegments(events, TARGET_TOTAL);
     expect(segments.length).toBe(3);
   });
 
-  it('F23: every segment has visualDurationMs >= minDurationMs', () => {
+  it('F23: every segment has visualDurationMs > 0 (Phase 5.1G: target is total, not per-segment)', () => {
+    // Phase 5.1G semantics: targetTotalMs is the TOTAL budget for all segments combined.
+    // Each segment still gets at least the internal MIN_SEGMENT_MS (50ms) floor.
     const events = [
       makeAttemptEvent('A', 1, 0.00, 0.001, 'failure'), // very short sim duration
       makeAttemptEvent('A', 2, 0.001, 0.002, 'success'),
     ];
-    const segments = buildVisualAttemptSegments(events, MIN_DURATION);
+    const segments = buildVisualAttemptSegments(events, 200); // 200ms total for 2 segments
     for (const seg of segments) {
-      expect(seg.visualDurationMs).toBeGreaterThanOrEqual(MIN_DURATION);
+      expect(seg.visualDurationMs).toBeGreaterThan(0);
+      // Internal floor guarantees at least 50ms per segment
+      expect(seg.visualDurationMs).toBeGreaterThanOrEqual(50);
     }
   });
 
@@ -115,7 +121,7 @@ describe('F21-F23 — buildVisualAttemptSegments: non-overlapping, one-per-event
       makeAttemptEvent('A', 1, 0, 0.01, 'failure'),
       makeAttemptEvent('A', 2, 0.01, 0.02, 'success'),
     ];
-    const segments = buildVisualAttemptSegments(events, 200);
+    const segments = buildVisualAttemptSegments(events, 400); // 400ms total
     // At segment[0].visualEndMs, progress = 1 exactly. Next segment starts there or later.
     // So at seg[0].visualEndMs - 1ms, next hasn't started → full travel possible.
     const seg0EndMs = segments[0].visualEndMs;
@@ -125,19 +131,21 @@ describe('F21-F23 — buildVisualAttemptSegments: non-overlapping, one-per-event
 
   it('F22: non-overlapping on Fixture G spec example (compressed sim times)', () => {
     // Spec says: with old algorithm start = sim_start × factor would cause overlap
-    // New algorithm: cursor-based sequential timeline
+    // New algorithm: cursor-based sequential timeline guarantees non-overlap
     const events = [
       makeAttemptEvent('A', 1, 0.00, 0.01, 'failure'),
       makeAttemptEvent('B', 1, 0.01, 0.02, 'failure'),
       makeAttemptEvent('C', 1, 0.02, 0.03, 'success'),
     ];
-    const segments = buildVisualAttemptSegments(events, 200);
+    // Use 600ms total for 3 equal sim-duration segments → ~200ms each
+    const segments = buildVisualAttemptSegments(events, 600);
     expect(segments[0].visualStartMs).toBe(0);
     expect(segments[1].visualStartMs).toBeGreaterThanOrEqual(segments[0].visualEndMs);
     expect(segments[2].visualStartMs).toBeGreaterThanOrEqual(segments[1].visualEndMs);
-    // Expected: A: 0–200, B: >=200–400, C: >=400–600
+    // With 3 equal sim durations and 600ms budget, each gets approximately 200ms
+    // (50ms floor + equal share of remaining 450ms = 50 + 150 = 200ms each)
     expect(segments[0].visualStartMs).toBe(0);
-    expect(segments[0].visualEndMs).toBe(200);
+    expect(segments[0].visualEndMs).toBe(200); // 50 + (200/600)*450 ≈ 200
     expect(segments[1].visualStartMs).toBe(200);
     expect(segments[1].visualEndMs).toBe(400);
     expect(segments[2].visualStartMs).toBe(400);
@@ -155,7 +163,7 @@ describe('F21-F23 — buildVisualAttemptSegments: non-overlapping, one-per-event
       makeAttemptEvent('A', 1, 1, 2, 'success'),
       makeAttemptEvent('C', 1, 2, 3, 'failure'),
     ];
-    const segments = buildVisualAttemptSegments(events, 100);
+    const segments = buildVisualAttemptSegments(events, 300); // 100ms each for equal sim durations
     expect(segments[0].packetId).toBe('B');
     expect(segments[1].packetId).toBe('A');
     expect(segments[2].packetId).toBe('C');
@@ -395,7 +403,7 @@ describe('F21-F23 — Fixtures A-G from spec', () => {
   it('Fixture G: compressed sim events that overlap with old algorithm are non-overlapping now', () => {
     // Old algorithm: visualStart = simStart * compressionFactor
     // For very short sim durations, all starts cluster near 0
-    // New algorithm: sequential cursor guarantees non-overlap
+    // New algorithm: cursor-based sequential guarantees non-overlap; targetTotal is WHOLE playback
     const events = [
       makeAttemptEvent('A', 1, 0.00, 0.01, 'failure'),
       makeAttemptEvent('B', 1, 0.01, 0.02, 'failure'),
@@ -413,11 +421,14 @@ describe('F21-F23 — Fixtures A-G from spec', () => {
     for (const seg of pb.visualSegments) {
       expect(seg.visualDurationMs).toBeGreaterThan(0);
     }
-    // Correct sequential timeline per spec
+    // Phase 5.1G: total is bounded — not 3 × minDuration.
+    // 3 attempts × 250ms preferred = 750ms, max(200, 750) = 750ms total.
+    // Segments are sequential and sum to ~750ms.
     expect(pb.visualSegments[0].visualStartMs).toBe(0);
-    expect(pb.visualSegments[0].visualEndMs).toBe(200);
-    expect(pb.visualSegments[1].visualStartMs).toBe(200);
-    expect(pb.visualSegments[2].visualStartMs).toBe(400);
+    expect(pb.visualSegments[1].visualStartMs).toBeGreaterThanOrEqual(pb.visualSegments[0].visualEndMs);
+    expect(pb.visualSegments[2].visualStartMs).toBeGreaterThanOrEqual(pb.visualSegments[1].visualEndMs);
+    expect(pb.totalVisualDurationMs).toBeGreaterThanOrEqual(200); // at least min total
+    expect(pb.totalVisualDurationMs).toBeLessThanOrEqual(15000); // bounded
   });
 });
 
@@ -852,14 +863,24 @@ describe('VisualAttemptSegment structural invariants', () => {
     }
   });
 
-  it('buildTransmissionPlayback.visualSegments matches buildVisualAttemptSegments', () => {
+  it('buildTransmissionPlayback.visualSegments matches buildVisualAttemptSegments with same targetTotal', () => {
+    // Phase 5.1G: buildTransmissionPlayback computes targetTotalMs internally.
+    // To get matching results from buildVisualAttemptSegments, we must use the same targetTotalMs.
+    // For 2 attempts: preferred = 2 × 250 = 500ms, max(300, 500) = 500ms, min(500, 15000) = 500ms.
     const events = [
       makeAttemptEvent('A', 1, 0, 1, 'success'),
       makeAttemptEvent('A', 2, 1, 2, 'failure'),
     ];
     const sim = makeSimResult({ attempt_events: events });
     const pb = buildTransmissionPlayback(sim, { transmission_min_duration_ms: 300 });
-    const standalone = buildVisualAttemptSegments(events, 300);
+
+    // Compute the same targetTotal that buildTransmissionPlayback would use
+    const PREFERRED_ATTEMPT_MS = 250;
+    const MAX_TOTAL = 15000;
+    const N = events.length;
+    const preferred = N * PREFERRED_ATTEMPT_MS;
+    const targetTotal = Math.min(MAX_TOTAL, Math.max(300, preferred)); // 500ms
+    const standalone = buildVisualAttemptSegments(events, targetTotal);
 
     expect(pb.visualSegments.length).toBe(standalone.length);
     for (let i = 0; i < standalone.length; i++) {

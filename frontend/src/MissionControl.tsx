@@ -361,9 +361,10 @@ export default function MissionControl() {
 
   /**
    * Wall-clock ms at which operator authorized the current execution.
-   * Anchors the presentation phase timeline for navigation-resilient phase derivation.
+   * Phase 5.1G (WORKSTREAM A): passed to TransmissionSequencePanel as absolute time anchor.
+   * anchors the presentation phase timeline for navigation-resilient phase derivation.
    */
-  const [_authorizedAtMs, setAuthorizedAtMs] = useState<number | null>(null);
+  const [authorizedAtMs, setAuthorizedAtMs] = useState<number | null>(null);
 
   /**
    * Phase 5.1F: Application-level presentation phase for the active execution.
@@ -1532,6 +1533,7 @@ export default function MissionControl() {
             onModifyAiPlan={handleModifyAiPlan}
             onRejectAiPlan={handleRejectAiPlan}
             executionId={executionId}
+            authorizedAtMs={authorizedAtMs}
             playbackStartedAtMs={playbackStartedAtMs}
             onSetPlaybackStarted={setPlaybackStartedAtMs}
             aiRecommendationRejected={aiRecommendationRejected}

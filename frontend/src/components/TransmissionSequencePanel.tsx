@@ -1,5 +1,5 @@
 /**
- * TransmissionSequencePanel — Phase 5.1F
+ * TransmissionSequencePanel — Phase 5.1G
  *
  * EXECUTION VS PRESENTATION SEPARATION:
  *   - The backend approval is dispatched IMMEDIATELY at authorization time in MissionControl.
@@ -15,9 +15,18 @@
  *   4. SIGNAL_TRANSIT  — Signal propagating from spacecraft to Earth
  *   5. COMPLETE        — Summary
  *
- * Phase 5.1F CORRECTIONS:
+ * Phase 5.1G CORRECTIONS (WORKSTREAM A — ABSOLUTE-TIME EARLY TIMELINE):
+ *   - authorizedAtMs prop anchors PLAN_UPLINK and CONTACT_WAIT presentation boundaries.
+ *   - deriveEarlyExecutionPhase() from transmissionPlayback is used to compute current phase
+ *     from absolute elapsed time — never from component mount time.
+ *   - On mount/remount, early phase is derived IMMEDIATELY from Date.now() and authorizedAtMs.
+ *   - setTimeout timers fire ONLY for the remaining duration (boundary - now), not full duration.
+ *   - If early phases have already elapsed on remount, skips directly to correct state.
+ *   - If result is not yet available after early phases, shows AWAITING AUTHORITATIVE RESULT.
+ *   - Navigation away and back can never reset PLAN_UPLINK or CONTACT_WAIT.
+ *
+ * Phase 5.1F CORRECTIONS (preserved):
  *   - initialPhase comes from application-level presentationPhase (WORKSTREAM A)
- *     → remounting resumes at the current phase, not plan_uplink
  *   - Uses visualSegments from buildTransmissionPlayback for non-overlapping timeline (G/H)
  *   - Attempt rows show "IN FLIGHT" until visual segment completes (WORKSTREAM E)
  *   - Pulse uses isRetry + status instead of outcome='retry' (WORKSTREAM F)
@@ -35,7 +44,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { ApproveResponse, CandidatePlan, SimulationResult } from '../types/domain';
 import type { ExperiencePlaybackConfig } from '../types/experience';
-import { buildTransmissionPlayback } from '../experience/transmissionPlayback';
+import {
+  buildTransmissionPlayback,
+  deriveEarlyExecutionPhase,
+  msUntilNextPhaseBoundary,
+} from '../experience/transmissionPlayback';
 import type { VisualAttemptSegment } from '../experience/transmissionPlayback';
 import { formatBitsAsDataVolume, formatDuration } from '../utils/formatters';
 
@@ -288,7 +301,11 @@ function TransmissionProgressPanel({
 // ── Main Component ────────────────────────────────────────────────────────────
 
 interface Props {
-  /** Initial phase on mount. */
+  /**
+   * Initial phase on mount (application-level presentationPhase from MissionControl).
+   * Used as the floor — the panel may advance forward from this but never backwards.
+   * On remount this is the furthest phase reached so far, so the panel resumes correctly.
+   */
   initialPhase: TransmissionChoreographyPhase;
   /** Pending plan for uplink display. */
   pendingPlan: CandidatePlan | null;
@@ -304,6 +321,16 @@ interface Props {
    * this panel mounts. Calling onExecuteApproval just retrieves that Promise.
    */
   executionId: string;
+  /**
+   * Phase 5.1G (WORKSTREAM A): Wall-clock ms when operator authorized the execution.
+   * This is the ABSOLUTE TIME ANCHOR for PLAN_UPLINK and CONTACT_WAIT presentation.
+   * Must be non-null when this panel is mounted (authorization always precedes mount).
+   *
+   * Using this value, the panel derives the correct early phase from Date.now() on every
+   * mount/remount — timers are set for the REMAINING duration only, not full duration.
+   * Navigation / unmount cannot reset the early presentation timeline.
+   */
+  authorizedAtMs: number;
   /**
    * Wall-clock ms when playback started (null if not yet started for this executionId).
    * Used to support absolute-time catch-up when panel remounts.
@@ -356,6 +383,7 @@ export function TransmissionSequencePanel({
   propagationDelayS,
   availableCapacityBits,
   executionId,
+  authorizedAtMs,
   playbackStartedAtMs,
   onSetPlaybackStarted,
   onExecuteApproval,
@@ -367,6 +395,13 @@ export function TransmissionSequencePanel({
   const [phase, setPhase] = useState<TransmissionChoreographyPhase>(initialPhase);
   const [simResult, setSimResult] = useState<SimulationResult | null>(null);
   const [approveResult, setApproveResult] = useState<ApproveResponse | null>(null);
+  /**
+   * Phase 5.1G: Track whether we are actively awaiting the backend result
+   * after early presentation phases have elapsed (AWAITING AUTHORITATIVE RESULT state).
+   * Becomes true when early phases complete but result is not yet available.
+   * Clears when result arrives.
+   */
+  const [awaitingResult, setAwaitingResult] = useState(false);
 
   /**
    * Phase 5.1F: activeSegmentIndex tracks which VisualAttemptSegment is currently active.
@@ -403,30 +438,86 @@ export function TransmissionSequencePanel({
   const advanceToSignalTransit = useCallback(() => advancePhase('signal_transit'), [advancePhase]);
   const advanceToComplete = useCallback(() => advancePhase('complete'), [advancePhase]);
 
-  // PLAN_UPLINK → CONTACT_WAIT after uplink duration
-  // Phase 5.1F: only triggers if we actually start in plan_uplink (not on remount to later phase)
-  useEffect(() => {
-    if (phase !== 'plan_uplink') return;
-    if (reduced) { advanceToContactWait(); return; }
-    const timer = setTimeout(advanceToContactWait, uplinkDurationMs);
-    return () => clearTimeout(timer);
-  }, [phase, uplinkDurationMs, reduced, advanceToContactWait]);
-
   // Keep the ref in sync with the prop (for catch-up after remount)
   useEffect(() => {
     playbackStartedAtMsRef.current = playbackStartedAtMs;
   }, [playbackStartedAtMs]);
+
+  // ── WORKSTREAM A: Absolute-time early phase derivation ────────────────────
+  //
+  // Phase 5.1G: PLAN_UPLINK and CONTACT_WAIT are derived from authorizedAtMs
+  // (absolute wall-clock time), NOT from component mount time.
+  //
+  // On every mount/remount we:
+  //   1. Call deriveEarlyExecutionPhase() with Date.now() to get the current phase.
+  //   2. If we are already past these phases, advance immediately.
+  //   3. If still in an early phase, set a timer for only the REMAINING duration.
+  //
+  // This means navigating away for 5 seconds and returning does NOT restart a 1500ms timer.
+  // Instead: max(uplinkEndMs - now, 0) is used as the remaining duration.
+  //
+  // Only runs for early phases (plan_uplink, contact_wait).
+  // TRANSMITTING and later are managed by the absolute-time playback interval.
+  useEffect(() => {
+    // Only manage early phases here
+    if (phase !== 'plan_uplink' && phase !== 'contact_wait') return;
+
+    if (reduced) {
+      // prefers-reduced-motion: skip early animation immediately
+      if (phase === 'plan_uplink') advanceToContactWait();
+      // contact_wait will be handled by the approval effect below
+      return;
+    }
+
+    const now = Date.now();
+    const earlyPhase = deriveEarlyExecutionPhase({
+      nowMs: now,
+      authorizedAtMs,
+      uplinkDurationMs,
+      contactAcquisitionMs: contactAcqDurationMs,
+      resultAvailable: false, // we don't have result yet in early phases
+    });
+
+    if (earlyPhase === 'plan_uplink' && phase === 'plan_uplink') {
+      // Remaining time until uplink phase ends
+      const remaining = msUntilNextPhaseBoundary(now, authorizedAtMs, uplinkDurationMs, contactAcqDurationMs);
+      const timer = setTimeout(advanceToContactWait, Math.max(0, remaining));
+      return () => clearTimeout(timer);
+    }
+
+    if (earlyPhase === 'contact_wait' && phase === 'plan_uplink') {
+      // Uplink already elapsed — advance immediately
+      advanceToContactWait();
+      return;
+    }
+
+    // earlyPhase is awaiting_result or ready_for_transmission:
+    // Early phases have elapsed. The approval effect will handle the rest.
+    // advance to contact_wait if still in plan_uplink so the approval awaiter fires
+    if (phase === 'plan_uplink') {
+      advanceToContactWait();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, authorizedAtMs, uplinkDurationMs, contactAcqDurationMs, reduced]);
 
   // CONTACT_WAIT → await already-dispatched approval → TRANSMITTING
   //
   // The approval Promise was already dispatched at authorization time in MissionControl.
   // This effect simply awaits that promise (FAIL CLOSED — no new dispatch).
   // If remounting during TRANSMITTING, this effect won't fire (phase !== 'contact_wait').
+  //
+  // Phase 5.1G: the timer delay is the REMAINING contact acquisition time, not the full duration.
+  // If contact acquisition already elapsed (remounted after long absence), delay is 0.
   useEffect(() => {
     if (phase !== 'contact_wait') return;
 
     let cancelled = false;
-    const delay = reduced ? 0 : contactAcqDurationMs;
+
+    // Phase 5.1G: use remaining time, not full duration
+    const now = Date.now();
+    const remaining = reduced
+      ? 0
+      : msUntilNextPhaseBoundary(now, authorizedAtMs, uplinkDurationMs, contactAcqDurationMs);
 
     const timer = setTimeout(async () => {
       if (cancelled) return;
@@ -434,20 +525,27 @@ export function TransmissionSequencePanel({
         // Retrieve the already-dispatched Promise (no new backend call — WORKSTREAM B)
         const result = await onExecuteApproval(executionId);
         if (cancelled) return;
+        setAwaitingResult(false);
         setApproveResult(result);
         setSimResult(result.simulation_result);
         advanceToTransmitting();
       } catch (err) {
         if (!cancelled) onError(String(err));
       }
-    }, delay);
+    }, remaining);
+
+    // If we'll be waiting AFTER early phases complete (remaining == 0 but still awaiting
+    // the Promise resolution), show awaiting state
+    if (remaining === 0) {
+      setAwaitingResult(true);
+    }
 
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, contactAcqDurationMs, reduced]);
+  }, [phase, authorizedAtMs, uplinkDurationMs, contactAcqDurationMs, reduced]);
   // Note: onExecuteApproval and executionId are intentionally excluded from deps.
   // The coordinator is stable by design — same Promise always returned for same executionId.
 
@@ -696,22 +794,40 @@ export function TransmissionSequencePanel({
       {/* CONTACT_WAIT */}
       {phase === 'contact_wait' && (
         <div style={{ background: 'rgba(52,211,153,0.04)', border: '1px solid rgba(52,211,153,0.18)', borderRadius: 6, padding: '10px 12px' }}>
-          <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: 'rgba(52,211,153,0.7)', letterSpacing: '0.1em', marginBottom: 6 }}>
-            ACQUIRING HIGH-RATE CONTACT…
-          </div>
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-            <div>
-              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: DIM }}>NOMINAL LINK RATE</div>
-              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 13, fontWeight: 700, color: '#34d399' }}>2.8 Mbps</div>
-            </div>
-            <div>
-              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: DIM }}>CONTACT CAPACITY</div>
-              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 13, fontWeight: 700, color: '#e2e8f4' }}>{formatBitsAsDataVolume(availableCapacityBits)}</div>
-            </div>
-          </div>
-          <div style={{ marginTop: 8, fontFamily: '"IBM Plex Sans"', fontSize: 10, color: DIM }}>
-            Awaiting simulation result…
-          </div>
+          {/* Phase 5.1G: show AWAITING AUTHORITATIVE RESULT when early phases elapsed but backend pending */}
+          {awaitingResult ? (
+            <>
+              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: 'rgba(52,211,153,0.7)', letterSpacing: '0.1em', marginBottom: 6 }}>
+                CONTACT ACQUIRED
+              </div>
+              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: 'rgba(245,158,11,0.8)', letterSpacing: '0.1em', marginBottom: 8 }}>
+                AWAITING AUTHORITATIVE EXECUTION RESULT
+              </div>
+              <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 10, color: DIM, lineHeight: 1.5 }}>
+                TIME-COMPRESSED VISUALIZATION · Backend execution is in progress.
+                Transmission playback will begin when the authoritative result arrives.
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: 'rgba(52,211,153,0.7)', letterSpacing: '0.1em', marginBottom: 6 }}>
+                ACQUIRING HIGH-RATE CONTACT…
+              </div>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: DIM }}>NOMINAL LINK RATE</div>
+                  <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 13, fontWeight: 700, color: '#34d399' }}>2.8 Mbps</div>
+                </div>
+                <div>
+                  <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: DIM }}>CONTACT CAPACITY</div>
+                  <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 13, fontWeight: 700, color: '#e2e8f4' }}>{formatBitsAsDataVolume(availableCapacityBits)}</div>
+                </div>
+              </div>
+              <div style={{ marginTop: 8, fontFamily: '"IBM Plex Sans"', fontSize: 10, color: DIM }}>
+                Awaiting simulation result…
+              </div>
+            </>
+          )}
         </div>
       )}
 
