@@ -26,6 +26,11 @@ HorizonsGeometry
 
 HorizonsGeometryResult
     Container binding request + geometry + provenance.
+
+HorizonsGeometryCapture
+    Immutable capture object bundling a validated HorizonsGeometryResult
+    with the exact raw HTTP response bytes.  Used as the raw-capture
+    contract for snapshot creation (Phase 6D-B1).
 """
 
 from __future__ import annotations
@@ -268,4 +273,49 @@ class HorizonsGeometryResult(BaseModel):
         description=(
             "EXTERNAL_AUTHORITATIVE provenance record for this geometry fact."
         )
+    )
+
+
+# ---------------------------------------------------------------------------
+# D. HorizonsGeometryCapture  (Phase 6D-B1)
+# ---------------------------------------------------------------------------
+
+
+class HorizonsGeometryCapture(BaseModel):
+    """Immutable raw capture: validated result + exact raw HTTP response bytes.
+
+    This is the internal contract between the live fetch path and the snapshot
+    writer.  It is produced by
+    :meth:`~backend.app.mission_sources.adapters.horizons.HorizonsAdapter.fetch_capture`
+    and consumed by the snapshot store.
+
+    The raw bytes are preserved exactly as received from the network so that
+    the snapshot layer can store and later re-verify them byte-for-byte.
+
+    Fields
+    ------
+    result
+        The fully validated :class:`HorizonsGeometryResult`.
+
+    raw_response
+        Exact raw HTTP response body bytes from JPL Horizons.
+        Must not be modified or re-serialized before passing to the snapshot
+        writer.
+
+    Notes
+    -----
+    - ``fetch()`` remains backward-compatible and returns only ``result``.
+    - ``fetch_capture()`` performs exactly one HTTP request.
+    - The model is frozen and forbids extra fields.
+    - ``raw_response`` is bytes; Pydantic serializes it as base64 but the
+      snapshot store handles encoding explicitly.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    result: HorizonsGeometryResult = Field(
+        description="Validated Horizons geometry result."
+    )
+    raw_response: bytes = Field(
+        description="Exact raw HTTP response body bytes from JPL Horizons."
     )

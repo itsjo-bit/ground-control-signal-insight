@@ -71,6 +71,7 @@ from backend.app.provenance.models import (
 
 from .horizons_models import (
     HorizonsGeometry,
+    HorizonsGeometryCapture,
     HorizonsGeometryRequest,
     HorizonsGeometryResult,
 )
@@ -451,9 +452,42 @@ class HorizonsAdapter:
             HTTP 4xx, malformed/invalid Horizons payload, or geometry
             validation failure.
         """
+        return self.fetch_capture(request).result
+
+    def fetch_capture(
+        self, request: HorizonsGeometryRequest
+    ) -> HorizonsGeometryCapture:
+        """Fetch and validate one geometry epoch, returning raw bytes alongside the result.
+
+        Performs exactly one HTTP request.  The returned
+        :class:`HorizonsGeometryCapture` bundles the validated
+        :class:`HorizonsGeometryResult` with the exact raw response bytes,
+        enabling downstream snapshot creation without a second request.
+
+        Parameters
+        ----------
+        request:
+            Validated :class:`HorizonsGeometryRequest` specifying target and epoch.
+
+        Returns
+        -------
+        HorizonsGeometryCapture
+            Immutable container holding both the validated result and the
+            exact raw HTTP response bytes.
+
+        Raises
+        ------
+        HorizonsUnavailableError
+            Network/transport failure or HTTP 5xx/429.
+
+        HorizonsValidationError
+            HTTP 4xx, malformed/invalid Horizons payload, or geometry
+            validation failure.
+        """
         params = self._build_params(request)
         raw_bytes = self._execute_request(params)
-        return self._process_response(request, raw_bytes)
+        result = self._process_response(request, raw_bytes)
+        return HorizonsGeometryCapture(result=result, raw_response=raw_bytes)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -534,17 +568,36 @@ class HorizonsAdapter:
         self,
         request: HorizonsGeometryRequest,
         raw_bytes: bytes,
+        retrieved_at: Optional[datetime] = None,
     ) -> HorizonsGeometryResult:
         """Parse and validate the raw Horizons response bytes.
+
+        This is the single authoritative Horizons parser used by both the live
+        fetch path and the offline snapshot reload path.
+
+        Parameters
+        ----------
+        request:
+            The original geometry request.
+
+        raw_bytes:
+            Exact raw HTTP response bytes to parse.
+
+        retrieved_at:
+            Timezone-aware UTC datetime representing when the response was
+            acquired.  When ``None`` the adapter's clock is consulted (live
+            fetch).  When provided (snapshot reload) the caller's stored
+            timestamp is used so that provenance is reconstructed identically.
 
         Returns a fully assembled HorizonsGeometryResult.
         """
         # 1. Hash the raw bytes first (before any decoding can fail).
         content_sha256 = hashlib.sha256(raw_bytes).hexdigest()
 
-        # 2. Get retrieved_at from the injected clock.
-        # Correction 7: guard against non-datetime clock return values.
-        retrieved_at = self._clock()
+        # 2. Get retrieved_at — either from the caller (snapshot) or clock (live).
+        if retrieved_at is None:
+            retrieved_at = self._clock()
+        # Guard against non-datetime or naive clock/caller values.
         if not isinstance(retrieved_at, datetime):
             raise HorizonsValidationError(
                 "Injected clock did not return a datetime object."
