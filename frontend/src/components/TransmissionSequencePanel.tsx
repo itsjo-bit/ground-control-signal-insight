@@ -1,11 +1,11 @@
 /**
- * TransmissionSequencePanel — Phase 5.1E
+ * TransmissionSequencePanel — Phase 5.1F
  *
- * EXECUTION VS PRESENTATION SEPARATION (Phase 5.1E key change):
+ * EXECUTION VS PRESENTATION SEPARATION:
  *   - The backend approval is dispatched IMMEDIATELY at authorization time in MissionControl.
  *   - This panel OBSERVES the execution — it does NOT own the backend dispatch.
- *   - onExecuteApproval(executionId) returns the already-existing Promise.
- *   - The CONTACT_WAIT stage now just awaits an already-dispatched Promise.
+ *   - onExecuteApproval(executionId) returns the already-existing Promise (FAIL CLOSED).
+ *   - The CONTACT_WAIT stage just awaits an already-dispatched approval Promise.
  *   - Unmounting this panel CANNOT cancel or delay the backend execution.
  *
  * Transmission choreography sequence:
@@ -15,18 +15,19 @@
  *   4. SIGNAL_TRANSIT  — Signal propagating from spacecraft to Earth
  *   5. COMPLETE        — Summary
  *
- * PLAYBACK FIDELITY (Phase 5.1E):
- *   - ONE attempt_event → ONE visual attempt (invariant A21)
- *   - Retries = separate visual attempts (invariant A22)
- *   - Progress derived from absolute wall-clock time (invariant A23/A24)
- *   - Deferred packets produce zero pulses (invariant A20)
- *   - Zero-attempt edge case handled cleanly (invariant A29)
+ * Phase 5.1F CORRECTIONS:
+ *   - initialPhase comes from application-level presentationPhase (WORKSTREAM A)
+ *     → remounting resumes at the current phase, not plan_uplink
+ *   - Uses visualSegments from buildTransmissionPlayback for non-overlapping timeline (G/H)
+ *   - Attempt rows show "IN FLIGHT" until visual segment completes (WORKSTREAM E)
+ *   - Pulse uses isRetry + status instead of outcome='retry' (WORKSTREAM F)
  *
- * METRICS (Phase 5.1E):
- *   - DOWNLINK ATTEMPTS = attempt_events.length (not grouped packet count)
- *   - ATTEMPTED PRODUCTS = unique packet IDs in attempt_events
- *   - RETRIES = attempt_events where attempt_number > 1
- *   - DELIVERED/FAILED/DEFERRED from simulation_result authoritatively
+ * PLAYBACK FIDELITY:
+ *   - ONE attempt_event → ONE visual segment (invariant F21)
+ *   - Non-overlapping visual segments: segment[i+1].start >= segment[i].end (F22)
+ *   - Every segment can reach progress=1 before next segment starts (F23)
+ *   - Progress derived from absolute wall-clock time (F24)
+ *   - Deferred packets produce zero pulses (F25)
  *
  * IMPORTANT: Does NOT modify SimulationResult. Presentation only.
  */
@@ -35,6 +36,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { ApproveResponse, CandidatePlan, SimulationResult } from '../types/domain';
 import type { ExperiencePlaybackConfig } from '../types/experience';
 import { buildTransmissionPlayback } from '../experience/transmissionPlayback';
+import type { VisualAttemptSegment } from '../experience/transmissionPlayback';
 import { formatBitsAsDataVolume, formatDuration } from '../utils/formatters';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -87,50 +89,71 @@ function SequenceRow({
 
 // ── Transmission Progress Panel ───────────────────────────────────────────────
 //
-// Phase 5.1E corrections:
-//   - totalAttempts = attempt_events.length (NOT groupAttemptsByPacket().length)
-//   - visibleAttemptCount tracks individual attempt events, not packet summaries
-//   - DOWNLINK ATTEMPTS label is accurate
+// Phase 5.1F corrections:
+//   - Uses VisualAttemptSegment for per-row rendering (WORKSTREAM E/F)
+//   - Active attempt (progress < 1) shows "IN FLIGHT" — never reveals outcome early (WORKSTREAM E)
+//   - Completed attempt shows authoritative SUCCESS / FAILURE (WORKSTREAM E)
+//   - Retry identity shown separately from success/failure outcome (WORKSTREAM F)
 
 function TransmissionProgressPanel({
   sim,
-  visibleAttemptIndex,
+  visualSegments,
+  activeSegmentIndex,
+  activeSegmentProgress,
 }: {
   sim: SimulationResult;
-  /** 0-based index of the last visible attempt event (inclusive). -1 = none visible yet. */
-  visibleAttemptIndex: number;
+  /** All visual attempt segments from buildVisualAttemptSegments. */
+  visualSegments: VisualAttemptSegment[];
+  /**
+   * 0-based index of the currently active segment (-1 = none active yet).
+   * "Active" means: elapsed >= visualStartMs AND elapsed < visualEndMs.
+   */
+  activeSegmentIndex: number;
+  /**
+   * Progress [0, 1] of the active segment.
+   * 0 = pulse just started, 1 = pulse reached Earth.
+   */
+  activeSegmentProgress: number;
 }) {
-  const attemptEvents = useMemo(() => sim.attempt_events ?? [], [sim]);
   const deferredCount = useMemo(() => sim.deferred_packets.length, [sim]);
+  const totalAttempts = visualSegments.length;
 
-  // Authoritative counts from simulation_result (INVARIANT E9)
-  const totalAttempts = attemptEvents.length;      // attempt_events.length
-  const currentAttempts = Math.max(0, Math.min(visibleAttemptIndex + 1, totalAttempts));
+  // Number of completed segments (strictly before the active one)
+  const completedCount = Math.max(0, activeSegmentIndex);
+  // Include active segment as "visible" in the count display
+  const currentDisplay = activeSegmentIndex >= 0 ? activeSegmentIndex + 1 : 0;
 
-  // Attempt metrics from visible events
-  const visibleEvents = useMemo(() => attemptEvents.slice(0, currentAttempts), [attemptEvents, currentAttempts]);
-
-  // Retries = attempt_number > 1
-  const retriesSoFar = useMemo(
-    () => visibleEvents.filter((e) => e.attempt_number > 1).length,
-    [visibleEvents]
+  // Segments that are completed (strictly before activeSegmentIndex)
+  const completedSegments = useMemo(
+    () => visualSegments.slice(0, completedCount),
+    [visualSegments, completedCount]
   );
 
-  // Unique attempted products (from visible events only)
-  const attemptedProducts = useMemo(
-    () => new Set(visibleEvents.map((e) => e.packet_id)).size,
-    [visibleEvents]
-  );
+  // Active segment (in flight)
+  const activeSegment = activeSegmentIndex >= 0 && activeSegmentIndex < totalAttempts
+    ? visualSegments[activeSegmentIndex]
+    : null;
 
-  // Delivered and failed from authoritative result (only count if their last attempt is visible)
-  const visiblePacketIds = useMemo(() => new Set(visibleEvents.map((e) => e.packet_id)), [visibleEvents]);
+  // Delivered/failed from authoritative result (only after visual completion)
+  const completedIds = useMemo(
+    () => new Set(completedSegments.map((s) => s.packetId)),
+    [completedSegments]
+  );
   const deliveredSoFar = useMemo(
-    () => sim.delivered_packets.filter((id) => visiblePacketIds.has(id)).length,
-    [sim.delivered_packets, visiblePacketIds]
+    () => sim.delivered_packets.filter((id) => completedIds.has(id)).length,
+    [sim.delivered_packets, completedIds]
   );
   const failedSoFar = useMemo(
-    () => sim.failed_packets.filter((id) => visiblePacketIds.has(id)).length,
-    [sim.failed_packets, visiblePacketIds]
+    () => sim.failed_packets.filter((id) => completedIds.has(id)).length,
+    [sim.failed_packets, completedIds]
+  );
+  const retriesSoFar = useMemo(
+    () => completedSegments.filter((s) => s.isRetry).length,
+    [completedSegments]
+  );
+  const attemptedProducts = useMemo(
+    () => new Set(completedSegments.map((s) => s.packetId)).size,
+    [completedSegments]
   );
 
   return (
@@ -141,7 +164,7 @@ function TransmissionProgressPanel({
           DOWNLINK ATTEMPTS · TIME-COMPRESSED PLAYBACK
         </span>
         <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 10, color: '#6EA8FF', fontWeight: 700 }}>
-          {totalAttempts === 0 ? '0/0' : `${currentAttempts}/${totalAttempts}`}
+          {totalAttempts === 0 ? '0/0' : `${currentDisplay}/${totalAttempts}`}
         </span>
       </div>
 
@@ -149,13 +172,13 @@ function TransmissionProgressPanel({
       <div style={{ height: 3, background: 'rgba(46,58,79,0.8)', borderRadius: 2, marginBottom: 10 }}>
         <div style={{
           height: '100%', borderRadius: 2,
-          width: `${totalAttempts > 0 ? (currentAttempts / totalAttempts) * 100 : 0}%`,
+          width: `${totalAttempts > 0 ? (completedCount / totalAttempts) * 100 : 0}%`,
           background: '#6EA8FF',
           transition: 'width 0.3s ease',
         }} />
       </div>
 
-      {/* Attempt metric grid */}
+      {/* Attempt metric grid — counts from COMPLETED segments only */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 10, flexWrap: 'wrap' }}>
         {[
           { label: 'ATTEMPTED PRODUCTS', value: attemptedProducts, color: '#6EA8FF' },
@@ -188,37 +211,62 @@ function TransmissionProgressPanel({
         </div>
       )}
 
-      {/* Individual attempt event list — one row per attempt event */}
+      {/* Individual attempt rows — one per segment */}
       <div style={{ maxHeight: 200, overflowY: 'auto' }}>
-        {visibleEvents.map((ev, idx) => {
-          const isRetry = ev.attempt_number > 1;
-          const isFinalDelivered = ev.status === 'success' && sim.delivered_packets.includes(ev.packet_id);
-          const isFinalFailed = ev.status === 'failure';
-          const statusColor = ev.status === 'success' ? '#34d399' : '#f87171';
-          const statusIcon = ev.status === 'success' ? '✓' : '✕';
+        {/* Active (in-flight) attempt — shown first if active */}
+        {activeSegment && (
+          <div key={`active-${activeSegment.packetId}-${activeSegment.attemptNumber}`} style={{
+            display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0',
+            borderBottom: '1px solid rgba(46,58,79,0.3)',
+            background: 'rgba(76,141,255,0.04)',
+          }}>
+            <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 10, color: '#6EA8FF', flexShrink: 0, width: 14 }}>
+              {/* Phase 5.1F (WORKSTREAM E): show ● while in flight, never reveal outcome early */}
+              {activeSegmentProgress < 1 ? '●' : '…'}
+            </span>
+            <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#6EA8FF', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {activeSegment.packetId}
+            </span>
+            {activeSegment.isRetry && (
+              <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: '#f59e0b', flexShrink: 0 }}>
+                RETRY #{activeSegment.attemptNumber}
+              </span>
+            )}
+            <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: '#6EA8FF', flexShrink: 0, minWidth: 64, textAlign: 'right' }}>
+              {activeSegment.isRetry ? `RETRY #${activeSegment.attemptNumber} · ` : ''}IN FLIGHT
+            </span>
+          </div>
+        )}
+
+        {/* Completed attempts — shown in reverse-chronological order */}
+        {completedSegments.slice().reverse().map((seg, idx) => {
+          const statusColor = seg.authoritativeStatus === 'success' ? '#34d399' : '#f87171';
+          const statusIcon = seg.authoritativeStatus === 'success' ? '✓' : '✕';
+          const statusLabel = seg.authoritativeStatus === 'success' ? 'success' : 'failed';
           return (
-            <div key={`${ev.packet_id}-${ev.attempt_number}-${idx}`} style={{
+            <div key={`${seg.packetId}-${seg.attemptNumber}-${idx}`} style={{
               display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0',
               borderBottom: '1px solid rgba(46,58,79,0.3)',
             }}>
               <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 10, color: statusColor, flexShrink: 0, width: 14 }}>
                 {statusIcon}
               </span>
-              <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#6EA8FF', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {ev.packet_id}
+              <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: 'rgba(147,160,180,0.6)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {seg.packetId}
               </span>
-              {isRetry && (
+              {seg.isRetry && (
                 <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: '#f59e0b', flexShrink: 0 }}>
-                  RETRY #{ev.attempt_number}
+                  RETRY #{seg.attemptNumber}
                 </span>
               )}
-              <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: DIM, flexShrink: 0, minWidth: 48, textAlign: 'right' }}>
-                {isFinalDelivered ? 'delivered' : isFinalFailed ? 'failed' : 'attempt'}
+              <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: statusColor, flexShrink: 0, minWidth: 48, textAlign: 'right' }}>
+                {statusLabel}
               </span>
             </div>
           );
         })}
-        {visibleEvents.length === 0 && (
+
+        {completedSegments.length === 0 && !activeSegment && (
           <div style={{ color: DIM, fontSize: 11, padding: '8px 0', fontFamily: '"IBM Plex Sans"' }}>
             {totalAttempts === 0 ? 'No transmission attempts — all products deferred.' : 'Awaiting transmission attempts…'}
           </div>
@@ -277,21 +325,24 @@ interface Props {
   /** Called on error during approval. */
   onError: (msg: string) => void;
   /**
-   * Called when a new attempt-pulse animation starts (for 3D visualization).
-   * Called with null to clear the active pulse (between attempts, on complete).
-   * Only called for actual attempt events — never for deferred packets.
+   * Phase 5.1F (WORKSTREAM F): Called when a new attempt-pulse animation starts.
+   * status: 'pending' while pulse in flight (progress < 1), authoritative on completion.
+   * isRetry separates retry identity from success/failure status.
+   * No 'retry' status — retry is isRetry=true with status='success'|'failure'.
    */
   onAttemptPulse?: (pulse: {
     packetId: string;
     attemptNumber: number;
+    isRetry: boolean;
     /** Absolute-time derived progress 0→1 along the comm link curve */
     progress: number;
-    outcome: 'pending' | 'success' | 'failure' | 'retry' | 'deferred';
+    /** 'pending' while in flight; authoritative status after visual completion */
+    status: 'pending' | 'success' | 'failure';
     /** Direction for the 3D link (downlink attempts are always spacecraft→earth) */
     direction?: 'spacecraft_to_earth';
   } | null) => void;
   /**
-   * Phase 5.1E: Called whenever the choreography phase changes.
+   * Called whenever the choreography phase changes.
    * Allows MissionControl to update pulseDirection on the 3D viewport
    * (plan_uplink = earth→spacecraft, other phases = spacecraft→earth or idle).
    */
@@ -318,11 +369,12 @@ export function TransmissionSequencePanel({
   const [approveResult, setApproveResult] = useState<ApproveResponse | null>(null);
 
   /**
-   * visibleAttemptIndex: 0-based index of the currently visible attempt event.
-   * -1 = no attempts visible yet.
-   * This tracks attempt_events (not packet summaries).
+   * Phase 5.1F: activeSegmentIndex tracks which VisualAttemptSegment is currently active.
+   * -1 = no segment active yet.
+   * activeSegmentProgress = [0, 1] progress of the active segment's pulse.
    */
-  const [visibleAttemptIndex, setVisibleAttemptIndex] = useState(-1);
+  const [activeSegmentIndex, setActiveSegmentIndex] = useState(-1);
+  const [activeSegmentProgress, setActiveSegmentProgress] = useState(0);
 
   const playbackTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   /** Stable ref to playbackStartedAtMs for use in interval callbacks. */
@@ -334,7 +386,7 @@ export function TransmissionSequencePanel({
   const propagationDurationMs = playbackConfig?.propagation_duration_ms ?? 3000;
   const transmissionMinDurationMs = playbackConfig?.transmission_min_duration_ms ?? 2000;
 
-  // Build attempt-event-based playback from sim result
+  // Build non-overlapping visual segments from sim result (Phase 5.1F — WORKSTREAM G/H)
   const playback = useMemo(() => {
     if (!simResult) return null;
     return buildTransmissionPlayback(simResult, { transmission_min_duration_ms: transmissionMinDurationMs });
@@ -352,6 +404,7 @@ export function TransmissionSequencePanel({
   const advanceToComplete = useCallback(() => advancePhase('complete'), [advancePhase]);
 
   // PLAN_UPLINK → CONTACT_WAIT after uplink duration
+  // Phase 5.1F: only triggers if we actually start in plan_uplink (not on remount to later phase)
   useEffect(() => {
     if (phase !== 'plan_uplink') return;
     if (reduced) { advanceToContactWait(); return; }
@@ -366,15 +419,9 @@ export function TransmissionSequencePanel({
 
   // CONTACT_WAIT → await already-dispatched approval → TRANSMITTING
   //
-  // Phase 5.1E: The approval Promise was already dispatched at authorization time
-  // in MissionControl. This effect simply awaits that promise and advances the
-  // visual stage when it resolves.
-  //
-  // If this component unmounts while we're waiting, the Promise continues executing
-  // in MissionControl's executionResultRef — the backend execution is NOT cancelled.
-  //
-  // The contactAcqDurationMs delay is purely visual presentation — the Promise is
-  // NOT waiting for this timer to dispatch; it was dispatched immediately at auth.
+  // The approval Promise was already dispatched at authorization time in MissionControl.
+  // This effect simply awaits that promise (FAIL CLOSED — no new dispatch).
+  // If remounting during TRANSMITTING, this effect won't fire (phase !== 'contact_wait').
   useEffect(() => {
     if (phase !== 'contact_wait') return;
 
@@ -384,7 +431,7 @@ export function TransmissionSequencePanel({
     const timer = setTimeout(async () => {
       if (cancelled) return;
       try {
-        // Retrieve the already-dispatched Promise (no new backend call)
+        // Retrieve the already-dispatched Promise (no new backend call — WORKSTREAM B)
         const result = await onExecuteApproval(executionId);
         if (cancelled) return;
         setApproveResult(result);
@@ -402,17 +449,18 @@ export function TransmissionSequencePanel({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, contactAcqDurationMs, reduced]);
   // Note: onExecuteApproval and executionId are intentionally excluded from deps.
-  // The coordinator is stable by design. The Promise is keyed by executionId and
-  // will always return the same result regardless of how many times it is called.
+  // The coordinator is stable by design — same Promise always returned for same executionId.
 
-  // TRANSMITTING: absolute-time attempt-event playback.
+  // TRANSMITTING: absolute-time visual-segment playback (Phase 5.1F — WORKSTREAM E/F/G/H)
   //
-  // Phase 5.1E correctness:
-  //   - Iterates attempt_events directly (not grouped packet summaries)
-  //   - visibleAttemptIndex tracks individual events (1 event = 1 visual attempt)
-  //   - Progress for each active attempt is derived from absolute wall-clock time → 0..1
-  //   - Browser background throttling does NOT stall playback (time is authoritative)
-  //   - Zero attempts: handle cleanly without division by zero or infinite timers
+  //   - Uses visualSegments (non-overlapping) instead of raw attempt events
+  //   - activeSegmentIndex: which segment is currently active (elapsed >= start AND < end)
+  //   - activeSegmentProgress: [0, 1] progress within the active segment
+  //   - Pulse status='pending' while progress < 1 (WORKSTREAM E — never reveal outcome early)
+  //   - Pulse status=authoritativeStatus when segment ends (WORKSTREAM E)
+  //   - isRetry is a separate flag, NOT a status value (WORKSTREAM F)
+  //   - Browser backgrounding: absolute-time catch-up
+  //   - Zero attempts: handle cleanly
   useEffect(() => {
     if (phase !== 'transmitting' || !playback) return;
 
@@ -423,13 +471,14 @@ export function TransmissionSequencePanel({
       onSetPlaybackStarted(nowMs);
     }
 
-    const attemptEvents = simResult?.attempt_events ?? [];
-    const totalAttempts = attemptEvents.length;
+    const segments = playback.visualSegments;
+    const totalAttempts = segments.length;
     const totalVisualMs = playback.totalVisualDurationMs;
 
     if (reduced) {
       // prefers-reduced-motion: skip animation, jump to final state immediately
-      setVisibleAttemptIndex(totalAttempts - 1);
+      setActiveSegmentIndex(totalAttempts - 1);
+      setActiveSegmentProgress(1);
       onAttemptPulse?.(null);
       const timer = setTimeout(advanceToSignalTransit, 300);
       return () => clearTimeout(timer);
@@ -437,111 +486,110 @@ export function TransmissionSequencePanel({
 
     // Zero-attempt edge case (all deferred): advance immediately without timers
     if (totalAttempts === 0) {
-      setVisibleAttemptIndex(-1);
+      setActiveSegmentIndex(-1);
+      setActiveSegmentProgress(0);
       onAttemptPulse?.(null);
       setTimeout(advanceToSignalTransit, 300);
       return;
     }
 
+    const startMs = playbackStartedAtMsRef.current!;
+
     /**
-     * Derive which attempt_event should be "current" from absolute elapsed time.
-     * Returns the 0-based index of the current event, or -1 if not started.
-     * This makes catch-up after background/remount deterministic.
+     * Phase 5.1F: Derive active segment index from absolute elapsed time.
+     * A segment is "active" when: elapsed >= seg.visualStartMs AND elapsed < seg.visualEndMs
+     * Returns -1 if before first segment, or last index if all segments complete.
      */
-    function computeCurrentAttemptIndex(): number {
-      const startMs = playbackStartedAtMsRef.current;
-      if (!startMs) return -1;
-      const elapsedMs = Date.now() - startMs;
-
-      // Find the playback event whose visualOffset has elapsed
-      // attempt_events[i] corresponds to playback events with kind='attempt_start'
-      const startEvents = playback!.events.filter((e) => e.kind === 'attempt_start');
-
-      // Find the last attempt_start event whose visualOffsetMs <= elapsedMs
-      let currentIdx = -1;
-      for (let i = 0; i < startEvents.length; i++) {
-        if (startEvents[i].visualOffsetMs <= elapsedMs) {
-          currentIdx = i;
+    function computeActiveSegmentIndex(elapsedMs: number): number {
+      // Find segment that contains this elapsed time
+      for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i];
+        if (elapsedMs >= seg.visualStartMs && elapsedMs < seg.visualEndMs) {
+          return i;
         }
       }
-      return Math.min(currentIdx, totalAttempts - 1);
+      // After all segments: return last index (segments are complete)
+      if (elapsedMs >= segments[segments.length - 1].visualEndMs) {
+        return segments.length - 1;
+      }
+      // Before first segment starts
+      return -1;
     }
 
     /**
-     * Compute absolute-time progress [0, 1] for the given attempt_event.
-     * progress=0: pulse at spacecraft, progress=1: pulse reaches Earth.
+     * Compute absolute-time progress [0, 1] for the given segment.
+     * progress=0: pulse at spacecraft, progress=1: pulse has reached Earth.
+     * Phase 5.1F: progress is bounded [0, 1] per segment, not global.
      */
-    function computeAttemptProgress(attemptIdx: number): number {
-      const startMs = playbackStartedAtMsRef.current;
-      if (!startMs || attemptIdx < 0) return 0;
-
-      const startEvents = playback!.events.filter((e) => e.kind === 'attempt_start');
-      const ev = startEvents[attemptIdx];
-      if (!ev) return 0;
-
-      const elapsedInAttemptMs = Date.now() - (startMs + ev.visualOffsetMs);
-      const progress = elapsedInAttemptMs / ev.visualDurationMs;
-      return Math.max(0, Math.min(1, progress));
+    function computeSegmentProgress(segIdx: number, elapsedMs: number): number {
+      if (segIdx < 0 || segIdx >= segments.length) return 0;
+      const seg = segments[segIdx];
+      const p = (elapsedMs - seg.visualStartMs) / seg.visualDurationMs;
+      return Math.max(0, Math.min(1, p));
     }
 
-    // Immediate catch-up on mount (handles tab-return / panel remount)
-    const initialIdx = computeCurrentAttemptIndex();
-    setVisibleAttemptIndex(initialIdx);
+    // Immediate catch-up on mount (handles tab-return / panel remount — WORKSTREAM A)
+    const initialElapsed = Date.now() - startMs;
+    const initialIdx = computeActiveSegmentIndex(initialElapsed);
+    const initialProgress = computeSegmentProgress(initialIdx, initialElapsed);
+    setActiveSegmentIndex(initialIdx);
+    setActiveSegmentProgress(initialProgress);
 
     // If already fully elapsed, advance immediately
-    const startMs = playbackStartedAtMsRef.current;
-    if (startMs && Date.now() - startMs >= totalVisualMs) {
+    if (initialElapsed >= totalVisualMs) {
       onAttemptPulse?.(null);
       setTimeout(advanceToSignalTransit, 0);
       return;
     }
 
-    // Emit initial pulse for current attempt
+    // Emit initial pulse for current segment
     if (initialIdx >= 0 && initialIdx < totalAttempts) {
-      const ev = attemptEvents[initialIdx];
-      if (ev) {
-        const progress = computeAttemptProgress(initialIdx);
-        const outcome = progress < 1 ? 'pending'
-          : ev.status === 'success' ? (ev.attempt_number > 1 ? 'retry' : 'success')
-          : 'failure';
-        onAttemptPulse?.({
-          packetId: ev.packet_id,
-          attemptNumber: ev.attempt_number,
-          progress,
-          outcome,
-        });
-      }
+      const seg = segments[initialIdx];
+      // Phase 5.1F (WORKSTREAM E): status=pending while progress < 1
+      // Phase 5.1F (WORKSTREAM F): isRetry is separate from status
+      const status: 'pending' | 'success' | 'failure' = initialProgress < 1
+        ? 'pending'
+        : seg.authoritativeStatus;
+      onAttemptPulse?.({
+        packetId: seg.packetId,
+        attemptNumber: seg.attemptNumber,
+        isRetry: seg.isRetry,
+        progress: initialProgress,
+        status,
+      });
     }
 
     const intervalMs = Math.max(50, totalVisualMs / Math.max(1, totalAttempts * 10));
     const interval = setInterval(() => {
       const nowMs = Date.now();
-      const elapsedMs = startMs ? nowMs - startMs : 0;
+      const elapsedMs = nowMs - startMs;
 
-      const idx = computeCurrentAttemptIndex();
-      setVisibleAttemptIndex(idx);
+      const idx = computeActiveSegmentIndex(elapsedMs);
+      const progress = computeSegmentProgress(idx, elapsedMs);
+      setActiveSegmentIndex(idx);
+      setActiveSegmentProgress(progress);
 
-      // Emit 3D pulse for the active attempt with absolute-time progress
+      // Emit 3D pulse for the active segment
       if (idx >= 0 && idx < totalAttempts) {
-        const ev = attemptEvents[idx];
-        if (ev) {
-          const progress = computeAttemptProgress(idx);
-          const outcome = progress < 1 ? 'pending'
-            : ev.status === 'success' ? (ev.attempt_number > 1 ? 'retry' : 'success')
-            : 'failure';
-          onAttemptPulse?.({
-            packetId: ev.packet_id,
-            attemptNumber: ev.attempt_number,
-            progress,
-            outcome,
-          });
-        }
+        const seg = segments[idx];
+        // Phase 5.1F (WORKSTREAM E): never reveal outcome while in flight
+        const status: 'pending' | 'success' | 'failure' = progress < 1
+          ? 'pending'
+          : seg.authoritativeStatus;
+        onAttemptPulse?.({
+          packetId: seg.packetId,
+          attemptNumber: seg.attemptNumber,
+          isRetry: seg.isRetry,
+          progress,
+          status,
+        });
       }
 
       // Check if total visual duration has elapsed
       if (elapsedMs >= totalVisualMs) {
         clearInterval(interval);
-        setVisibleAttemptIndex(totalAttempts - 1);
+        setActiveSegmentIndex(totalAttempts - 1);
+        setActiveSegmentProgress(1);
         onAttemptPulse?.(null);
         setTimeout(advanceToSignalTransit, 600);
       }
@@ -552,9 +600,8 @@ export function TransmissionSequencePanel({
       onAttemptPulse?.(null);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, playback, simResult, reduced]);
-  // Note: advanceToSignalTransit, onSetPlaybackStarted, onAttemptPulse are stable
-  // callbacks that should not restart the playback interval on re-render.
+  }, [phase, playback, reduced]);
+  // Note: advanceToSignalTransit, onSetPlaybackStarted, onAttemptPulse are stable callbacks.
 
   // SIGNAL_TRANSIT → COMPLETE after propagation duration
   useEffect(() => {
@@ -668,11 +715,13 @@ export function TransmissionSequencePanel({
         </div>
       )}
 
-      {/* TRANSMITTING */}
-      {phase === 'transmitting' && simResult && (
+      {/* TRANSMITTING — Phase 5.1F: uses visualSegments + activeSegmentIndex/Progress */}
+      {phase === 'transmitting' && simResult && playback && (
         <TransmissionProgressPanel
           sim={simResult}
-          visibleAttemptIndex={visibleAttemptIndex}
+          visualSegments={playback.visualSegments}
+          activeSegmentIndex={activeSegmentIndex}
+          activeSegmentProgress={activeSegmentProgress}
         />
       )}
       {phase === 'transmitting' && !simResult && (

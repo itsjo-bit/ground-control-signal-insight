@@ -15,6 +15,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { buildTransmissionPlayback, groupAttemptsByPacket } from '../../experience/transmissionPlayback';
+import { buildProviderBadgeLabel as prodBuildProviderBadgeLabel } from '../../utils/providerClassification';
 import type { SimulationResult, TransmissionAttemptEvent } from '../../types/domain';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -359,7 +360,7 @@ describe('buildTransmissionPlayback — deferred behavior', () => {
     expect(attemptStartEvents.length).toBe(1);
     // 3 deferred events
     expect(deferredEvents.length).toBe(3);
-    expect(deferredEvents.every((e) => e.outcome === 'deferred')).toBe(true);
+    expect(deferredEvents.every((e) => e.outcome === 'deferred')).toBe(true); // PlaybackEvent.outcome='deferred' (legacy field)
 
     // Visual denominator (totalVisualDurationMs) is based on attempt events, not deferred
     expect(pb.totalVisualDurationMs).toBeGreaterThan(0);
@@ -447,50 +448,41 @@ describe('Provider labeling', () => {
     return n.includes('local') || n.includes('deterministic') || n.includes('rule');
   }
 
-  function getBadgeLabel(provider: string | null, lifecycle: 'ready' | 'analyzing' | 'error' | 'stale'): string {
-    const ap = (provider ?? '').toLowerCase();
-    const isLocal = ap.includes('local') || ap.includes('deterministic') || ap.includes('rule');
-    const providerLabel = lifecycle === 'analyzing' ? 'ANALYZING'
-      : lifecycle === 'ready' ? (provider?.toUpperCase() ?? 'READY')
-      : lifecycle === 'error' ? 'FAILED'
-      : 'STALE';
-    const prefix = isLocal && (lifecycle === 'ready' || lifecycle === 'stale') ? 'TRIAGE' : 'AI';
-    return `${prefix} · ${providerLabel}`;
-  }
-
   it('16.14 — Local provider must NOT show "AI · Local"', () => {
-    const badge = getBadgeLabel('local', 'ready');
+    const badge = prodBuildProviderBadgeLabel('local', 'ready');
     expect(badge).not.toContain('AI · LOCAL');
     expect(badge).toContain('TRIAGE');
     expect(badge).not.toBe('AI · LOCAL');
   });
 
   it('16.14 — Gemini→Local fallback must not label as AI', () => {
-    // When actualProvider is local (after Gemini fallback)
     expect(isLocalProvider('local')).toBe(true);
     expect(isLocalProvider('Local deterministic')).toBe(true);
-    const badge = getBadgeLabel('local', 'ready');
+    const badge = prodBuildProviderBadgeLabel('local', 'ready');
     expect(badge.startsWith('TRIAGE')).toBe(true);
+    expect(badge).not.toMatch(/^AI /);
   });
 
   it('16.15 — Granite provider keeps AI prefix', () => {
     expect(isLocalProvider('granite')).toBe(false);
     expect(isLocalProvider('Granite-3.1')).toBe(false);
-    const badge = getBadgeLabel('Granite', 'ready');
+    const badge = prodBuildProviderBadgeLabel('Granite', 'ready');
     expect(badge.startsWith('AI')).toBe(true);
     expect(badge).toContain('GRANITE');
   });
 
   it('16.15 — Gemini provider keeps AI prefix', () => {
     expect(isLocalProvider('gemini')).toBe(false);
-    const badge = getBadgeLabel('Gemini', 'ready');
+    const badge = prodBuildProviderBadgeLabel('Gemini', 'ready');
     expect(badge.startsWith('AI')).toBe(true);
   });
 
-  it('unknown provider uses AI prefix (safe default)', () => {
+  it('unknown provider uses ADVISORY (fail-safe) — not AI (Phase 5.1F)', () => {
+    // Phase 5.1F: unknown provider must NOT get AI badge
     expect(isLocalProvider(null)).toBe(false);
-    const badge = getBadgeLabel(null, 'ready');
-    expect(badge.startsWith('AI')).toBe(true);
+    const badge = prodBuildProviderBadgeLabel(null, 'ready');
+    expect(badge.startsWith('ADVISORY')).toBe(true);
+    expect(badge).not.toMatch(/^AI /);
   });
 });
 

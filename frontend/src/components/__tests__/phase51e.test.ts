@@ -666,20 +666,39 @@ describe('14.17 — Ground Reception derives from simulation_result', () => {
 
 // ─── Provider badge lifecycle coverage ───────────────────────────────────────
 
-describe('Provider badge — all lifecycle states', () => {
-  it('analyzing → always "AI · ANALYZING" regardless of provider', () => {
-    expect(buildProviderBadgeLabel('Granite', 'analyzing')).toBe('AI · ANALYZING');
-    expect(buildProviderBadgeLabel('local', 'analyzing')).toBe('AI · ANALYZING');
-    expect(buildProviderBadgeLabel(null, 'analyzing')).toBe('AI · ANALYZING');
+describe('Provider badge — all lifecycle states (Phase 5.1F)', () => {
+  it('analyzing — external provider → AI badge with provider name', () => {
+    expect(buildProviderBadgeLabel('Granite', 'analyzing')).toBe('AI · GRANITE · ANALYZING');
+    expect(buildProviderBadgeLabel('Gemini', 'analyzing')).toBe('AI · GEMINI · ANALYZING');
   });
 
-  it('error → always "AI · FAILED"', () => {
-    expect(buildProviderBadgeLabel('Granite', 'error')).toBe('AI · FAILED');
-    expect(buildProviderBadgeLabel(null, 'error')).toBe('AI · FAILED');
+  it('analyzing — local provider → TRIAGE, not AI', () => {
+    expect(buildProviderBadgeLabel('local', 'analyzing')).toBe('TRIAGE · LOCAL · ANALYZING');
+    expect(buildProviderBadgeLabel('local', 'analyzing')).not.toMatch(/^AI /);
+  });
+
+  it('analyzing — unknown/null → ADVISORY, not AI', () => {
+    expect(buildProviderBadgeLabel(null, 'analyzing')).toBe('ADVISORY · ANALYZING');
+    expect(buildProviderBadgeLabel(null, 'analyzing')).not.toMatch(/^AI /);
+  });
+
+  it('error — external provider → AI badge with provider name', () => {
+    expect(buildProviderBadgeLabel('Granite', 'error')).toBe('AI · GRANITE · FAILED');
+    expect(buildProviderBadgeLabel('Gemini', 'error')).toBe('AI · GEMINI · FAILED');
+  });
+
+  it('error — local provider → TRIAGE, not AI', () => {
+    expect(buildProviderBadgeLabel('local', 'error')).toBe('TRIAGE · LOCAL · FAILED');
+    expect(buildProviderBadgeLabel('local', 'error')).not.toMatch(/^AI /);
+  });
+
+  it('error — unknown/null → ADVISORY, not AI', () => {
+    expect(buildProviderBadgeLabel(null, 'error')).toBe('ADVISORY · FAILED');
+    expect(buildProviderBadgeLabel(null, 'error')).not.toMatch(/^AI /);
   });
 
   it('stale states', () => {
-    expect(buildProviderBadgeLabel('Granite', 'stale')).toBe('AI · STALE');
+    expect(buildProviderBadgeLabel('Granite', 'stale')).toBe('AI · GRANITE · STALE');
     expect(buildProviderBadgeLabel('local', 'stale')).toBe('TRIAGE · STALE');
     expect(buildProviderBadgeLabel(null, 'stale')).toBe('ADVISORY · STALE');
   });

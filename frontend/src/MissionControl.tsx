@@ -361,10 +361,25 @@ export default function MissionControl() {
 
   /**
    * Wall-clock ms at which operator authorized the current execution.
-   * Stored for potential presentation use (e.g., showing time since authorization).
-   * Currently not displayed in UI but maintained for future phase-timeline anchoring.
+   * Anchors the presentation phase timeline for navigation-resilient phase derivation.
    */
   const [_authorizedAtMs, setAuthorizedAtMs] = useState<number | null>(null);
+
+  /**
+   * Phase 5.1F: Application-level presentation phase for the active execution.
+   * This is the AUTHORITATIVE source of the current choreography phase.
+   * TransmissionSequencePanel is a VIEW that must not reset this on remount.
+   *
+   * When non-null it represents the furthest phase the execution has reached,
+   * ensuring navigation away and back shows the correct current phase.
+   */
+  const [presentationPhase, setPresentationPhase] = useState<import('./components/TransmissionSequencePanel').TransmissionChoreographyPhase>('plan_uplink');
+
+  /**
+   * Phase 5.1F: Wall-clock ms when the approval result was received.
+   * Stored at application level so it is available after panel remounts.
+   */
+  const approvalResultReceivedAtMsRef = useRef<number | null>(null);
 
   /**
    * Frozen snapshot of the plan/mode chosen at authorization time.
@@ -406,7 +421,8 @@ export default function MissionControl() {
   /** Frozen plan snapshot for the active execution (set at authorization time). */
   const [pendingExecutionPlan, setPendingExecutionPlan] = useState<CandidatePlan | null>(null);
   /** Whether to use /approve (ai) or /approve/custom (manual/modified). Frozen at authorization. */
-  const [pendingExecutionMode, setPendingExecutionMode] = useState<'ai' | 'custom'>('custom');
+  // pendingExecutionMode: kept for potential future use; was used in removed fallback
+  const [_pendingExecutionMode, setPendingExecutionMode] = useState<'ai' | 'custom'>('custom');
 
   // ── Phase 4.2F: Experience manifest ───────────────────────────────────────
   const [experienceManifest, setExperienceManifest] = useState<ExperienceManifest | null>(null);
@@ -605,6 +621,8 @@ export default function MissionControl() {
     setAuthorizedAtMs(null);
     setPlaybackStartedAtMs(null);
     setActivePulse(null);
+    setPresentationPhase('plan_uplink');
+    approvalResultReceivedAtMsRef.current = null;
     executionPromiseRef.current.clear();
     executionResultRef.current.clear();
     executionSnapshotRef.current = null;
@@ -667,6 +685,8 @@ export default function MissionControl() {
     setAuthorizedAtMs(null);
     setPlaybackStartedAtMs(null);
     setActivePulse(null);
+    setPresentationPhase('plan_uplink');
+    approvalResultReceivedAtMsRef.current = null;
     executionPromiseRef.current.clear();
     executionResultRef.current.clear();
     executionSnapshotRef.current = null;
@@ -875,8 +895,14 @@ export default function MissionControl() {
     const promise = approveCustomPlan(planToExecute, 'operator transmission');
     executionPromiseRef.current.set(newId, promise);
     // Resolve result into ref for navigation-resilient retrieval (INVARIANT E8)
+    // Phase 5.1F: also record approvalResultReceivedAtMs at resolution time (not panel mount)
     promise.then(
-      (result) => { executionResultRef.current.set(newId, result); },
+      (result) => {
+        executionResultRef.current.set(newId, result);
+        if (approvalResultReceivedAtMsRef.current === null) {
+          approvalResultReceivedAtMsRef.current = Date.now();
+        }
+      },
       () => { /* error handled in TransmissionSequencePanel */ }
     );
 
@@ -891,6 +917,8 @@ export default function MissionControl() {
     setExecutionId(newId);
     setAuthorizedAtMs(nowMs);
     setPlaybackStartedAtMs(null);
+    setPresentationPhase('plan_uplink');
+    approvalResultReceivedAtMsRef.current = null;
     setPendingExecutionPlan(planToExecute);
     setPendingExecutionMode('custom');
     setChoreographyPhase('plan_uplink');
@@ -929,8 +957,14 @@ export default function MissionControl() {
     // ── INVARIANT E4: Dispatch approval immediately at authorization time ──
     const promise = approvePlan(recommendation!.recommended_plan_id, recPlan);
     executionPromiseRef.current.set(newId, promise);
+    // Phase 5.1F: record approvalResultReceivedAtMs at resolution time (not panel mount)
     promise.then(
-      (result) => { executionResultRef.current.set(newId, result); },
+      (result) => {
+        executionResultRef.current.set(newId, result);
+        if (approvalResultReceivedAtMsRef.current === null) {
+          approvalResultReceivedAtMsRef.current = Date.now();
+        }
+      },
       () => { /* error handled in TransmissionSequencePanel */ }
     );
 
@@ -945,6 +979,8 @@ export default function MissionControl() {
     setExecutionId(newId);
     setAuthorizedAtMs(nowMs);
     setPlaybackStartedAtMs(null);
+    setPresentationPhase('plan_uplink');
+    approvalResultReceivedAtMsRef.current = null;
     setAiRecommendationRejected(false);
     setPendingExecutionPlan(recPlan);
     setPendingExecutionMode('ai');
@@ -977,31 +1013,66 @@ export default function MissionControl() {
    * Return the execution Promise for a given executionId.
    * Called by TransmissionSequencePanel to await the result.
    *
-   * Phase 5.1E: The approval Promise was already dispatched at authorization time
-   * (in handleManualTransmit / handleApproveAiPlan). This function ONLY returns it.
-   * No new dispatch occurs here — the entry always exists when this is called.
+   * Phase 5.1F (WORKSTREAM B — FAIL CLOSED):
+   * This function is a RETRIEVAL OPERATION ONLY.
+   * The approval Promise was already dispatched at authorization time in
+   * handleManualTransmit / handleApproveAiPlan. This function ONLY returns it.
+   *
+   * If the Promise is missing, that is a frontend invariant violation — it means
+   * authorization never ran or the execution coordinator lost its state. We throw
+   * a typed error rather than silently creating a second backend request.
+   *
+   * DO NOT add a fallback approvePlan / approveCustomPlan call here.
+   * Backend one-shot semantics must remain protected.
    *
    * INVARIANT E2: one backend call per executionId.
    * INVARIANT E4: dispatch happens at authorization, not from a presentation timer.
+   * INVARIANT F07: missing Promise fails closed, no secondary dispatch.
    */
   const handleExecuteApproval = useCallback(async (activeExecutionId: string): Promise<ApproveResponse> => {
-    const map = executionPromiseRef.current;
-    if (map.has(activeExecutionId)) {
-      return map.get(activeExecutionId)!;
+    const promise = executionPromiseRef.current.get(activeExecutionId);
+    if (!promise) {
+      // Execution coordinator invariant violation: the Promise must always exist before
+      // TransmissionSequencePanel is mounted. This indicates a programming error.
+      throw new Error(
+        `Execution coordinator invariant violation: no approval request exists for execution ${activeExecutionId}. ` +
+        `This is a frontend programming error — authorization must register the Promise before the panel mounts.`
+      );
     }
-    // Fallback: should never reach here with the new architecture.
-    // If somehow the promise is missing (e.g. extreme edge case), create a one-shot
-    // rather than silently doing nothing.
-    if (!pendingExecutionPlan) throw new Error('No pending execution plan (execution coordinator missing promise)');
-    const promise = (pendingExecutionMode === 'ai' && recommendation)
-      ? approvePlan(recommendation.recommended_plan_id, pendingExecutionPlan)
-      : approveCustomPlan(pendingExecutionPlan, 'operator transmission');
-    map.set(activeExecutionId, promise);
     return promise;
-  }, [pendingExecutionPlan, pendingExecutionMode, recommendation]);
+  }, []);
+
+  /**
+   * Phase 5.1F (WORKSTREAM D): Production scenario stale-result guard.
+   * Checks whether the result belongs to the current scenario before committing it.
+   * Called before any state update from a resolved approval Promise.
+   *
+   * Uses executionSnapshotRef (frozen at authorization) to compare scenario identity
+   * against the current active scenario path. This is a ref-based check that does not
+   * depend on stale React closure values.
+   */
+  const currentActiveScenarioPathRef = useRef<string | null>(null);
+
+  // Keep currentActiveScenarioPathRef up to date with active scenario
+  useEffect(() => {
+    currentActiveScenarioPathRef.current = activeScenarioPath;
+  }, [activeScenarioPath]);
 
   /** Called when TransmissionSequencePanel completes the full sequence. */
   const handleChoreographyComplete = useCallback((result: ApproveResponse) => {
+    // Phase 5.1F (WORKSTREAM D): Validate scenario identity before committing result.
+    // If the operator switched scenarios after authorization, the old result must not
+    // overwrite the new scenario's UI state.
+    const snapshot = executionSnapshotRef.current;
+    if (snapshot && snapshot.scenarioPath !== currentActiveScenarioPathRef.current) {
+      // Stale result — log diagnostic and discard without touching current UI.
+      console.warn(
+        `[GCSI] Stale execution result discarded: result for scenario "${snapshot.scenarioPath}" ` +
+        `arrived after switch to "${currentActiveScenarioPathRef.current}". ` +
+        `This is expected behavior when the operator switches scenarios during execution.`
+      );
+      return;
+    }
     setChoreographyActive(false);
     addSessionEvent('transmission_completed', `delivered=${result.simulation_result.delivered_packets.length}`);
     handleApproved(result);
@@ -1469,9 +1540,32 @@ export default function MissionControl() {
             pendingExecutionPlan={pendingExecutionPlan}
             onExecuteApproval={handleExecuteApproval}
             onChoreographyComplete={handleChoreographyComplete}
-            onChoreographyError={(msg) => { setError(msg); setChoreographyActive(false); setApprovalPhase('ready'); }}
+            onChoreographyError={(msg) => {
+              // Phase 5.1F (WORKSTREAM D): Check scenario identity before committing error state.
+              const snap = executionSnapshotRef.current;
+              if (snap && snap.scenarioPath !== currentActiveScenarioPathRef.current) {
+                console.warn('[GCSI] Stale execution error discarded (scenario switched).');
+                return;
+              }
+              setError(msg);
+              setChoreographyActive(false);
+              setApprovalPhase('ready');
+            }}
             onAttemptPulse={setActivePulse}
-            onChoreographyPhaseChange={setChoreographyPhase}
+            onChoreographyPhaseChange={(phase) => {
+              setChoreographyPhase(phase);
+              // Phase 5.1F: keep application-level presentationPhase in sync.
+              // This ensures navigation away and back shows the correct current phase.
+              // Phase only ever advances forward — never regresses.
+              setPresentationPhase((prev) => {
+                const order: import('./components/TransmissionSequencePanel').TransmissionChoreographyPhase[] =
+                  ['plan_uplink', 'contact_wait', 'transmitting', 'signal_transit', 'complete'];
+                const prevIdx = order.indexOf(prev);
+                const newIdx = order.indexOf(phase);
+                return newIdx > prevIdx ? phase : prev;
+              });
+            }}
+            presentationPhase={presentationPhase}
           />
         </div>
       )}

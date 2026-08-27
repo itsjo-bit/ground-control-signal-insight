@@ -57,21 +57,43 @@ export function classifyProvider(providerName: string | null | undefined): Provi
 
 /**
  * Build the top-bar badge label for the AI lifecycle badge.
- * Returns the full badge text (e.g. "AI · GRANITE", "TRIAGE · LOCAL", "ADVISORY · READY").
+ * Returns the full badge text (e.g. "AI · GRANITE · ANALYZING", "TRIAGE · LOCAL", "ADVISORY · READY").
+ *
+ * Phase 5.1F (WORKSTREAM J):
+ * Provider identity determines whether the word "AI" is allowed.
+ * Unknown or local providers NEVER receive an AI badge, even during analyzing/error states.
+ *
+ * Rules:
+ *   Known external LLM + analyzing  → "AI · <NAME> · ANALYZING"
+ *   Known external LLM + error      → "AI · <NAME> · FAILED"
+ *   Local/deterministic + analyzing → "TRIAGE · LOCAL · ANALYZING"
+ *   Local/deterministic + error     → "TRIAGE · LOCAL · FAILED"
+ *   Unknown + analyzing             → "ADVISORY · ANALYZING"
+ *   Unknown + error                 → "ADVISORY · FAILED"
  */
 export function buildProviderBadgeLabel(
   providerName: string | null | undefined,
   lifecycle: 'analyzing' | 'ready' | 'error' | 'stale',
 ): string {
-  if (lifecycle === 'analyzing') return 'AI · ANALYZING';
-  if (lifecycle === 'error') return 'AI · FAILED';
-
   const classification = classifyProvider(providerName);
+
+  // Phase 5.1F: classify first, then build label per provider kind
+  if (lifecycle === 'analyzing') {
+    if (classification.kind === 'external_ai') return `AI · ${classification.displayName} · ANALYZING`;
+    if (classification.kind === 'local_deterministic') return 'TRIAGE · LOCAL · ANALYZING';
+    return 'ADVISORY · ANALYZING';
+  }
+
+  if (lifecycle === 'error') {
+    if (classification.kind === 'external_ai') return `AI · ${classification.displayName} · FAILED`;
+    if (classification.kind === 'local_deterministic') return 'TRIAGE · LOCAL · FAILED';
+    return 'ADVISORY · FAILED';
+  }
 
   if (lifecycle === 'stale') {
     if (classification.kind === 'local_deterministic') return 'TRIAGE · STALE';
     if (classification.kind === 'unknown') return 'ADVISORY · STALE';
-    return 'AI · STALE';
+    return `AI · ${classification.displayName} · STALE`;
   }
 
   // lifecycle === 'ready'

@@ -1,16 +1,25 @@
 /**
- * CommunicationLink — Phase 4.2F4 upgrade.
+ * CommunicationLink — Phase 5.1F upgrade.
  *
  * Renders a tube-based beam with:
  * - Ghost/track line (always visible, responds to link health)
- * - Animated transmission pulse (event-driven, only during transmitting state)
+ * - Animated transmission pulse (event-driven, only for authoritative attempt events)
  *
- * F4 changes:
- * - direction prop: earth_to_spacecraft (uplink) | spacecraft_to_earth (downlink)
- * - activePulse prop: actual attempt event state
- * - Outcome icons: ✓ delivered, ✕ failed, ↻ retry, ⊘ deferred
- * - No fake random pulse emission
+ * Phase 5.1F changes:
+ * - ActivePulse uses isRetry + status instead of outcome='retry' (WORKSTREAM F)
+ * - REMOVED generic auto-pulse fallback for transmitting=true, activePulse=null (WORKSTREAM I)
+ *   → Only activePulse derived from an authoritative attempt_event creates a moving pulse
+ *   → During CONTACT_WAIT (transmitting=true, no activePulse): beam/glow only, no packet pulse
+ * - Visual policy documented by LinkVisualMode enum (WORKSTREAM I)
  * - prefers-reduced-motion: no animation, show state only via color
+ *
+ * LINK VISUAL POLICY (per phase):
+ *   IDLE                  → beam/glow only, no pulse
+ *   PLAN_UPLINK_VISUAL    → direction=earth_to_spacecraft, generic uplink pulse allowed
+ *   CONTACT_ACQUISITION   → transmitting=true, activePulse=null → beam/glow only, NO packet pulse
+ *   AUTHORITATIVE_DOWNLINK→ activePulse from attempt_event → authoritative data pulse
+ *   SIGNAL_TRANSIT_VISUAL → no moving pulse (transit already happened)
+ *   COMPLETE              → no pulse
  */
 import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
@@ -22,15 +31,20 @@ export type LinkHealthStatus = 'good' | 'warning' | 'critical' | 'transmitting';
 /** Direction of the active pulse. */
 export type LinkDirection = 'earth_to_spacecraft' | 'spacecraft_to_earth' | 'idle';
 
-/** Outcome of the current/last attempt. */
-export type PulseOutcome = 'success' | 'failure' | 'retry' | 'deferred' | 'pending';
-
+/**
+ * Phase 5.1F: ActivePulse uses isRetry + status (NOT outcome='retry').
+ * Retry identity (isRetry) and outcome (status) are separate dimensions.
+ * 'retry' is NOT a valid status — use isRetry=true + status='success'|'failure'.
+ */
 export interface ActivePulse {
   packetId: string;
   attemptNumber: number;
+  /** True when this is a retry (attemptNumber > 1). Separate from outcome status. */
+  isRetry: boolean;
   /** 0..1 progress along the curve. */
   progress: number;
-  outcome: PulseOutcome;
+  /** 'pending' while in flight; authoritative status on completion. Never 'retry'. */
+  status: 'pending' | 'success' | 'failure';
 }
 
 interface Props {
@@ -50,20 +64,17 @@ const STATUS_COLOR: Record<LinkHealthStatus, THREE.Color> = {
   transmitting: new THREE.Color(0x44ffcc),
 };
 
-const OUTCOME_COLOR: Record<PulseOutcome, THREE.Color> = {
+/** Phase 5.1F: pulse color keyed on status (not PulseOutcome). */
+const PULSE_STATUS_COLOR: Record<'pending' | 'success' | 'failure', THREE.Color> = {
   success:  new THREE.Color(0x34d399),
   failure:  new THREE.Color(0xf87171),
-  retry:    new THREE.Color(0xf59e0b),
-  deferred: new THREE.Color(0x6EA8FF),
   pending:  new THREE.Color(0x44ffcc),
 };
 
-const OUTCOME_ICON: Record<PulseOutcome, string> = {
-  success:  '✓',
-  failure:  '✕',
-  retry:    '↻',
-  deferred: '⊘',
-  pending:  '●',
+const STATUS_ICON: Record<'pending' | 'success' | 'failure', string> = {
+  success: '✓',
+  failure: '✕',
+  pending: '●',
 };
 
 export function CommunicationLink({
@@ -77,15 +88,14 @@ export function CommunicationLink({
 }: Props) {
   const pulseRef = useRef<THREE.Mesh>(null);
   const pulseProgress = useRef(0);
-  const autoProgress = useRef(0); // fallback for generic transmitting without pulse data
+  // Phase 5.1F: uplink-direction generic animation progress (plan_uplink visual only)
+  const uplinkAutoProgress = useRef(0);
 
   const baseColor = STATUS_COLOR[transmitting ? 'transmitting' : linkStatus];
-  const pulseColor = activePulse ? OUTCOME_COLOR[activePulse.outcome] : baseColor;
+  const pulseColor = activePulse ? PULSE_STATUS_COLOR[activePulse.status] : baseColor;
 
   // Determine pulse direction: uplink = earth→spacecraft, downlink = spacecraft→earth
   const isUplink = direction === 'earth_to_spacecraft';
-  // For uplink: pulse goes from endPos (earth) to startPos (spacecraft)
-  // For downlink: pulse goes from startPos (spacecraft) to endPos (earth)
 
   // Build a CatmullRomCurve3 with a slight arc
   const curve = useMemo(() => {
@@ -129,25 +139,33 @@ export function CommunicationLink({
     }
 
     if (activePulse) {
-      // Drive pulse position from actual progress
+      // AUTHORITATIVE_DOWNLINK: drive pulse from actual attempt_event progress
       pulseProgress.current = activePulse.progress;
-    } else if (transmitting) {
-      // Generic transmitting — auto-animate
-      autoProgress.current = (autoProgress.current + delta * 0.35) % 1.0;
-      pulseProgress.current = autoProgress.current;
+      uplinkAutoProgress.current = 0;
+      const pulsePos = activeCurve.getPoint(pulseProgress.current);
+      pulseRef.current.position.copy(pulsePos);
+      pulseRef.current.visible = true;
+    } else if (isUplink && transmitting) {
+      // PLAN_UPLINK_VISUAL: generic Earth→spacecraft presentation pulse is allowed.
+      // This is clearly a presentation-only animation (direction = earth_to_spacecraft).
+      // No fake packet ID, no authoritative data represented.
+      uplinkAutoProgress.current = (uplinkAutoProgress.current + delta * 0.4) % 1.0;
+      pulseProgress.current = uplinkAutoProgress.current;
+      const pulsePos = activeCurve.getPoint(pulseProgress.current);
+      pulseRef.current.position.copy(pulsePos);
+      pulseRef.current.visible = true;
     } else {
+      // Phase 5.1F (WORKSTREAM I): NO auto-pulse during CONTACT_ACQUISITION or other
+      // phases where transmitting=true but no authoritative attempt_event is active.
+      // The old generic auto-pulse was removed to avoid fake data packet visualization.
       pulseRef.current.visible = false;
-      autoProgress.current = 0;
+      uplinkAutoProgress.current = 0;
       pulseProgress.current = 0;
-      return;
     }
-
-    const pulsePos = activeCurve.getPoint(pulseProgress.current);
-    pulseRef.current.position.copy(pulsePos);
-    pulseRef.current.visible = true;
   });
 
-  const showLabel = activePulse && activePulse.outcome !== 'pending';
+  // Only show outcome label for non-pending authoritative pulses
+  const showLabel = activePulse && activePulse.status !== 'pending';
 
   return (
     <group>
@@ -192,7 +210,7 @@ export function CommunicationLink({
         />
       </mesh>
 
-      {/* Outcome label — shown at pulse midpoint */}
+      {/* Outcome label — shown at pulse midpoint for completed authoritative attempts */}
       {showLabel && activePulse && !reducedMotion && (
         <Html
           position={activeCurve.getPoint(0.5).toArray()}
@@ -201,16 +219,16 @@ export function CommunicationLink({
           <div style={{
             fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
             fontSize: 10, fontWeight: 700,
-            color: activePulse.outcome === 'success' ? '#34d399'
-              : activePulse.outcome === 'failure' ? '#f87171'
-              : activePulse.outcome === 'retry' ? '#f59e0b' : '#6EA8FF',
+            color: activePulse.status === 'success' ? '#34d399'
+              : activePulse.status === 'failure' ? '#f87171'
+              : '#6EA8FF',
             background: 'rgba(8,12,22,0.85)',
             border: '1px solid rgba(46,58,79,0.7)',
             borderRadius: 3, padding: '2px 6px',
             whiteSpace: 'nowrap',
           }}>
-            {OUTCOME_ICON[activePulse.outcome]} {activePulse.packetId.slice(0, 16)}
-            {activePulse.attemptNumber > 1 && ` ↻${activePulse.attemptNumber}`}
+            {STATUS_ICON[activePulse.status]} {activePulse.packetId.slice(0, 16)}
+            {activePulse.isRetry && ` ↻${activePulse.attemptNumber}`}
           </div>
         </Html>
       )}

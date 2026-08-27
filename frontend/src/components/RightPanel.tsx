@@ -190,6 +190,12 @@ interface CommonProps {
    * can update pulseDirection (e.g. plan_uplink → earth_to_spacecraft).
    */
   onChoreographyPhaseChange: (phase: import('./TransmissionSequencePanel').TransmissionChoreographyPhase) => void;
+  /**
+   * Phase 5.1F: Application-level presentation phase for the active execution.
+   * This is the authoritative source that TransmissionSection uses to set initialPhase,
+   * so that remounting TransmissionSequencePanel resumes at the correct phase.
+   */
+  presentationPhase: import('./TransmissionSequencePanel').TransmissionChoreographyPhase;
   // ── Phase 4.2F3 props ─────────────────────────────────────────────────────────
   /** Called when operator approves AI recommendation — does NOT execute transmission. */
   onApproveAiPlan: () => void;
@@ -1804,10 +1810,12 @@ function TransmissionSection(props: CommonProps) {
     : (props.recEval ?? props.activeEval);
 
   // Show choreography sequence panel when active (survives navigation — executionId persists)
+  // Phase 5.1F (WORKSTREAM A): Pass the application-level presentationPhase as initialPhase.
+  // This ensures remounts resume at the correct phase instead of restarting at plan_uplink.
   if (props.choreographyActive && props.executionId) {
     return (
       <TransmissionSequencePanel
-        initialPhase="plan_uplink"
+        initialPhase={props.presentationPhase}
         pendingPlan={props.pendingExecutionPlan}
         playbackConfig={props.experienceManifest?.playback ?? null}
         propagationDelayS={props.propagationDelayS}
