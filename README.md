@@ -11,6 +11,55 @@ what gets transmitted first — while keeping the human in control of every fina
 
 ---
 
+## AI Builders Challenge Submission
+
+**Selected Challenge Theme:** Space Exploration
+**Primary Development Tool:** IBM Bob
+**Solution Area:** Space Operations & Decision-Support Systems
+**AI Role:** Semantic mission-data prioritization and advisory plan recommendation
+
+---
+
+## How IBM Bob Was Used
+
+IBM Bob served as GCSI's primary AI-assisted development tool across the
+project lifecycle — from architecture planning and backend implementation
+to AI-provider integration, the React Three Fiber mission interface,
+testing, debugging, and submission hardening.
+
+GCSI also includes project-specific Bob guidance under `.bob/`:
+
+- **Agent rules** — coding and domain invariants, including telecom,
+  simulation, and data-model constraints
+- **Plan rules** — architectural boundaries between deterministic
+  evaluation, stochastic simulation, and AI reasoning
+- **Ask rules** — authoritative project context and documentation guidance
+
+These rules helped Bob work within GCSI's engineering constraints rather
+than treating each task as an isolated code-generation request.
+
+Bob-generated changes were independently reviewed and repeatedly verified
+against the repository itself. Submission-critical changes were validated
+with clean-environment installation, automated tests, TypeScript type
+checking, and production builds rather than relying only on Bob's summary
+of its own work.
+
+This verification discipline caught real integration and packaging issues
+during development and led to a deliberately iterative workflow:
+
+**small scoped task → Bob implementation → independent review → regression
+testing → refinement**
+
+At the current submission state, GCSI's final CI run validates
+**2,117 passing automated tests** across backend and frontend:
+- 1,915 backend tests passing
+- 202 frontend tests passing
+
+The frontend CI also validates TypeScript type checking and the production
+build.
+
+---
+
 ## The Problem — ASTERIA-7 Canonical Demo
 
 The canonical demonstration mission, **ASTERIA-7**, illustrates the scale of the challenge:
@@ -796,7 +845,9 @@ See [`benchmarks/README.md`](benchmarks/README.md) and [`docs/benchmark_methodol
 
 - **IBM Granite** (`ibm/granite-4-h-small`) is the primary supported AI provider via IBM watsonx.ai
 - IBM Granite is used for Stage-1 semantic prioritization and Stage-2 plan recommendation
-- **IBM Bob** AI assistant was used during GCSI's development
+- **IBM Bob** was the primary AI-assisted development tool for GCSI; see
+  [How IBM Bob Was Used](#how-ibm-bob-was-used) for the development workflow
+  and project-specific `.bob/` configuration.
 - GCSI does not claim empirical Granite superiority — the benchmark experiment is pending
 
 ---
