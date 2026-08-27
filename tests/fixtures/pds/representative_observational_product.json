@@ -1,0 +1,46 @@
+{
+  "_fixture_note": [
+    "REPRESENTATIVE TEST FIXTURE",
+    "NOT A LIVE NASA PDS CAPTURE",
+    "NOT A VERIFIED PDS SNAPSHOT",
+    "This file was manually constructed to represent the structural shape",
+    "of a PDS Search API KVP JSON response for a single observational product.",
+    "The LIDVID 'urn:nasa:pds:test_gcsi_bundle:data_raw:test_obs_product_001::1.0'",
+    "is a clearly fictional representative identifier — not a real PDS product.",
+    "Phase 6E-B will capture a genuine Juno product response from the live PDS API."
+  ],
+  "summary": {
+    "q": "*",
+    "hits": 1,
+    "took": 42,
+    "start": 0,
+    "limit": 1,
+    "sort": null
+  },
+  "data": [
+    {
+      "lid": "urn:nasa:pds:test_gcsi_bundle:data_raw:test_obs_product_001",
+      "lidvid": "urn:nasa:pds:test_gcsi_bundle:data_raw:test_obs_product_001::1.0",
+      "product_class": "Product_Observational",
+      "title": "GCSI Representative Test Observational Product v1.0",
+      "pds:Identification_Area.pds:logical_identifier": "urn:nasa:pds:test_gcsi_bundle:data_raw:test_obs_product_001",
+      "pds:Identification_Area.pds:version_id": "1.0",
+      "pds:Identification_Area.pds:title": "GCSI Representative Test Observational Product v1.0",
+      "pds:Identification_Area.pds:product_class": "Product_Observational",
+      "pds:Time_Coordinates.pds:start_date_time": "2026-08-27T00:00:00Z",
+      "pds:Time_Coordinates.pds:stop_date_time": "2026-08-27T01:00:00Z",
+      "pds:Primary_Result_Summary.pds:processing_level": "Raw",
+      "ref_lid_instrument": ["urn:nasa:pds:context:instrument:test_spacecraft.test_instrument"],
+      "ref_lid_instrument_host": ["urn:nasa:pds:context:instrument_host:spacecraft.test_spacecraft"],
+      "ref_lid_investigation": ["urn:nasa:pds:context:investigation:mission.test_mission"],
+      "ref_lid_target": ["urn:nasa:pds:context:target:planet.jupiter"],
+      "ops:Data_File_Info.ops:file_name": ["test_obs_product_001.dat"],
+      "ops:Data_File_Info.ops:file_ref": ["https://pds.nasa.gov/test_gcsi_bundle/data_raw/test_obs_product_001.dat"],
+      "ops:Data_File_Info.ops:file_size": ["1048576"],
+      "ops:Data_File_Info.ops:md5_checksum": ["d41d8cd98f00b204e9800998ecf8427e"],
+      "ops:Data_File_Info.ops:mime_type": ["application/octet-stream"],
+      "ops:Harvest_Info.ops:node_name": "PDS_ATM",
+      "ops:Harvest_Info.ops:harvest_date_time": "2026-09-01T12:00:00Z"
+    }
+  ]
+}

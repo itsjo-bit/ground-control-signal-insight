@@ -1,0 +1,1374 @@
+"""GCSI Phase 6E-A — NASA PDS Product Metadata Adapter Tests.
+
+All tests are OFFLINE.  No live NASA PDS requests are made.
+
+The tests use httpx.MockTransport to simulate PDS Search API responses.
+
+Test coverage map (numbering follows the Phase 6E-A specification):
+
+REQUEST / SECURITY (1-15)
+IDENTITY (16-23)
+RESPONSE ENVELOPE (24-33)
+DATA FILES (34-48)
+SCIENCE METADATA (49-59)
+PROVENANCE (60-72)
+HTTP / TRUST (73-84)
+REGRESSION (85-92)
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from datetime import datetime, timezone, timedelta
+from typing import Optional
+
+import httpx
+import pytest
+from pydantic import ValidationError
+
+from backend.app.mission_sources.adapters.pds import (
+    PdsAdapterError,
+    PdsRegistryAdapter,
+    PdsUnavailableError,
+    PdsValidationError,
+    _ACCEPT_KVP_JSON,
+    _PDS_PRODUCTS_ENDPOINT,
+    _REQUESTED_FIELDS,
+    _build_canonical_request_identity,
+    _compute_provenance_id,
+)
+from backend.app.mission_sources.adapters.pds_models import (
+    PdsDataFile,
+    PdsProductRequest,
+    PdsScienceProduct,
+)
+from backend.app.provenance.models import (
+    ProvenanceKind,
+    ProvenanceValidationStatus,
+)
+
+
+# ---------------------------------------------------------------------------
+# Test constants
+# ---------------------------------------------------------------------------
+
+_VALID_LIDVID = "urn:nasa:pds:test_gcsi_bundle:data_raw:test_obs_001::1.0"
+_VALID_LID = "urn:nasa:pds:test_gcsi_bundle:data_raw:test_obs_001"
+_VALID_VERSION = "1.0"
+_FIXED_CLOCK_UTC = datetime(2026, 8, 27, 12, 0, 0, tzinfo=timezone.utc)
+
+_RAW_SENTINEL = "RAWSENTINEL_DO_NOT_EXPOSE"
+
+
+# ---------------------------------------------------------------------------
+# Fixture-builder helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_valid_kvp_payload(
+    lidvid: str = _VALID_LIDVID,
+    lid: str = _VALID_LID,
+    version_id: str = _VALID_VERSION,
+    title: str = "Test Observational Product",
+    product_class: str = "Product_Observational",
+    ia_product_class: str = "Product_Observational",
+    start_dt: Optional[str] = "2026-08-27T00:00:00Z",
+    stop_dt: Optional[str] = "2026-08-27T01:00:00Z",
+    processing_level: Optional[str] = "Raw",
+    instruments: Optional[list] = None,
+    instrument_hosts: Optional[list] = None,
+    investigations: Optional[list] = None,
+    targets: Optional[list] = None,
+    file_names: Optional[list] = None,
+    file_refs: Optional[list] = None,
+    file_sizes: Optional[list] = None,
+    md5s: Optional[list] = None,
+    mimes: Optional[list] = None,
+    harvest_node: Optional[str] = "PDS_ATM",
+    harvest_time: Optional[str] = "2026-09-01T12:00:00Z",
+    hits: int = 1,
+) -> dict:
+    """Build a structurally valid PDS KVP payload dict for testing."""
+    if instruments is None:
+        instruments = ["urn:nasa:pds:context:instrument:test.inst"]
+    if instrument_hosts is None:
+        instrument_hosts = ["urn:nasa:pds:context:instrument_host:sc.test"]
+    if investigations is None:
+        investigations = ["urn:nasa:pds:context:investigation:mission.test"]
+    if targets is None:
+        targets = ["urn:nasa:pds:context:target:planet.jupiter"]
+    if file_names is None:
+        file_names = ["test_product.dat"]
+    if file_refs is None:
+        file_refs = ["https://pds.nasa.gov/test/test_product.dat"]
+    if file_sizes is None:
+        file_sizes = ["1024"]
+    if md5s is None:
+        md5s = ["d41d8cd98f00b204e9800998ecf8427e"]
+    if mimes is None:
+        mimes = ["application/octet-stream"]
+
+    data_item: dict = {
+        "lid": lid,
+        "lidvid": lidvid,
+        "product_class": product_class,
+        "title": title,
+        "pds:Identification_Area.pds:logical_identifier": lid,
+        "pds:Identification_Area.pds:version_id": version_id,
+        "pds:Identification_Area.pds:title": title,
+        "pds:Identification_Area.pds:product_class": ia_product_class,
+        "ref_lid_instrument": instruments,
+        "ref_lid_instrument_host": instrument_hosts,
+        "ref_lid_investigation": investigations,
+        "ref_lid_target": targets,
+        "ops:Data_File_Info.ops:file_name": file_names,
+        "ops:Data_File_Info.ops:file_ref": file_refs,
+        "ops:Data_File_Info.ops:file_size": file_sizes,
+        "ops:Data_File_Info.ops:md5_checksum": md5s,
+        "ops:Data_File_Info.ops:mime_type": mimes,
+    }
+    if start_dt is not None:
+        data_item["pds:Time_Coordinates.pds:start_date_time"] = start_dt
+    if stop_dt is not None:
+        data_item["pds:Time_Coordinates.pds:stop_date_time"] = stop_dt
+    if processing_level is not None:
+        data_item["pds:Primary_Result_Summary.pds:processing_level"] = processing_level
+    if harvest_node is not None:
+        data_item["ops:Harvest_Info.ops:node_name"] = harvest_node
+    if harvest_time is not None:
+        data_item["ops:Harvest_Info.ops:harvest_date_time"] = harvest_time
+
+    return {
+        "summary": {"hits": hits, "q": "*", "start": 0, "limit": 1},
+        "data": [data_item],
+    }
+
+
+def _make_response_bytes(payload: dict) -> bytes:
+    return json.dumps(payload).encode("utf-8")
+
+
+def _make_mock_transport(
+    status_code: int = 200,
+    body: Optional[bytes] = None,
+    payload: Optional[dict] = None,
+) -> httpx.MockTransport:
+    """Build an httpx.MockTransport that returns a fixed response."""
+    if body is None:
+        if payload is not None:
+            body = _make_response_bytes(payload)
+        else:
+            body = _make_response_bytes(_make_valid_kvp_payload())
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code, content=body)
+
+    return httpx.MockTransport(handler)
+
+
+def _make_adapter(
+    status_code: int = 200,
+    body: Optional[bytes] = None,
+    payload: Optional[dict] = None,
+    clock=None,
+    capture_requests: Optional[list] = None,
+) -> PdsRegistryAdapter:
+    """Build a PdsRegistryAdapter backed by MockTransport."""
+    if clock is None:
+        clock = lambda: _FIXED_CLOCK_UTC
+
+    actual_body = body
+    if actual_body is None:
+        if payload is not None:
+            actual_body = _make_response_bytes(payload)
+        else:
+            actual_body = _make_response_bytes(_make_valid_kvp_payload())
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if capture_requests is not None:
+            capture_requests.append(request)
+        return httpx.Response(status_code, content=actual_body)
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.Client(transport=transport)
+    return PdsRegistryAdapter(client=client, clock=clock)
+
+
+def _valid_request() -> PdsProductRequest:
+    return PdsProductRequest(lidvid=_VALID_LIDVID)
+
+
+# ===========================================================================
+# REQUEST / SECURITY TESTS (1-15)
+# ===========================================================================
+
+
+class TestRequestSecurity:
+    """Tests 1-15: Input validation and protocol security."""
+
+    # 1. valid exact LIDVID accepted
+    def test_01_valid_exact_lidvid_accepted(self):
+        req = PdsProductRequest(lidvid=_VALID_LIDVID)
+        assert req.lidvid == _VALID_LIDVID
+
+    # 2. bare LID rejected
+    def test_02_bare_lid_rejected(self):
+        with pytest.raises(ValidationError, match="version"):
+            PdsProductRequest(lidvid="urn:nasa:pds:test_bundle:data:product")
+
+    # 3. missing urn:nasa:pds prefix rejected
+    def test_03_missing_urn_prefix_rejected(self):
+        with pytest.raises(ValidationError):
+            PdsProductRequest(lidvid="test_bundle:data:product::1.0")
+
+    # 4. whitespace rejected
+    def test_04_whitespace_rejected(self):
+        with pytest.raises(ValidationError, match="whitespace"):
+            PdsProductRequest(lidvid="urn:nasa:pds:test:data:product ::1.0")
+
+    def test_04b_tab_rejected(self):
+        with pytest.raises(ValidationError):
+            PdsProductRequest(lidvid="urn:nasa:pds:test\t:data:product::1.0")
+
+    # 5. slash rejected
+    def test_05_slash_rejected(self):
+        with pytest.raises(ValidationError, match="slash"):
+            PdsProductRequest(lidvid="urn:nasa:pds:test/data:product::1.0")
+
+    # 6. backslash rejected
+    def test_06_backslash_rejected(self):
+        with pytest.raises(ValidationError, match="backslash"):
+            PdsProductRequest(lidvid="urn:nasa:pds:test\\data:product::1.0")
+
+    # 7. query injection rejected
+    def test_07_query_injection_rejected(self):
+        with pytest.raises(ValidationError, match=r"\?"):
+            PdsProductRequest(lidvid="urn:nasa:pds:test:data:prod::1.0?inject=1")
+
+    # 8. fragment injection rejected
+    def test_08_fragment_injection_rejected(self):
+        with pytest.raises(ValidationError, match="#"):
+            PdsProductRequest(lidvid="urn:nasa:pds:test:data:prod::1.0#fragment")
+
+    # 9. percent-encoded path trick rejected
+    def test_09_percent_encoded_rejected(self):
+        with pytest.raises(ValidationError, match="%"):
+            PdsProductRequest(lidvid="urn:nasa:pds:test:data:prod%2F::1.0")
+
+    # 10. fixed HTTPS PDS endpoint used
+    def test_10_fixed_https_endpoint_used(self):
+        captured: list[httpx.Request] = []
+        adapter = _make_adapter(capture_requests=captured)
+        req = _valid_request()
+        adapter.fetch(req)
+        assert len(captured) == 1
+        url = str(captured[0].url)
+        assert url.startswith("https://pds.nasa.gov/api/search/1/products/")
+        assert "https://" in url
+
+    # 11. caller cannot supply custom base URL
+    def test_11_no_custom_base_url(self):
+        """PdsRegistryAdapter does not accept a base_url parameter."""
+        import inspect
+        sig = inspect.signature(PdsRegistryAdapter.__init__)
+        param_names = list(sig.parameters.keys())
+        assert "base_url" not in param_names
+        assert "endpoint" not in param_names
+        assert "url" not in param_names
+
+    # 12. Accept == application/kvp+json
+    def test_12_accept_kvp_json(self):
+        captured: list[httpx.Request] = []
+        adapter = _make_adapter(capture_requests=captured)
+        adapter.fetch(_valid_request())
+        assert len(captured) == 1
+        assert captured[0].headers.get("accept") == _ACCEPT_KVP_JSON
+
+    # 13. exact fixed fields are requested
+    def test_13_exact_fixed_fields_requested(self):
+        captured: list[httpx.Request] = []
+        adapter = _make_adapter(capture_requests=captured)
+        adapter.fetch(_valid_request())
+        assert len(captured) == 1
+        url = str(captured[0].url)
+        # Fields should be present in the query
+        assert "fields=" in url
+        # Each required field should be encoded in the request
+        for field in _REQUESTED_FIELDS:
+            assert field in url or field.replace(":", "%3A") in url or field.replace(".", "%2E") in url
+
+    # 14. one fetch == one HTTP request
+    def test_14_one_fetch_one_request(self):
+        captured: list[httpx.Request] = []
+        adapter = _make_adapter(capture_requests=captured)
+        adapter.fetch(_valid_request())
+        assert len(captured) == 1
+
+    # 15. no data-file URL is followed
+    def test_15_no_data_file_url_followed(self):
+        """Only one request is made; file_ref URLs are not followed."""
+        captured: list[httpx.Request] = []
+        # Response contains a file_ref URL
+        payload = _make_valid_kvp_payload(
+            file_refs=["https://pds.nasa.gov/test/science_data.dat"]
+        )
+        adapter = _make_adapter(payload=payload, capture_requests=captured)
+        adapter.fetch(_valid_request())
+        assert len(captured) == 1
+        assert not any(
+            "science_data.dat" in str(r.url) for r in captured
+        )
+
+
+# ===========================================================================
+# IDENTITY TESTS (16-23)
+# ===========================================================================
+
+
+class TestIdentityValidation:
+    """Tests 16-23: LIDVID and product-class identity validation."""
+
+    # 16. returned lidvid must equal request
+    def test_16_returned_lidvid_must_equal_request(self):
+        payload = _make_valid_kvp_payload(
+            lidvid="urn:nasa:pds:other_bundle:data:product::2.0"
+        )
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError, match="LIDVID"):
+            adapter.fetch(_valid_request())
+
+    # 17. returned lid must match LID portion
+    def test_17_returned_lid_must_match_lid_portion(self):
+        payload = _make_valid_kvp_payload(
+            lidvid=_VALID_LIDVID,
+            lid="urn:nasa:pds:other_bundle:data:other_product",
+        )
+        # Also fix the logical_identifier to match the wrong lid so we hit the lid mismatch
+        payload["data"][0]["pds:Identification_Area.pds:logical_identifier"] = (
+            "urn:nasa:pds:other_bundle:data:other_product"
+        )
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+
+    # 18. logical_identifier must match returned/request LID
+    def test_18_logical_identifier_must_match_lid(self):
+        payload = _make_valid_kvp_payload()
+        payload["data"][0]["pds:Identification_Area.pds:logical_identifier"] = (
+            "urn:nasa:pds:different_bundle:data:different_product"
+        )
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError, match="logical_identifier"):
+            adapter.fetch(_valid_request())
+
+    # 19. version_id must match LIDVID version
+    def test_19_version_id_must_match_lidvid_version(self):
+        payload = _make_valid_kvp_payload(version_id="9.9")
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError, match="version_id"):
+            adapter.fetch(_valid_request())
+
+    # 20. inconsistent identity fields rejected
+    def test_20_inconsistent_identity_rejected(self):
+        payload = _make_valid_kvp_payload()
+        # Make logical_identifier disagree with lid
+        payload["data"][0]["pds:Identification_Area.pds:logical_identifier"] = (
+            "urn:nasa:pds:mismatch_bundle:data:mismatch_product"
+        )
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+
+    # 21. Product_Observational accepted
+    def test_21_product_observational_accepted(self):
+        adapter = _make_adapter()
+        product, provenance = adapter.fetch(_valid_request())
+        assert product.product_class == "Product_Observational"
+
+    # 22. collection/bundle/document class rejected
+    @pytest.mark.parametrize("bad_class", [
+        "Product_Bundle",
+        "Product_Collection",
+        "Product_Document",
+        "Product_Context",
+        "Product_Browse",
+    ])
+    def test_22_non_observational_class_rejected(self, bad_class):
+        payload = _make_valid_kvp_payload(
+            product_class=bad_class,
+            ia_product_class=bad_class,
+        )
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError, match="product_class"):
+            adapter.fetch(_valid_request())
+
+    # 23. inconsistent duplicated product-class fields rejected
+    def test_23_inconsistent_product_class_rejected(self):
+        payload = _make_valid_kvp_payload(
+            product_class="Product_Observational",
+            ia_product_class="Product_Bundle",
+        )
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError, match="inconsistent"):
+            adapter.fetch(_valid_request())
+
+
+# ===========================================================================
+# RESPONSE ENVELOPE TESTS (24-33)
+# ===========================================================================
+
+
+class TestResponseEnvelope:
+    """Tests 24-33: KVP envelope structure validation."""
+
+    # 24. valid summary + one data item accepted
+    def test_24_valid_summary_one_item_accepted(self):
+        adapter = _make_adapter()
+        product, provenance = adapter.fetch(_valid_request())
+        assert product is not None
+        assert provenance is not None
+
+    # 25. hits == 1 accepted
+    def test_25_hits_one_accepted(self):
+        payload = _make_valid_kvp_payload(hits=1)
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        assert product is not None
+
+    # 26. hits == 0 treated unavailable
+    def test_26_hits_zero_treated_unavailable(self):
+        payload = {"summary": {"hits": 0}, "data": []}
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsUnavailableError) as exc_info:
+            adapter.fetch(_valid_request())
+        # Must not claim the product does not exist
+        msg = str(exc_info.value)
+        assert "not available" in msg.lower() or "unavailable" in msg.lower()
+        assert "does not exist" not in msg.lower()
+
+    # 27. empty data treated unavailable
+    def test_27_empty_data_treated_unavailable(self):
+        payload = {"summary": {"hits": 0, "q": "*"}, "data": []}
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsUnavailableError) as exc_info:
+            adapter.fetch(_valid_request())
+        msg = str(exc_info.value)
+        assert "does not exist" not in msg.lower()
+
+    # 28. multiple data items rejected
+    def test_28_multiple_data_items_rejected(self):
+        payload = _make_valid_kvp_payload()
+        payload["data"].append(payload["data"][0].copy())
+        payload["summary"]["hits"] = 2
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError, match="1"):
+            adapter.fetch(_valid_request())
+
+    # 29. non-object summary rejected
+    def test_29_non_object_summary_rejected(self):
+        payload = {"summary": "invalid", "data": [{}]}
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError, match="summary"):
+            adapter.fetch(_valid_request())
+
+    # 30. non-array data rejected
+    def test_30_non_array_data_rejected(self):
+        payload = {"summary": {"hits": 1}, "data": "not_an_array"}
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError, match="data"):
+            adapter.fetch(_valid_request())
+
+    # 31. non-object data item rejected
+    def test_31_non_object_data_item_rejected(self):
+        payload = {"summary": {"hits": 1}, "data": ["not_an_object"]}
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+
+    # 32. malformed JSON rejected
+    def test_32_malformed_json_rejected(self):
+        adapter = _make_adapter(body=b"{invalid json{{")
+        with pytest.raises(PdsValidationError, match="JSON"):
+            adapter.fetch(_valid_request())
+
+    # 33. oversized payload rejected
+    def test_33_oversized_payload_rejected(self):
+        # 2 MiB + 1 byte
+        oversized = b"x" * (2 * 1024 * 1024 + 1)
+        adapter = _make_adapter(body=oversized)
+        with pytest.raises(PdsValidationError, match="size"):
+            adapter.fetch(_valid_request())
+
+
+# ===========================================================================
+# DATA FILE TESTS (34-48)
+# ===========================================================================
+
+
+class TestDataFileNormalization:
+    """Tests 34-48: Data file extraction and normalization."""
+
+    # 34. one data file normalized
+    def test_34_one_data_file_normalized(self):
+        adapter = _make_adapter()
+        product, _ = adapter.fetch(_valid_request())
+        assert len(product.data_files) == 1
+        assert product.data_files[0].file_name == "test_product.dat"
+
+    # 35. multiple data files normalized
+    def test_35_multiple_data_files_normalized(self):
+        payload = _make_valid_kvp_payload(
+            file_names=["file_a.dat", "file_b.dat"],
+            file_refs=["https://pds.nasa.gov/a.dat", "https://pds.nasa.gov/b.dat"],
+            file_sizes=["1024", "2048"],
+            md5s=["d41d8cd98f00b204e9800998ecf8427e", "d41d8cd98f00b204e9800998ecf8427e"],
+            mimes=["application/octet-stream", "application/octet-stream"],
+        )
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        assert len(product.data_files) == 2
+        assert product.data_files[0].file_name == "file_a.dat"
+        assert product.data_files[1].file_name == "file_b.dat"
+
+    # 36. source order preserved
+    def test_36_source_order_preserved(self):
+        payload = _make_valid_kvp_payload(
+            file_names=["first.dat", "second.dat", "third.dat"],
+            file_refs=["https://pds.nasa.gov/1.dat", "https://pds.nasa.gov/2.dat", "https://pds.nasa.gov/3.dat"],
+            file_sizes=["100", "200", "300"],
+            md5s=None,
+            mimes=None,
+        )
+        # Remove optional fields to test without them
+        payload["data"][0].pop("ops:Data_File_Info.ops:md5_checksum", None)
+        payload["data"][0].pop("ops:Data_File_Info.ops:mime_type", None)
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        names = [f.file_name for f in product.data_files]
+        assert names == ["first.dat", "second.dat", "third.dat"]
+
+    # 37. total_data_size_bytes equals sum
+    def test_37_total_size_equals_sum(self):
+        payload = _make_valid_kvp_payload(
+            file_names=["a.dat", "b.dat"],
+            file_refs=["https://pds.nasa.gov/a.dat", "https://pds.nasa.gov/b.dat"],
+            file_sizes=["1000", "2000"],
+            md5s=["d41d8cd98f00b204e9800998ecf8427e", "d41d8cd98f00b204e9800998ecf8427e"],
+            mimes=None,
+        )
+        payload["data"][0].pop("ops:Data_File_Info.ops:mime_type", None)
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        assert product.total_data_size_bytes == 3000
+
+    # 38. zero-byte data file allowed if PDS reports it
+    def test_38_zero_byte_data_file_allowed(self):
+        payload = _make_valid_kvp_payload(
+            file_sizes=["0"],
+        )
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        assert product.data_files[0].file_size_bytes == 0
+        assert product.total_data_size_bytes == 0
+
+    # 39. negative size rejected
+    def test_39_negative_size_rejected(self):
+        payload = _make_valid_kvp_payload(file_sizes=["-1"])
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError, match="negative"):
+            adapter.fetch(_valid_request())
+
+    # 40. non-integral size rejected
+    def test_40_non_integral_size_rejected(self):
+        payload = _make_valid_kvp_payload(file_sizes=["not_a_number"])
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError, match="integer"):
+            adapter.fetch(_valid_request())
+
+    # 41. mismatched parallel field cardinality rejected
+    def test_41_mismatched_cardinality_rejected(self):
+        payload = _make_valid_kvp_payload(
+            file_names=["a.dat", "b.dat"],
+            file_refs=["https://pds.nasa.gov/a.dat"],  # only 1, but names has 2
+            file_sizes=["100", "200"],
+            md5s=None,
+            mimes=None,
+        )
+        payload["data"][0].pop("ops:Data_File_Info.ops:md5_checksum", None)
+        payload["data"][0].pop("ops:Data_File_Info.ops:mime_type", None)
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError, match="cardinality"):
+            adapter.fetch(_valid_request())
+
+    # 42. missing required data-file name rejected
+    def test_42_missing_file_name_rejected(self):
+        payload = _make_valid_kvp_payload()
+        del payload["data"][0]["ops:Data_File_Info.ops:file_name"]
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError, match="file_name"):
+            adapter.fetch(_valid_request())
+
+    # 43. missing required data-file ref rejected
+    def test_43_missing_file_ref_rejected(self):
+        payload = _make_valid_kvp_payload()
+        del payload["data"][0]["ops:Data_File_Info.ops:file_ref"]
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError, match="file_ref"):
+            adapter.fetch(_valid_request())
+
+    # 44. missing required data-file size rejected
+    def test_44_missing_file_size_rejected(self):
+        payload = _make_valid_kvp_payload()
+        del payload["data"][0]["ops:Data_File_Info.ops:file_size"]
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError, match="file_size"):
+            adapter.fetch(_valid_request())
+
+    # 45. label-file metadata does not contribute to payload size
+    def test_45_label_file_not_counted(self):
+        """Label file info must not be present or contribute to total size."""
+        payload = _make_valid_kvp_payload(file_sizes=["1024"])
+        # Add label file info (as if PDS returned it)
+        payload["data"][0]["ops:Label_File_Info.ops:file_size"] = ["5000"]
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        # Only data file size (1024) should be counted, not label size (5000)
+        assert product.total_data_size_bytes == 1024
+
+    # 46. valid MD5 accepted
+    def test_46_valid_md5_accepted(self):
+        payload = _make_valid_kvp_payload(
+            md5s=["d41d8cd98f00b204e9800998ecf8427e"]
+        )
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        assert product.data_files[0].md5_checksum == "d41d8cd98f00b204e9800998ecf8427e"
+
+    # 47. malformed MD5 rejected
+    def test_47_malformed_md5_rejected(self):
+        payload = _make_valid_kvp_payload(md5s=["not_a_valid_md5"])
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+
+    # 48. optional mime type handled
+    def test_48_optional_mime_type_handled(self):
+        payload = _make_valid_kvp_payload()
+        del payload["data"][0]["ops:Data_File_Info.ops:mime_type"]
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        assert product.data_files[0].mime_type is None
+
+
+# ===========================================================================
+# SCIENCE METADATA TESTS (49-59)
+# ===========================================================================
+
+
+class TestScienceMetadata:
+    """Tests 49-59: Science metadata field handling."""
+
+    # 49. title preserved
+    def test_49_title_preserved(self):
+        payload = _make_valid_kvp_payload(title="My Specific Title")
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        assert product.title == "My Specific Title"
+
+    # 50. processing level preserved when present
+    def test_50_processing_level_preserved(self):
+        payload = _make_valid_kvp_payload(processing_level="Calibrated")
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        assert product.processing_level == "Calibrated"
+
+    # 51. instrument references normalized to tuple
+    def test_51_instrument_refs_normalized(self):
+        payload = _make_valid_kvp_payload(
+            instruments=["urn:nasa:pds:ctx:inst:sc.ins_a", "urn:nasa:pds:ctx:inst:sc.ins_b"]
+        )
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        assert isinstance(product.instrument_lids, tuple)
+        assert len(product.instrument_lids) == 2
+
+    # 52. investigation references normalized to tuple
+    def test_52_investigation_refs_normalized(self):
+        payload = _make_valid_kvp_payload(
+            investigations=["urn:nasa:pds:ctx:inv:mission.a", "urn:nasa:pds:ctx:inv:mission.b"]
+        )
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        assert isinstance(product.investigation_lids, tuple)
+        assert len(product.investigation_lids) == 2
+
+    # 53. target references normalized to tuple
+    def test_53_target_refs_normalized(self):
+        payload = _make_valid_kvp_payload(
+            targets=["urn:nasa:pds:ctx:target:planet.jupiter"]
+        )
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        assert isinstance(product.target_lids, tuple)
+        assert product.target_lids[0] == "urn:nasa:pds:ctx:target:planet.jupiter"
+
+    # 54. instrument-host references normalized to tuple
+    def test_54_instrument_host_refs_normalized(self):
+        payload = _make_valid_kvp_payload(
+            instrument_hosts=["urn:nasa:pds:ctx:instrument_host:spacecraft.juno"]
+        )
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        assert isinstance(product.instrument_host_lids, tuple)
+        assert len(product.instrument_host_lids) == 1
+
+    # 55. aware observation times accepted
+    def test_55_aware_observation_times_accepted(self):
+        payload = _make_valid_kvp_payload(
+            start_dt="2026-08-27T00:00:00Z",
+            stop_dt="2026-08-27T01:00:00Z",
+        )
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        assert product.observation_start_utc is not None
+        assert product.observation_stop_utc is not None
+        assert product.observation_start_utc.tzinfo is not None
+
+    # 56. non-UTC aware times normalized to UTC
+    def test_56_non_utc_aware_times_normalized(self):
+        # +05:30 offset
+        payload = _make_valid_kvp_payload(
+            start_dt="2026-08-27T05:30:00+05:30",
+            stop_dt="2026-08-27T06:30:00+05:30",
+        )
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        assert product.observation_start_utc.utcoffset().total_seconds() == 0
+        assert product.observation_start_utc.hour == 0  # 05:30+05:30 = 00:00 UTC
+
+    # 57. naive timestamps rejected
+    def test_57_naive_timestamps_rejected(self):
+        payload = _make_valid_kvp_payload(
+            start_dt="2026-08-27T00:00:00",  # no timezone
+        )
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError, match="[Nn]aive|timezone"):
+            adapter.fetch(_valid_request())
+
+    # 58. start > stop rejected
+    def test_58_start_after_stop_rejected(self):
+        payload = _make_valid_kvp_payload(
+            start_dt="2026-08-27T02:00:00Z",
+            stop_dt="2026-08-27T01:00:00Z",  # before start
+        )
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError, match="start|stop"):
+            adapter.fetch(_valid_request())
+
+    # 59. absent optional observation time remains None
+    def test_59_absent_observation_time_is_none(self):
+        payload = _make_valid_kvp_payload(start_dt=None, stop_dt=None)
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        assert product.observation_start_utc is None
+        assert product.observation_stop_utc is None
+
+
+# ===========================================================================
+# PROVENANCE TESTS (60-72)
+# ===========================================================================
+
+
+class TestProvenance:
+    """Tests 60-72: ProvenanceRecord properties."""
+
+    def _fetch(self, payload=None, clock=None):
+        if clock is None:
+            clock = lambda: _FIXED_CLOCK_UTC
+        adapter = _make_adapter(payload=payload, clock=clock)
+        return adapter.fetch(_valid_request())
+
+    # 60. kind == EXTERNAL_AUTHORITATIVE
+    def test_60_kind_external_authoritative(self):
+        _, prov = self._fetch()
+        assert prov.kind == ProvenanceKind.EXTERNAL_AUTHORITATIVE
+
+    # 61. source_system == NASA Planetary Data System Search API
+    def test_61_source_system(self):
+        _, prov = self._fetch()
+        assert prov.source_system == "NASA Planetary Data System Search API"
+
+    # 62. source_record_id == exact LIDVID
+    def test_62_source_record_id_equals_lidvid(self):
+        _, prov = self._fetch()
+        assert prov.source_record_id == _VALID_LIDVID
+
+    # 63. source_version is None
+    def test_63_source_version_is_none(self):
+        _, prov = self._fetch()
+        assert prov.source_version is None
+
+    # 64. retrieved_at uses injected clock
+    def test_64_retrieved_at_uses_injected_clock(self):
+        fixed = datetime(2025, 1, 15, 8, 30, 0, tzinfo=timezone.utc)
+        _, prov = self._fetch(clock=lambda: fixed)
+        assert prov.retrieved_at == fixed
+
+    # 65. content_sha256 == independent SHA256(raw response bytes)
+    def test_65_content_sha256_matches_raw_bytes(self):
+        payload_dict = _make_valid_kvp_payload()
+        raw_bytes = _make_response_bytes(payload_dict)
+        expected_sha = hashlib.sha256(raw_bytes).hexdigest()
+
+        adapter = _make_adapter(body=raw_bytes)
+        _, prov = adapter.fetch(_valid_request())
+        assert prov.content_sha256 == expected_sha
+
+    # 66. provenance_id deterministic
+    def test_66_provenance_id_deterministic(self):
+        payload_dict = _make_valid_kvp_payload()
+        adapter1 = _make_adapter(payload=payload_dict)
+        adapter2 = _make_adapter(payload=payload_dict)
+        _, prov1 = adapter1.fetch(_valid_request())
+        _, prov2 = adapter2.fetch(_valid_request())
+        assert prov1.provenance_id == prov2.provenance_id
+
+    # 67. same query/body -> same provenance_id
+    def test_67_same_query_same_id(self):
+        payload_dict = _make_valid_kvp_payload()
+        raw_bytes = _make_response_bytes(payload_dict)
+        adapter = _make_adapter(body=raw_bytes)
+        _, prov1 = adapter.fetch(_valid_request())
+        _, prov2 = adapter.fetch(_valid_request())
+        assert prov1.provenance_id == prov2.provenance_id
+
+    # 68. different LIDVID -> different provenance_id
+    def test_68_different_lidvid_different_id(self):
+        lidvid2 = "urn:nasa:pds:other_bundle:data:other_product::2.0"
+        payload1 = _make_valid_kvp_payload(
+            lidvid=_VALID_LIDVID, lid=_VALID_LID, version_id=_VALID_VERSION
+        )
+        payload2 = _make_valid_kvp_payload(
+            lidvid=lidvid2,
+            lid="urn:nasa:pds:other_bundle:data:other_product",
+            version_id="2.0",
+        )
+        adapter1 = _make_adapter(payload=payload1)
+        adapter2 = _make_adapter(payload=payload2)
+        req1 = PdsProductRequest(lidvid=_VALID_LIDVID)
+        req2 = PdsProductRequest(lidvid=lidvid2)
+        _, prov1 = adapter1.fetch(req1)
+        _, prov2 = adapter2.fetch(req2)
+        assert prov1.provenance_id != prov2.provenance_id
+
+    # 69. different raw body -> different provenance_id
+    def test_69_different_body_different_id(self):
+        payload1 = _make_valid_kvp_payload(title="Title A")
+        payload2 = _make_valid_kvp_payload(title="Title B")
+        adapter1 = _make_adapter(payload=payload1)
+        adapter2 = _make_adapter(payload=payload2)
+        _, prov1 = adapter1.fetch(_valid_request())
+        _, prov2 = adapter2.fetch(_valid_request())
+        assert prov1.provenance_id != prov2.provenance_id
+
+    # 70. retrieved_at change does NOT change provenance_id
+    def test_70_retrieved_at_does_not_affect_provenance_id(self):
+        payload_dict = _make_valid_kvp_payload()
+        raw_bytes = _make_response_bytes(payload_dict)
+
+        clock1 = lambda: datetime(2025, 1, 1, tzinfo=timezone.utc)
+        clock2 = lambda: datetime(2025, 6, 1, tzinfo=timezone.utc)
+
+        adapter1 = _make_adapter(body=raw_bytes, clock=clock1)
+        adapter2 = _make_adapter(body=raw_bytes, clock=clock2)
+
+        _, prov1 = adapter1.fetch(_valid_request())
+        _, prov2 = adapter2.fetch(_valid_request())
+
+        assert prov1.provenance_id == prov2.provenance_id
+        # But retrieved_at should differ
+        assert prov1.retrieved_at != prov2.retrieved_at
+
+    # 71. validation_status == VALIDATED
+    def test_71_validation_status_validated(self):
+        _, prov = self._fetch()
+        assert prov.validation_status == ProvenanceValidationStatus.VALIDATED
+
+    # 72. provenance observed_at remains None
+    def test_72_observed_at_none(self):
+        _, prov = self._fetch()
+        assert prov.observed_at is None
+
+
+# ===========================================================================
+# HTTP / TRUST TESTS (73-84)
+# ===========================================================================
+
+
+class TestHttpAndTrust:
+    """Tests 73-84: HTTP transport and error semantics."""
+
+    def _adapter_with_timeout(self):
+        def handler(request):
+            raise httpx.TimeoutException("timed out", request=request)
+        transport = httpx.MockTransport(handler)
+        client = httpx.Client(transport=transport)
+        return PdsRegistryAdapter(client=client, clock=lambda: _FIXED_CLOCK_UTC)
+
+    def _adapter_with_request_error(self):
+        def handler(request):
+            raise httpx.ConnectError("connection refused")
+        transport = httpx.MockTransport(handler)
+        client = httpx.Client(transport=transport)
+        return PdsRegistryAdapter(client=client, clock=lambda: _FIXED_CLOCK_UTC)
+
+    # 73. timeout -> PdsUnavailableError
+    def test_73_timeout_raises_unavailable(self):
+        adapter = self._adapter_with_timeout()
+        with pytest.raises(PdsUnavailableError, match="[Tt]imeout|timed out"):
+            adapter.fetch(_valid_request())
+
+    # 74. RequestError -> PdsUnavailableError
+    def test_74_request_error_raises_unavailable(self):
+        adapter = self._adapter_with_request_error()
+        with pytest.raises(PdsUnavailableError, match="[Nn]etwork"):
+            adapter.fetch(_valid_request())
+
+    # 75. HTTP 429 -> PdsUnavailableError
+    def test_75_http_429_raises_unavailable(self):
+        adapter = _make_adapter(status_code=429)
+        with pytest.raises(PdsUnavailableError):
+            adapter.fetch(_valid_request())
+
+    # 76. HTTP 500 -> PdsUnavailableError
+    def test_76_http_500_raises_unavailable(self):
+        adapter = _make_adapter(status_code=500)
+        with pytest.raises(PdsUnavailableError):
+            adapter.fetch(_valid_request())
+
+    # 77. HTTP 503 -> PdsUnavailableError
+    def test_77_http_503_raises_unavailable(self):
+        adapter = _make_adapter(status_code=503)
+        with pytest.raises(PdsUnavailableError):
+            adapter.fetch(_valid_request())
+
+    # 78. HTTP 404 -> PdsUnavailableError
+    def test_78_http_404_raises_unavailable(self):
+        adapter = _make_adapter(status_code=404)
+        with pytest.raises(PdsUnavailableError):
+            adapter.fetch(_valid_request())
+
+    # 79. 404 message does NOT claim product non-existence
+    def test_79_404_message_does_not_claim_nonexistence(self):
+        adapter = _make_adapter(status_code=404)
+        with pytest.raises(PdsUnavailableError) as exc_info:
+            adapter.fetch(_valid_request())
+        msg = str(exc_info.value).lower()
+        assert "does not exist" not in msg
+        # Should indicate unavailability from the API
+        assert "not available" in msg or "not available" in msg or "search api" in msg
+
+    # 80. HTTP 400 -> PdsValidationError
+    def test_80_http_400_raises_validation_error(self):
+        adapter = _make_adapter(status_code=400)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+
+    # 81. redirect response fails closed
+    def test_81_redirect_fails_closed(self):
+        adapter = _make_adapter(status_code=302)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+
+    # 82. public errors do not include raw response sentinel
+    def test_82_errors_do_not_expose_raw_response(self):
+        body = json.dumps({"summary": "invalid", "data": [], _RAW_SENTINEL: "secret"}).encode()
+        adapter = _make_adapter(body=body)
+        with pytest.raises(PdsAdapterError) as exc_info:
+            adapter.fetch(_valid_request())
+        assert _RAW_SENTINEL not in str(exc_info.value)
+
+    # 83. public errors do not expose request URL/LIDVID where avoidable
+    def test_83_errors_sanitized_no_url(self):
+        adapter = _make_adapter(status_code=500)
+        with pytest.raises(PdsUnavailableError) as exc_info:
+            adapter.fetch(_valid_request())
+        # The full constructed URL should not appear in the public message
+        msg = str(exc_info.value)
+        assert _VALID_LIDVID not in msg or "LIDVID" not in msg  # at least not both
+
+    # 84. original lower-level cause preserved where appropriate
+    def test_84_original_cause_preserved_for_timeout(self):
+        adapter = self._adapter_with_timeout()
+        with pytest.raises(PdsUnavailableError) as exc_info:
+            adapter.fetch(_valid_request())
+        # __cause__ should be the original httpx exception
+        assert exc_info.value.__cause__ is not None
+
+
+# ===========================================================================
+# REGRESSION TESTS (85-92)
+# ===========================================================================
+
+
+class TestRegression:
+    """Tests 85-92: Regression — prior phases must remain green."""
+
+    # 85. Phase 6D-B2 committed Juno snapshot still loads offline
+    def test_85_juno_horizons_snapshot_loads(self):
+        """Verify the Juno snapshot fixture is present and loadable."""
+        import json
+        import pathlib
+
+        snapshot_path = pathlib.Path(__file__).parent.parent / "fixtures" / "horizons" / "juno_2026_aug_27_vectors.json"
+        assert snapshot_path.exists(), (
+            f"Juno Horizons snapshot not found at {snapshot_path}. "
+            "Phase 6D-B2 snapshot must remain committed."
+        )
+        with snapshot_path.open() as f:
+            data = json.load(f)
+        assert data is not None
+        assert "result" in data or "raw_response_b64" in data or "signature" in data or len(data) > 0
+
+    # 86. all Phase 6D adapter tests pass (structural check)
+    def test_86_phase6d_adapter_module_importable(self):
+        from backend.app.mission_sources.adapters.horizons import HorizonsAdapter
+        assert HorizonsAdapter is not None
+
+    # 87. all Phase 6D snapshot tests pass (structural check)
+    def test_87_horizons_snapshot_module_importable(self):
+        from backend.app.mission_sources.snapshots.horizons_snapshot import HorizonsSnapshotStore
+        assert HorizonsSnapshotStore is not None
+
+    # 88. Phase 6C mission sources importable
+    def test_88_phase6c_mission_sources_importable(self):
+        from backend.app.mission_sources.errors import (
+            MissionSourceError,
+            MissionSourceUnavailableError,
+            MissionSourceValidationError,
+        )
+        assert MissionSourceError is not None
+        assert MissionSourceUnavailableError is not None
+        assert MissionSourceValidationError is not None
+
+    # 89. Phase 6B provenance models importable
+    def test_89_phase6b_provenance_importable(self):
+        from backend.app.provenance.models import (
+            ProvenanceKind,
+            ProvenanceRecord,
+            ProvenanceValidationStatus,
+        )
+        assert ProvenanceKind.EXTERNAL_AUTHORITATIVE is not None
+        assert ProvenanceValidationStatus.VALIDATED is not None
+
+    # 90. Scenario schema unchanged
+    def test_90_scenario_schema_unchanged(self):
+        from backend.app.models import Scenario
+        assert Scenario is not None
+        # Verify scenario does NOT import pds models
+        import inspect
+        src = inspect.getsource(Scenario)
+        assert "PdsScienceProduct" not in src
+        assert "PdsDataFile" not in src
+
+    # 91. DataProduct schema unchanged
+    def test_91_data_product_schema_unchanged(self):
+        from backend.app.models import DataProduct
+        assert DataProduct is not None
+        import inspect
+        src = inspect.getsource(DataProduct)
+        assert "PdsScienceProduct" not in src
+
+    # 92. state.py remains unwired
+    def test_92_state_py_not_wired_to_pds(self):
+        import pathlib
+        state_path = pathlib.Path(__file__).parent.parent.parent / "backend" / "app" / "state.py"
+        if state_path.exists():
+            content = state_path.read_text()
+            assert "PdsRegistryAdapter" not in content
+            assert "PdsScienceProduct" not in content
+
+
+# ===========================================================================
+# ADDITIONAL MODEL UNIT TESTS
+# ===========================================================================
+
+
+class TestPdsProductRequestModel:
+    """Additional model-level tests for PdsProductRequest."""
+
+    def test_frozen(self):
+        req = PdsProductRequest(lidvid=_VALID_LIDVID)
+        with pytest.raises(Exception):
+            req.lidvid = "urn:nasa:pds:other:data:prod::1.0"
+
+    def test_extra_fields_forbidden(self):
+        with pytest.raises(ValidationError):
+            PdsProductRequest(lidvid=_VALID_LIDVID, extra_field="bad")
+
+    def test_empty_version_rejected(self):
+        # LID::  (empty version)
+        with pytest.raises(ValidationError):
+            PdsProductRequest(lidvid="urn:nasa:pds:test:data:prod::")
+
+    def test_embedded_url_scheme_rejected(self):
+        with pytest.raises(ValidationError, match="://"):
+            PdsProductRequest(lidvid="urn:nasa:pds:test://evil.com:data:prod::1.0")
+
+
+class TestPdsDataFileModel:
+    """Unit tests for PdsDataFile model."""
+
+    def test_valid_data_file(self):
+        f = PdsDataFile(
+            file_name="test.dat",
+            file_ref="https://pds.nasa.gov/test.dat",
+            file_size_bytes=1024,
+            md5_checksum="d41d8cd98f00b204e9800998ecf8427e",
+            mime_type="application/octet-stream",
+        )
+        assert f.file_size_bytes == 1024
+        assert f.md5_checksum == "d41d8cd98f00b204e9800998ecf8427e"
+
+    def test_md5_normalized_to_lowercase(self):
+        f = PdsDataFile(
+            file_name="test.dat",
+            file_ref="https://pds.nasa.gov/test.dat",
+            file_size_bytes=0,
+            md5_checksum="D41D8CD98F00B204E9800998ECF8427E",  # uppercase
+        )
+        assert f.md5_checksum == "d41d8cd98f00b204e9800998ecf8427e"
+
+    def test_empty_file_name_rejected(self):
+        with pytest.raises(ValidationError, match="file_name"):
+            PdsDataFile(
+                file_name="   ",
+                file_ref="https://pds.nasa.gov/test.dat",
+                file_size_bytes=0,
+            )
+
+    def test_empty_file_ref_rejected(self):
+        with pytest.raises(ValidationError, match="file_ref"):
+            PdsDataFile(
+                file_name="test.dat",
+                file_ref="   ",
+                file_size_bytes=0,
+            )
+
+    def test_negative_size_rejected(self):
+        with pytest.raises(ValidationError, match=">="):
+            PdsDataFile(
+                file_name="test.dat",
+                file_ref="https://pds.nasa.gov/test.dat",
+                file_size_bytes=-1,
+            )
+
+    def test_frozen(self):
+        f = PdsDataFile(
+            file_name="test.dat",
+            file_ref="https://pds.nasa.gov/test.dat",
+            file_size_bytes=0,
+        )
+        with pytest.raises(Exception):
+            f.file_name = "other.dat"
+
+
+class TestPdsScienceProductModel:
+    """Unit tests for PdsScienceProduct model."""
+
+    def _make_valid_product(self, **kwargs):
+        defaults = dict(
+            lid=_VALID_LID,
+            lidvid=_VALID_LIDVID,
+            logical_identifier=_VALID_LID,
+            version_id=_VALID_VERSION,
+            product_class="Product_Observational",
+            title="Test Product",
+            data_files=(
+                PdsDataFile(
+                    file_name="f.dat",
+                    file_ref="https://pds.nasa.gov/f.dat",
+                    file_size_bytes=500,
+                ),
+            ),
+            total_data_size_bytes=500,
+        )
+        defaults.update(kwargs)
+        return PdsScienceProduct(**defaults)
+
+    def test_valid_product_created(self):
+        p = self._make_valid_product()
+        assert p.product_class == "Product_Observational"
+        assert p.total_data_size_bytes == 500
+
+    def test_non_observational_class_rejected(self):
+        with pytest.raises(ValidationError, match="Product_Observational"):
+            self._make_valid_product(product_class="Product_Bundle")
+
+    def test_total_size_mismatch_rejected(self):
+        with pytest.raises(ValidationError, match="total_data_size_bytes"):
+            self._make_valid_product(total_data_size_bytes=999)  # should be 500
+
+    def test_start_after_stop_rejected(self):
+        with pytest.raises(ValidationError, match="start|stop"):
+            self._make_valid_product(
+                observation_start_utc=datetime(2026, 8, 27, 2, 0, tzinfo=timezone.utc),
+                observation_stop_utc=datetime(2026, 8, 27, 1, 0, tzinfo=timezone.utc),
+            )
+
+    def test_naive_observation_time_rejected(self):
+        with pytest.raises(ValidationError):
+            self._make_valid_product(
+                observation_start_utc=datetime(2026, 8, 27, 0, 0),  # naive
+            )
+
+    def test_frozen(self):
+        p = self._make_valid_product()
+        with pytest.raises(Exception):
+            p.title = "changed"
+
+
+class TestRepresentativeFixture:
+    """Structural test using the representative fixture file.
+
+    This fixture is NOT a live PDS capture and NOT a verified snapshot.
+    It tests that the adapter can parse the representative structural shape.
+    """
+
+    def test_representative_fixture_parses(self):
+        """The representative fixture must parse successfully."""
+        import json
+        import pathlib
+
+        fixture_path = (
+            pathlib.Path(__file__).parent.parent
+            / "fixtures"
+            / "pds"
+            / "representative_observational_product.json"
+        )
+        assert fixture_path.exists(), "Representative PDS fixture file not found."
+
+        with fixture_path.open() as f:
+            fixture_data = json.load(f)
+
+        # Remove the meta-comment key before using as payload
+        payload = {k: v for k, v in fixture_data.items() if not k.startswith("_")}
+
+        req = PdsProductRequest(
+            lidvid="urn:nasa:pds:test_gcsi_bundle:data_raw:test_obs_product_001::1.0"
+        )
+        raw_bytes = json.dumps(payload).encode("utf-8")
+
+        adapter = _make_adapter(body=raw_bytes, clock=lambda: _FIXED_CLOCK_UTC)
+        product, provenance = adapter.fetch(req)
+
+        assert product.product_class == "Product_Observational"
+        assert product.total_data_size_bytes == 1048576
+        assert len(product.data_files) == 1
+        assert product.data_files[0].file_name == "test_obs_product_001.dat"
+        assert provenance.kind == ProvenanceKind.EXTERNAL_AUTHORITATIVE
+        assert provenance.source_version is None
+        assert provenance.observed_at is None
+
+
+class TestProvenanceDeterminism:
+    """Additional provenance determinism tests."""
+
+    def test_canonical_identity_is_sorted_json(self):
+        req = PdsProductRequest(lidvid=_VALID_LIDVID)
+        identity = _build_canonical_request_identity(req)
+        parsed = json.loads(identity)
+        assert parsed["lidvid"] == _VALID_LIDVID
+        assert parsed["endpoint"] == _PDS_PRODUCTS_ENDPOINT
+        assert parsed["media_type"] == _ACCEPT_KVP_JSON
+        # Keys are sorted
+        keys = list(parsed.keys())
+        assert keys == sorted(keys)
+
+    def test_provenance_id_formula(self):
+        req = PdsProductRequest(lidvid=_VALID_LIDVID)
+        identity = _build_canonical_request_identity(req)
+        sha256 = "a" * 64
+        pid = _compute_provenance_id(identity, sha256)
+        expected = hashlib.sha256((identity + "|" + sha256).encode()).hexdigest()
+        assert pid == expected
+
+    def test_requested_fields_immutable_tuple(self):
+        """_REQUESTED_FIELDS is a tuple (immutable)."""
+        assert isinstance(_REQUESTED_FIELDS, tuple)
+        assert len(_REQUESTED_FIELDS) > 0
+
+    def test_pds_source_system_string(self):
+        adapter = _make_adapter()
+        _, prov = adapter.fetch(_valid_request())
+        assert prov.source_system == "NASA Planetary Data System Search API"
+
+    def test_source_uri_is_pds_endpoint(self):
+        adapter = _make_adapter()
+        _, prov = adapter.fetch(_valid_request())
+        assert prov.source_uri == _PDS_PRODUCTS_ENDPOINT
+
+
+class TestAdapterErrorHierarchy:
+    """Verify error class hierarchy."""
+
+    def test_pds_unavailable_is_pds_adapter_error(self):
+        err = PdsUnavailableError("test")
+        assert isinstance(err, PdsAdapterError)
+
+    def test_pds_validation_is_pds_adapter_error(self):
+        err = PdsValidationError("test")
+        assert isinstance(err, PdsAdapterError)
+
+    def test_pds_unavailable_is_mission_source_unavailable(self):
+        from backend.app.mission_sources.errors import MissionSourceUnavailableError
+        err = PdsUnavailableError("test")
+        assert isinstance(err, MissionSourceUnavailableError)
+
+    def test_pds_validation_is_mission_source_validation(self):
+        from backend.app.mission_sources.errors import MissionSourceValidationError
+        err = PdsValidationError("test")
+        assert isinstance(err, MissionSourceValidationError)
+
+
+class TestAdapterOwnership:
+    """Test injected vs. owned client behavior."""
+
+    def test_injected_client_not_closed_by_adapter(self):
+        """When a client is injected, the adapter must not close it."""
+        payload = _make_valid_kvp_payload()
+        raw_bytes = _make_response_bytes(payload)
+
+        def handler(request):
+            return httpx.Response(200, content=raw_bytes)
+
+        transport = httpx.MockTransport(handler)
+        client = httpx.Client(transport=transport)
+
+        adapter = PdsRegistryAdapter(
+            client=client, clock=lambda: _FIXED_CLOCK_UTC
+        )
+        adapter.fetch(_valid_request())
+        adapter.close()  # should NOT close the injected client
+
+        # Client should still be usable after adapter.close()
+        response = client.get("https://pds.nasa.gov/api/search/1/products/test")
+        assert response.status_code == 200
+        client.close()
+
+    def test_context_manager_closes_owned_client(self):
+        """Adapter used as context manager must not raise on exit."""
+        payload = _make_valid_kvp_payload()
+        raw_bytes = _make_response_bytes(payload)
+
+        def handler(request):
+            return httpx.Response(200, content=raw_bytes)
+
+        transport = httpx.MockTransport(handler)
+        client = httpx.Client(transport=transport)
+
+        with PdsRegistryAdapter(client=client, clock=lambda: _FIXED_CLOCK_UTC) as adapter:
+            product, _ = adapter.fetch(_valid_request())
+        assert product is not None
