@@ -362,6 +362,9 @@ export default function MissionControl() {
   /** Wall-clock ms at which the current execution's visual playback began. */
   const [playbackStartedAtMs, setPlaybackStartedAtMs] = useState<number | null>(null);
 
+  /** Current active 3D transmission pulse — driven by authoritative attempt_events. */
+  const [activePulse, setActivePulse] = useState<import('./components/scene/CommunicationLink').ActivePulse | null>(null);
+
   // ── Phase 4.2F4: Transmission choreography ────────────────────────────────
   /** When true, TransmissionSequencePanel is active in TransmissionSection. */
   const [choreographyActive, setChoreographyActive] = useState<boolean>(false);
@@ -552,6 +555,7 @@ export default function MissionControl() {
     // Reset execution coordinator
     setExecutionId(null);
     setPlaybackStartedAtMs(null);
+    setActivePulse(null);
     executionPromiseRef.current.clear();
     setSessionEvents([]);
     aiRequestInFlight.current = false;
@@ -609,6 +613,7 @@ export default function MissionControl() {
     // Reset execution coordinator
     setExecutionId(null);
     setPlaybackStartedAtMs(null);
+    setActivePulse(null);
     executionPromiseRef.current.clear();
     // Clear scenario-specific experience state on switch
     setExperienceManifest(null);
@@ -1226,6 +1231,8 @@ export default function MissionControl() {
               showLabels={viewSettings.showLabels}
               showCommLink={viewSettings.showCommLink}
               smoothCamera={viewSettings.smoothCamera}
+              activePulse={activePulse}
+              pulseDirection={choreographyActive ? 'spacecraft_to_earth' : 'idle'}
             />
           </div>
 
@@ -1358,6 +1365,7 @@ export default function MissionControl() {
             onExecuteApproval={handleExecuteApproval}
             onChoreographyComplete={handleChoreographyComplete}
             onChoreographyError={(msg) => { setError(msg); setChoreographyActive(false); setApprovalPhase('ready'); }}
+            onAttemptPulse={setActivePulse}
           />
         </div>
       )}

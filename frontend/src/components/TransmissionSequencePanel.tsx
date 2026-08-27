@@ -243,6 +243,12 @@ interface Props {
   onComplete: (result: ApproveResponse) => void;
   /** Called on error during approval. */
   onError: (msg: string) => void;
+  /**
+   * Called when a new attempt-pulse animation starts (for 3D visualization).
+   * Called with null to clear the active pulse (between attempts, on complete).
+   * Only called for actual attempt events — never for deferred packets.
+   */
+  onAttemptPulse?: (pulse: { packetId: string; attemptNumber: number; progress: number; outcome: 'pending' | 'success' | 'failure' | 'retry' | 'deferred' } | null) => void;
 }
 
 export function TransmissionSequencePanel({
@@ -257,6 +263,7 @@ export function TransmissionSequencePanel({
   onExecuteApproval,
   onComplete,
   onError,
+  onAttemptPulse,
 }: Props) {
   const [phase, setPhase] = useState<TransmissionChoreographyPhase>(initialPhase);
   const [simResult, setSimResult] = useState<SimulationResult | null>(null);
@@ -343,14 +350,19 @@ export function TransmissionSequencePanel({
       onSetPlaybackStarted(nowMs);
     }
 
+    // Only count packets that were actually attempted (not deferred-only)
+    const allSummaries = groupAttemptsByPacket(simResult!);
+    const attemptSummaries = allSummaries.filter((s) => s.finalStatus !== 'deferred');
+
     if (reduced) {
       // prefers-reduced-motion: skip animation, jump to final state immediately
-      setVisibleAttemptCount(groupAttemptsByPacket(simResult!).length);
+      setVisibleAttemptCount(attemptSummaries.length);
+      onAttemptPulse?.(null);
       const timer = setTimeout(advanceToSignalTransit, 300);
       return () => clearTimeout(timer);
     }
 
-    const totalSummaries = groupAttemptsByPacket(simResult!).length;
+    const totalSummaries = attemptSummaries.length;
     const totalVisualMs = playback.totalVisualDurationMs;
 
     function computeVisibleCount(): number {
@@ -367,6 +379,7 @@ export function TransmissionSequencePanel({
     setVisibleAttemptCount(initialCount);
     if (initialCount >= totalSummaries) {
       // Already completed while hidden — advance immediately
+      onAttemptPulse?.(null); // clear any active pulse
       setTimeout(advanceToSignalTransit, 0);
       return;
     }
@@ -375,13 +388,34 @@ export function TransmissionSequencePanel({
     const interval = setInterval(() => {
       const count = computeVisibleCount();
       setVisibleAttemptCount(count);
+
+      // Emit 3D pulse for the current attempt (only actual attempts, not deferred)
+      if (count > 0 && count <= totalSummaries) {
+        const currentSummary = attemptSummaries[count - 1];
+        if (currentSummary) {
+          const outcome = currentSummary.finalStatus === 'delivered'
+            ? (currentSummary.retransmissions > 0 ? 'retry' : 'success')
+            : currentSummary.finalStatus === 'failed' ? 'failure' : 'pending';
+          onAttemptPulse?.({
+            packetId: currentSummary.packetId,
+            attemptNumber: currentSummary.attempts.length,
+            progress: 0.5, // midpoint of transit
+            outcome,
+          });
+        }
+      }
+
       if (count >= totalSummaries) {
         clearInterval(interval);
+        onAttemptPulse?.(null); // clear pulse when done
         setTimeout(advanceToSignalTransit, 600);
       }
     }, intervalMs);
     playbackTimerRef.current = interval;
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      onAttemptPulse?.(null);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, playback, simResult, reduced]);
   // Note: advanceToSignalTransit, onSetPlaybackStarted excluded from deps on purpose —

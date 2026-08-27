@@ -131,6 +131,10 @@ interface Props {
   showLabels?: boolean;
   showCommLink?: boolean;
   smoothCamera?: boolean;
+  /** Current active pulse from authoritative attempt_events — drives 3D animation. */
+  activePulse?: import('./scene/CommunicationLink').ActivePulse | null;
+  /** Direction of the active pulse. */
+  pulseDirection?: import('./scene/CommunicationLink').LinkDirection;
 }
 
 // ── MissionViewport ────────────────────────────────────────────────────────────
@@ -144,6 +148,8 @@ export function MissionViewport({
   showLabels = true,
   showCommLink = true,
   smoothCamera = true,
+  activePulse = null,
+  pulseDirection = 'idle',
 }: Props) {
   const [cameraPreset, setCameraPreset] = useState<CameraPreset>('default');
 
@@ -177,6 +183,8 @@ export function MissionViewport({
               showLabels={showLabels}
               showCommLink={showCommLink}
               smoothCamera={smoothCamera}
+              activePulse={activePulse}
+              pulseDirection={pulseDirection}
             />
           </Canvas>
         </Suspense>

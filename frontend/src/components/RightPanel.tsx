@@ -182,6 +182,8 @@ interface CommonProps {
   onChoreographyComplete: (result: import('../types/domain').ApproveResponse) => void;
   /** Called when choreography encounters an error. */
   onChoreographyError: (msg: string) => void;
+  /** Called when a new attempt event pulse starts (for 3D visualization). Null clears. */
+  onAttemptPulse: (pulse: import('./scene/CommunicationLink').ActivePulse | null) => void;
   // ── Phase 4.2F3 props ─────────────────────────────────────────────────────────
   /** Called when operator approves AI recommendation — does NOT execute transmission. */
   onApproveAiPlan: () => void;
@@ -1017,9 +1019,19 @@ function AiHumanDecisionPanel({ props }: { props: CommonProps }) {
       borderRadius: 6, padding: '12px 14px',
       marginBottom: 12,
     }}>
-      {/* Header */}
-      <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 9, color: 'rgba(76,141,255,0.7)', letterSpacing: '0.1em', marginBottom: 8 }}>
-        AI RECOMMENDATION
+      {/* Header with Stage-1/Stage-2 distinction — WorkStream H */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 9, color: 'rgba(76,141,255,0.7)', letterSpacing: '0.1em' }}>
+          FINAL TRANSMISSION PLAN
+        </div>
+        {rec.recommended_plan_id && (
+          <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 8, color: 'rgba(147,160,180,0.5)', letterSpacing: '0.06em' }}>
+            STAGE 2 · {rec.recommended_plan_id.toUpperCase()}
+          </div>
+        )}
+      </div>
+      <div style={{ fontFamily: '"IBM Plex Sans", system-ui', fontSize: 10, color: 'rgba(147,160,180,0.45)', marginBottom: 10, lineHeight: 1.5 }}>
+        Stage 1: semantic candidate prioritization &nbsp;→&nbsp; Stage 2: final plan selection &nbsp;→&nbsp; Human approval
       </div>
 
       {/* Metrics grid — truthful labels (see Phase 5.1D WorkStream G) */}
@@ -1795,6 +1807,7 @@ function TransmissionSection(props: CommonProps) {
         onExecuteApproval={props.onExecuteApproval}
         onComplete={props.onChoreographyComplete}
         onError={props.onChoreographyError}
+        onAttemptPulse={props.onAttemptPulse}
       />
     );
   }

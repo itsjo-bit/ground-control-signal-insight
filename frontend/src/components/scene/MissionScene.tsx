@@ -85,6 +85,10 @@ interface Props {
   showLabels?: boolean;
   showCommLink?: boolean;
   smoothCamera?: boolean;
+  /** Current active transmission pulse — drives 3D animation. */
+  activePulse?: import('./CommunicationLink').ActivePulse | null;
+  /** Direction of active pulse. */
+  pulseDirection?: import('./CommunicationLink').LinkDirection;
 }
 
 function SceneContent({
@@ -98,6 +102,8 @@ function SceneContent({
   showLabels = true,
   showCommLink = true,
   smoothCamera = true,
+  activePulse = null,
+  pulseDirection = 'idle',
 }: Props) {
   const { camera } = useThree();
   const orbitRef = useRef<React.ComponentRef<typeof OrbitControls>>(null);
@@ -209,13 +215,15 @@ function SceneContent({
         scale={0.95}
       />
 
-      {/* Communication link beam */}
+      {/* Communication link beam — activePulse driven by authoritative attempt_events */}
       {showCommLink && (
         <CommunicationLink
           startPos={linkStart}
           endPos={linkEnd}
           linkStatus={linkStatus}
           transmitting={isTransmitting}
+          activePulse={activePulse}
+          direction={pulseDirection}
         />
       )}
 
