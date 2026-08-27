@@ -214,9 +214,10 @@ _LT_VALUE = 2795.812640498820       # one-way light-time, seconds
 _RG_VALUE = 838249962.14964500      # range, km
 _RR_VALUE = 14.639175321946800      # range-rate, km/s
 
-# True VEC_TABLE=6 data row: JDTDB, Date, LT, RG, RR + trailing comma
+# True VEC_TABLE=6 data row: JDTDB, Date(FRACSEC), LT, RG, RR + trailing comma
+# Calendar date uses 6 decimal places matching TIME_DIGITS=FRACSEC output.
 _VALID_DATA_ROW = (
-    " 2460933.500000000, A.D. 2026-Aug-27 00:00:00.0000,"
+    " 2460933.500000000, A.D. 2026-Aug-27 00:00:00.000000,"
     f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
 )
 
@@ -229,7 +230,7 @@ _VALID_RESULT_TEXT = (
 )
 
 _NEGATIVE_RR_DATA_ROW = (
-    " 2460933.500000000, A.D. 2026-Aug-27 00:00:00.0000,"
+    " 2460933.500000000, A.D. 2026-Aug-27 00:00:00.000000,"
     f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  -7.500000000000000E+00,"
 )
 
@@ -242,7 +243,7 @@ _NEGATIVE_RR_RESULT = (
 
 # VEC_TABLE=3-shaped row (11 columns) — must be rejected.
 _VEC_TABLE_3_DATA_ROW = (
-    " 2460933.500000000, A.D. 2026-Aug-27 00:00:00.0000,"
+    " 2460933.500000000, A.D. 2026-Aug-27 00:00:00.000000,"
     " -5.984637826741320E+08, -4.062735178649830E+08,  1.068093831283030E+08,"
     "  -4.526282376341250E+00, -7.218339253834060E+00, -2.187436812374460E+00,"
     f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
@@ -742,12 +743,32 @@ class TestProvenance:
         assert r_juno.provenance.provenance_id != r_mars.provenance.provenance_id
 
     def test_34b_different_epoch_changes_provenance_id(self):
-        """Test 34b: different epoch changes provenance_id."""
-        raw = _make_horizons_response()
+        """Test 34b: different epoch changes provenance_id.
+
+        Each request uses a response body whose calendar-date matches its epoch,
+        so the epoch-verification step passes for both; only the canonical query
+        identity (which includes the epoch) differs.
+        """
         epoch1 = datetime(2026, 8, 27, 0, 0, 0, tzinfo=UTC)
         epoch2 = datetime(2026, 8, 28, 0, 0, 0, tzinfo=UTC)
-        r1 = _make_adapter(content=raw).fetch(_make_request(epoch=epoch1))
-        r2 = _make_adapter(content=raw).fetch(_make_request(epoch=epoch2))
+
+        # Build response bodies with matching calendar dates.
+        row1 = (
+            " 2460933.500000000, A.D. 2026-Aug-27 00:00:00.000000,"
+            f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
+        )
+        row2 = (
+            " 2460934.500000000, A.D. 2026-Aug-28 00:00:00.000000,"
+            f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
+        )
+        result_text1 = "JPL/HORIZONS header\n$$SOE\n" + row1 + "\n$$EOE\n"
+        result_text2 = "JPL/HORIZONS header\n$$SOE\n" + row2 + "\n$$EOE\n"
+
+        raw1 = _make_horizons_response(result_text=result_text1)
+        raw2 = _make_horizons_response(result_text=result_text2)
+
+        r1 = _make_adapter(content=raw1).fetch(_make_request(epoch=epoch1))
+        r2 = _make_adapter(content=raw2).fetch(_make_request(epoch=epoch2))
         assert r1.provenance.provenance_id != r2.provenance.provenance_id
 
     def test_35_provenance_status_validated(self):
@@ -756,8 +777,8 @@ class TestProvenance:
         assert result.provenance.validation_status == ProvenanceValidationStatus.VALIDATED
 
     def test_35b_canonical_identity_includes_all_fixed_settings(self):
-        """Test 35b: canonical provenance query identity includes VEC_DELTA_T
-        and all other fixed protocol settings.
+        """Test 35b: canonical provenance query identity includes VEC_DELTA_T,
+        TIME_DIGITS, and all other fixed protocol settings.
         """
         req = _make_request()
         identity_str = _build_canonical_query_identity(req)
@@ -774,6 +795,7 @@ class TestProvenance:
             "vec_corr",
             "vec_delta_t",
             "time_type",
+            "time_digits",
             "tlist_type",
             "csv_format",
             "ref_system",
@@ -789,6 +811,8 @@ class TestProvenance:
         assert identity["vec_table"] == "6"
         # VEC_CORR must be NONE.
         assert identity["vec_corr"] == "NONE"
+        # TIME_DIGITS must be FRACSEC.
+        assert identity["time_digits"] == "FRACSEC"
 
     def test_provenance_id_not_uuid4_based(self):
         """provenance_id must not contain uuid4 randomness (deterministic)."""

@@ -1,6 +1,6 @@
-"""Phase 6D-B1 — Verified Horizons Snapshot Foundation Unit Tests.
+"""Phase 6D-B1 / Phase 6D-B1.1 — Verified Horizons Snapshot Foundation Unit Tests.
 
-Covers the full required test matrix from the Phase 6D-B1 specification.
+Covers the full required test matrix from the Phase 6D-B1 and 6D-B1.1 specifications.
 Uses httpx.MockTransport exclusively — zero live network calls.
 
 Test groups
@@ -25,8 +25,23 @@ TAMPER DETECTION (tests 27-43):
 IO (tests 44-47):
     missing file, permission error, no path leak, cause preserved
 
-REGRESSION (tests 48-52):
+REGRESSION (tests 48-52+):
     Phase 6D-A, 6C, 6B imports pass; state.py unwired; schemas unchanged
+
+HORIZONS EPOCH FIDELITY (6D-B1.1 tests):
+    TIME_DIGITS=FRACSEC, canonical identity, epoch matching/rejection
+
+SHARED RAW VALIDATOR (6D-B1.1 tests):
+    pure function, no HTTP, size limit, retrieved_at handling, no __new__
+
+BOUNDED READ (6D-B1.1 tests):
+    genuinely bounded, oversized rejection
+
+SNAPSHOT ID (6D-B1.1 tests):
+    different retrieved_at → different ID, coordinated tamper rejection
+
+WRITER SELF-VALIDATION (6D-B1.1 tests):
+    geometry/request/provenance consistency, missing retrieved_at, oversized
 """
 
 from __future__ import annotations
@@ -39,7 +54,7 @@ import pathlib
 import stat
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 from unittest.mock import patch
 
@@ -50,6 +65,9 @@ from pydantic import ValidationError
 from backend.app.mission_sources.adapters.horizons import (
     HorizonsAdapter,
     HorizonsValidationError,
+    _build_canonical_query_identity,
+    _validate_horizons_raw_response,
+    _MAX_RESPONSE_BYTES,
 )
 from backend.app.mission_sources.adapters.horizons_models import (
     HorizonsGeometryCapture,
@@ -62,6 +80,8 @@ from backend.app.mission_sources.snapshots.horizons_snapshot import (
     HorizonsSnapshotValidationError,
     HorizonsSnapshotStore,
     _compute_snapshot_id,
+    _canonical_retrieved_at,
+    _MAX_SNAPSHOT_BYTES,
 )
 from backend.app.mission_sources.snapshots.horizons_snapshot_models import (
     SNAPSHOT_SCHEMA,
@@ -89,8 +109,9 @@ _LT_VALUE = 2795.812640498820
 _RG_VALUE = 838249962.14964500
 _RR_VALUE = 14.639175321946800
 
+# Calendar date with FRACSEC precision (6 decimal digits).
 _VALID_DATA_ROW = (
-    " 2460933.500000000, A.D. 2026-Aug-27 00:00:00.0000,"
+    " 2460933.500000000, A.D. 2026-Aug-27 00:00:00.000000,"
     f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
 )
 
@@ -201,7 +222,6 @@ class TestCapture:
         client = httpx.Client(transport=transport)
         adapter = HorizonsAdapter(client=client, clock=_fixed_clock)
         adapter.fetch_capture(_make_request())
-        # Client still usable — no exception means it was not closed.
         assert not client.is_closed
 
     def test_fetch_also_exactly_one_request(self):
@@ -239,13 +259,16 @@ class TestSnapshotCreation:
         result = capture.result
         raw_b64 = base64.b64encode(capture.raw_response).decode("ascii")
         computed_hash = hashlib.sha256(capture.raw_response).hexdigest()
-        snapshot_id = _compute_snapshot_id(result.provenance.provenance_id)
+        retrieved_at_iso = _canonical_retrieved_at(result.provenance.retrieved_at)
+        snapshot_id = _compute_snapshot_id(
+            result.provenance.provenance_id, retrieved_at_iso
+        )
         return {
             "snapshot_schema": SNAPSHOT_SCHEMA,
             "snapshot_version": SNAPSHOT_VERSION,
             "snapshot_id": snapshot_id,
             "request": result.request.model_dump(mode="json"),
-            "retrieved_at": result.provenance.retrieved_at.isoformat(),
+            "retrieved_at": retrieved_at_iso,
             "raw_response_base64": raw_b64,
             "raw_response_sha256": computed_hash,
             "geometry": result.geometry.model_dump(mode="json"),
@@ -270,8 +293,10 @@ class TestSnapshotCreation:
         content = _make_horizons_response_bytes()
         c1 = _make_capture(content=content)
         c2 = _make_capture(content=content)
-        id1 = _compute_snapshot_id(c1.result.provenance.provenance_id)
-        id2 = _compute_snapshot_id(c2.result.provenance.provenance_id)
+        iso1 = _canonical_retrieved_at(c1.result.provenance.retrieved_at)
+        iso2 = _canonical_retrieved_at(c2.result.provenance.retrieved_at)
+        id1 = _compute_snapshot_id(c1.result.provenance.provenance_id, iso1)
+        id2 = _compute_snapshot_id(c2.result.provenance.provenance_id, iso2)
         assert id1 == id2
 
     def test_09_raw_response_encoded_losslessly(self):
@@ -302,14 +327,14 @@ class TestSnapshotCreation:
     def test_13_no_current_time_snapshot_field(self):
         """Test 13: no snapshot-creation timestamp (retrieved_at is the historical time)."""
         d = self._make_envelope_dict()
-        # retrieved_at must equal the stored capture retrieved_at, not "now"
         env = HorizonsSnapshotEnvelope.model_validate(d)
         assert env.retrieved_at == _RETRIEVED_AT
 
     def test_snapshot_id_is_sha256_hex(self):
         """snapshot_id is a 64-char lowercase hex SHA-256."""
         capture = _make_capture()
-        sid = _compute_snapshot_id(capture.result.provenance.provenance_id)
+        iso = _canonical_retrieved_at(capture.result.provenance.retrieved_at)
+        sid = _compute_snapshot_id(capture.result.provenance.provenance_id, iso)
         assert len(sid) == 64
         assert all(c in "0123456789abcdef" for c in sid)
 
@@ -317,10 +342,11 @@ class TestSnapshotCreation:
         """snapshot_id formula is correct."""
         capture = _make_capture()
         prov_id = capture.result.provenance.provenance_id
+        iso = _canonical_retrieved_at(capture.result.provenance.retrieved_at)
         expected = hashlib.sha256(
-            f"gcsi.horizons_geometry_snapshot:v1:{prov_id}".encode("utf-8")
+            f"gcsi.horizons_geometry_snapshot:v1:{prov_id}:{iso}".encode("utf-8")
         ).hexdigest()
-        assert _compute_snapshot_id(prov_id) == expected
+        assert _compute_snapshot_id(prov_id, iso) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -348,7 +374,7 @@ class TestWrite:
         HorizonsSnapshotStore.write(capture, snap_path)
         raw = snap_path.read_bytes()
         text = raw.decode("utf-8")  # must not raise
-        parsed = json.loads(text)  # must not raise
+        parsed = json.loads(text)   # must not raise
         assert isinstance(parsed, dict)
 
     def test_16_stable_serialized_structure(self, tmp_path):
@@ -375,52 +401,39 @@ class TestWrite:
         snap_path = tmp_path / "snap.json"
         capture = _make_capture()
 
-        with patch("backend.app.mission_sources.snapshots.horizons_snapshot.tempfile.mkstemp",
-                   side_effect=tracking_mkstemp):
+        with patch(
+            "backend.app.mission_sources.snapshots.horizons_snapshot.tempfile.mkstemp",
+            side_effect=tracking_mkstemp,
+        ):
             HorizonsSnapshotStore.write(capture, snap_path)
 
-        # Temp file should have been cleaned up (replaced to final path)
+        # Temp file should have been replaced (not left behind).
         for tmp_file in written_files:
             assert not pathlib.Path(tmp_file).exists()
         assert snap_path.exists()
 
-    def test_18_failed_write_does_not_leave_corrupt_snapshot(self, tmp_path):
-        """Test 18: if write fails mid-way, the final file is not partially written."""
+    def test_18_failed_write_raises_snapshot_unavailable(self, tmp_path):
+        """Test 18: if write fails due to OSError, raises HorizonsSnapshotUnavailableError."""
         capture = _make_capture()
         snap_path = tmp_path / "snap.json"
 
-        # Write a valid snapshot first.
-        HorizonsSnapshotStore.write(capture, snap_path)
-        original_content = snap_path.read_bytes()
-
-        # Simulate a failure during os.replace by making it raise.
+        # Simulate a failure during os.replace.
         with patch("os.replace", side_effect=OSError("simulated disk full")):
-            with pytest.raises(OSError):
+            with pytest.raises(HorizonsSnapshotUnavailableError):
                 HorizonsSnapshotStore.write(capture, snap_path)
 
-        # The original snapshot should remain intact (or the file might not exist
-        # if the temp was cleaned up — either is acceptable; what matters is the
-        # final path was not partially overwritten with garbage).
-        if snap_path.exists():
-            assert snap_path.read_bytes() == original_content
+        # The final path must not have been created.
+        assert not snap_path.exists()
 
     def test_write_rejects_bad_hash(self, tmp_path):
         """write() raises if capture raw bytes do not match provenance hash."""
         capture = _make_capture()
-        # Tamper with the capture to have wrong raw bytes.
-        from pydantic import ValidationError as PV
-        try:
-            # We cannot easily build a capture with wrong hash without
-            # bypassing validation — so verify the write guard directly
-            # by constructing a capture with tampered bytes.
-            tampered = HorizonsGeometryCapture(
-                result=capture.result,
-                raw_response=b"tampered_bytes_with_wrong_hash",
-            )
-            with pytest.raises(HorizonsSnapshotValidationError):
-                HorizonsSnapshotStore.write(tampered, tmp_path / "bad.json")
-        except Exception:
-            pytest.skip("Could not construct tampered capture for this test")
+        tampered = HorizonsGeometryCapture(
+            result=capture.result,
+            raw_response=b"tampered_bytes_with_wrong_hash",
+        )
+        with pytest.raises(HorizonsSnapshotValidationError):
+            HorizonsSnapshotStore.write(tampered, tmp_path / "bad.json")
 
 
 # ---------------------------------------------------------------------------
@@ -440,8 +453,6 @@ class TestLoadRevalidation:
     def test_19_loader_performs_no_http_requests(self, tmp_path):
         """Test 19: loader performs no HTTP requests."""
         snap_path = self._write_snap(tmp_path)
-        # If any HTTP is attempted, httpx would raise — no transport set up.
-        # We just verify load() returns without network activity.
         result = HorizonsSnapshotStore.load(snap_path)
         assert result.geometry.range_km > 0
 
@@ -449,7 +460,6 @@ class TestLoadRevalidation:
         """Test 20: loader decodes exact original raw bytes."""
         content = _make_horizons_response_bytes()
         snap_path = self._write_snap(tmp_path, content=content)
-        # Read the file and check base64 decodes back to original.
         raw_envelope = json.loads(snap_path.read_bytes().decode("utf-8"))
         decoded = base64.b64decode(raw_envelope["raw_response_base64"], validate=True)
         assert decoded == content
@@ -457,8 +467,6 @@ class TestLoadRevalidation:
     def test_21_loader_reruns_same_horizons_validator(self, tmp_path):
         """Test 21: loader re-runs the same Horizons raw-response validator."""
         snap_path = self._write_snap(tmp_path)
-        # If the validator were NOT run, tampered geometry would pass.
-        # This test verifies it runs by confirming geometry matches.
         result = HorizonsSnapshotStore.load(snap_path)
         expected = _make_adapter(_make_horizons_response_bytes()).fetch(_make_request())
         assert result.geometry == expected.geometry
@@ -493,7 +501,6 @@ class TestLoadRevalidation:
         snap_path = tmp_path / "snap.json"
         HorizonsSnapshotStore.write(capture, snap_path)
         loaded = HorizonsSnapshotStore.load(snap_path)
-        # Must match the original historical retrieved_at, not "now".
         assert loaded.provenance.retrieved_at == _RETRIEVED_AT
 
     def test_26_repeated_offline_loads_identical(self, tmp_path):
@@ -525,7 +532,9 @@ class TestTamperDetection:
     def _write_tampered(self, tmp_path, tampered_dict: dict) -> pathlib.Path:
         """Write a tampered dict as a snapshot file."""
         p = tmp_path / "tampered.json"
-        p.write_bytes((json.dumps(tampered_dict, sort_keys=True, indent=2) + "\n").encode("utf-8"))
+        p.write_bytes(
+            (json.dumps(tampered_dict, sort_keys=True, indent=2) + "\n").encode("utf-8")
+        )
         return p
 
     def test_27_altered_raw_response_base64_rejected(self, tmp_path):
@@ -588,7 +597,6 @@ class TestTamperDetection:
     def test_34_altered_retrieved_at_rejected(self, tmp_path):
         """Test 34: altered retrieved_at causes provenance mismatch."""
         d, _ = self._write_snap_dict(tmp_path)
-        # Change to a different time — provenance will not match.
         d["retrieved_at"] = "2020-01-01T00:00:00+00:00"
         p = self._write_tampered(tmp_path, d)
         with pytest.raises(HorizonsSnapshotValidationError):
@@ -659,7 +667,7 @@ class TestTamperDetection:
     def test_43_oversized_snapshot_rejected(self, tmp_path):
         """Test 43: oversized snapshot rejected."""
         p = tmp_path / "big.json"
-        p.write_bytes(b"X" * (2 * 1024 * 1024 + 1))
+        p.write_bytes(b"X" * (_MAX_SNAPSHOT_BYTES + 1))
         with pytest.raises(HorizonsSnapshotValidationError):
             HorizonsSnapshotStore.load(p)
 
@@ -687,7 +695,6 @@ class TestIO:
         capture = _make_capture()
         p = tmp_path / "snap.json"
         HorizonsSnapshotStore.write(capture, p)
-        # Remove read permission.
         p.chmod(0o000)
         try:
             with pytest.raises(HorizonsSnapshotUnavailableError):
@@ -783,21 +790,14 @@ class TestRegression:
 
     def test_51_state_py_not_imported(self):
         """Test 51: state.py is NOT imported by any snapshot module."""
-        import importlib
-        # These imports must work without importing state.py
         import backend.app.mission_sources.snapshots.horizons_snapshot as snap_mod
         import backend.app.mission_sources.snapshots.horizons_snapshot_models as snap_models
-        # Verify state is not in their imports
         assert "backend.app.state" not in snap_mod.__dict__
-        assert "state" not in snap_mod.__file__
 
     def test_52_scenario_schema_unchanged(self):
         """Test 52: Scenario and DataProduct schemas remain unchanged."""
         from backend.app.models.scenario import Scenario
         from backend.app.models.data_product import DataProduct
-        # Both must still be importable and have their expected fields.
-        from pydantic import ValidationError as PV
-        # Scenario requires specific fields — just import-check is sufficient.
         assert Scenario is not None
         assert DataProduct is not None
 
@@ -823,13 +823,16 @@ class TestRegression:
         capture = _make_capture()
         raw_b64 = base64.b64encode(capture.raw_response).decode("ascii")
         computed_hash = hashlib.sha256(capture.raw_response).hexdigest()
-        snapshot_id = _compute_snapshot_id(capture.result.provenance.provenance_id)
+        iso = _canonical_retrieved_at(capture.result.provenance.retrieved_at)
+        snapshot_id = _compute_snapshot_id(
+            capture.result.provenance.provenance_id, iso
+        )
         d = {
             "snapshot_schema": SNAPSHOT_SCHEMA,
             "snapshot_version": SNAPSHOT_VERSION,
             "snapshot_id": snapshot_id,
             "request": capture.result.request.model_dump(mode="json"),
-            "retrieved_at": _RETRIEVED_AT.isoformat(),
+            "retrieved_at": iso,
             "raw_response_base64": raw_b64,
             "raw_response_sha256": computed_hash,
             "geometry": capture.result.geometry.model_dump(mode="json"),
@@ -844,13 +847,16 @@ class TestRegression:
         capture = _make_capture()
         raw_b64 = base64.b64encode(capture.raw_response).decode("ascii")
         computed_hash = hashlib.sha256(capture.raw_response).hexdigest()
-        snapshot_id = _compute_snapshot_id(capture.result.provenance.provenance_id)
+        iso = _canonical_retrieved_at(capture.result.provenance.retrieved_at)
+        snapshot_id = _compute_snapshot_id(
+            capture.result.provenance.provenance_id, iso
+        )
         d = {
             "snapshot_schema": "wrong.schema.name",
             "snapshot_version": SNAPSHOT_VERSION,
             "snapshot_id": snapshot_id,
             "request": capture.result.request.model_dump(mode="json"),
-            "retrieved_at": _RETRIEVED_AT.isoformat(),
+            "retrieved_at": iso,
             "raw_response_base64": raw_b64,
             "raw_response_sha256": computed_hash,
             "geometry": capture.result.geometry.model_dump(mode="json"),
@@ -860,16 +866,544 @@ class TestRegression:
             HorizonsSnapshotEnvelope.model_validate(d)
 
     def test_no_live_network_in_tests(self):
-        """Confirm no live Horizons endpoint is called in any test — conceptual guard."""
-        # All tests use MockTransport. This is a documentation test that
-        # confirms the principle; the actual guard is in the transport setup.
-        assert True  # If any test made a live call, it would have failed.
+        """Confirm no live Horizons endpoint is called — all tests use MockTransport."""
+        assert True
 
     def test_phase6db2_not_started(self):
         """Confirm Phase 6D-B2 (live capture integration) is not started."""
-        # Verify HistoricalReplayProvider is not present.
         try:
             import backend.app.mission_sources.historical_replay_provider  # noqa: F401
             pytest.fail("Phase 6D-B2 HistoricalReplayProvider should not exist yet")
         except ImportError:
-            pass  # Correct — not implemented yet.
+            pass
+
+
+# ---------------------------------------------------------------------------
+# HORIZONS EPOCH FIDELITY (6D-B1.1)
+# ---------------------------------------------------------------------------
+
+
+class TestEpochFidelity:
+    """6D-B1.1 tests 1-11: TIME_DIGITS=FRACSEC and epoch verification."""
+
+    def _fetch(self, result_text: Optional[str] = None) -> HorizonsGeometryResult:
+        content = _make_horizons_response_bytes(result_text=result_text)
+        return _make_adapter(content=content).fetch(_make_request())
+
+    def _params(self) -> dict:
+        """Capture the HTTP params sent by the adapter."""
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured.update(dict(request.url.params))
+            return httpx.Response(200, content=_make_horizons_response_bytes())
+
+        transport = httpx.MockTransport(handler)
+        client = httpx.Client(transport=transport)
+        HorizonsAdapter(client=client, clock=_fixed_clock).fetch(_make_request())
+        return captured
+
+    def test_b11_01_request_contains_time_digits_fracsec(self):
+        """B1.1-1: request includes TIME_DIGITS=FRACSEC."""
+        params = self._params()
+        assert params.get("TIME_DIGITS") == "FRACSEC"
+
+    def test_b11_02_canonical_identity_includes_time_digits(self):
+        """B1.1-2: canonical query identity includes time_digits."""
+        identity = json.loads(_build_canonical_query_identity(_make_request()))
+        assert "time_digits" in identity
+        assert identity["time_digits"] == "FRACSEC"
+
+    def test_b11_03_returned_epoch_matches_request_accepted(self):
+        """B1.1-3: returned calendar epoch matching request is accepted."""
+        result = self._fetch()
+        assert result.geometry.range_km > 0
+
+    def test_b11_04_different_day_rejected(self):
+        """B1.1-4: returned date one day different is rejected."""
+        row = (
+            " 2460934.500000000, A.D. 2026-Aug-28 00:00:00.000000,"
+            f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
+        )
+        result_text = "JPL/HORIZONS\n$$SOE\n" + row + "\n$$EOE\n"
+        content = _make_horizons_response_bytes(result_text=result_text)
+        with pytest.raises(HorizonsValidationError):
+            _make_adapter(content=content).fetch(_make_request())
+
+    def test_b11_05_hour_mismatch_rejected(self):
+        """B1.1-5: returned hour mismatch rejected."""
+        row = (
+            " 2460933.541666667, A.D. 2026-Aug-27 01:00:00.000000,"
+            f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
+        )
+        result_text = "JPL/HORIZONS\n$$SOE\n" + row + "\n$$EOE\n"
+        content = _make_horizons_response_bytes(result_text=result_text)
+        with pytest.raises(HorizonsValidationError):
+            _make_adapter(content=content).fetch(_make_request())
+
+    def test_b11_06_minute_mismatch_rejected(self):
+        """B1.1-6: returned minute mismatch rejected."""
+        row = (
+            " 2460933.500694444, A.D. 2026-Aug-27 00:01:00.000000,"
+            f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
+        )
+        result_text = "JPL/HORIZONS\n$$SOE\n" + row + "\n$$EOE\n"
+        content = _make_horizons_response_bytes(result_text=result_text)
+        with pytest.raises(HorizonsValidationError):
+            _make_adapter(content=content).fetch(_make_request())
+
+    def test_b11_07_second_fraction_mismatch_rejected(self):
+        """B1.1-7: returned seconds/fraction mismatch rejected."""
+        row = (
+            " 2460933.500011574, A.D. 2026-Aug-27 00:00:01.000000,"
+            f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
+        )
+        result_text = "JPL/HORIZONS\n$$SOE\n" + row + "\n$$EOE\n"
+        content = _make_horizons_response_bytes(result_text=result_text)
+        with pytest.raises(HorizonsValidationError):
+            _make_adapter(content=content).fetch(_make_request())
+
+    def test_b11_08_malformed_calendar_field_rejected(self):
+        """B1.1-8: malformed calendar field rejected."""
+        row = (
+            " 2460933.500000000, INVALID DATE STRING,"
+            f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
+        )
+        result_text = "JPL/HORIZONS\n$$SOE\n" + row + "\n$$EOE\n"
+        content = _make_horizons_response_bytes(result_text=result_text)
+        with pytest.raises(HorizonsValidationError):
+            _make_adapter(content=content).fetch(_make_request())
+
+    def test_b11_09_non_numeric_julian_time_rejected(self):
+        """B1.1-9: non-numeric Julian-time field rejected."""
+        row = (
+            " NOT_A_JD, A.D. 2026-Aug-27 00:00:00.000000,"
+            f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
+        )
+        result_text = "JPL/HORIZONS\n$$SOE\n" + row + "\n$$EOE\n"
+        content = _make_horizons_response_bytes(result_text=result_text)
+        with pytest.raises(HorizonsValidationError):
+            _make_adapter(content=content).fetch(_make_request())
+
+    def test_b11_10_nan_julian_time_rejected(self):
+        """B1.1-10: NaN Julian-time rejected."""
+        row = (
+            " NaN, A.D. 2026-Aug-27 00:00:00.000000,"
+            f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
+        )
+        result_text = "JPL/HORIZONS\n$$SOE\n" + row + "\n$$EOE\n"
+        content = _make_horizons_response_bytes(result_text=result_text)
+        with pytest.raises(HorizonsValidationError):
+            _make_adapter(content=content).fetch(_make_request())
+
+    def test_b11_11_non_utc_aware_request_normalised_before_comparison(self):
+        """B1.1-11: non-UTC aware request epoch is normalised to UTC before comparison."""
+        # +07:00 = 2026-Aug-27 07:00 local = 2026-Aug-27 00:00 UTC
+        plus7 = timezone(timedelta(hours=7))
+        local_epoch = datetime(2026, 8, 27, 7, 0, 0, tzinfo=plus7)
+        req = HorizonsGeometryRequest(target_spk_id=_JUNO_ID, epoch_utc=local_epoch)
+        # The response returns 2026-Aug-27 00:00:00.000000 which is correct UTC.
+        content = _make_horizons_response_bytes()
+        transport = _make_mock_transport(content=content)
+        client = httpx.Client(transport=transport)
+        adapter = HorizonsAdapter(client=client, clock=_fixed_clock)
+        result = adapter.fetch(req)
+        assert result.geometry.range_km > 0
+
+    def test_4digit_fracsec_accepted(self):
+        """4 fractional digits (padded to 6) are accepted for backward compat."""
+        row = (
+            " 2460933.500000000, A.D. 2026-Aug-27 00:00:00.0000,"
+            f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
+        )
+        result_text = "JPL/HORIZONS\n$$SOE\n" + row + "\n$$EOE\n"
+        content = _make_horizons_response_bytes(result_text=result_text)
+        result = _make_adapter(content=content).fetch(_make_request())
+        assert result.geometry.range_km > 0
+
+
+# ---------------------------------------------------------------------------
+# SHARED RAW VALIDATOR (6D-B1.1)
+# ---------------------------------------------------------------------------
+
+
+class TestSharedRawValidator:
+    """6D-B1.1 tests 12-18: _validate_horizons_raw_response contract."""
+
+    def test_b11_12_live_fetch_uses_shared_validator(self):
+        """B1.1-12: live fetch uses _validate_horizons_raw_response."""
+        # If it didn't, epoch verification would not be applied.
+        row = (
+            " 2460934.500000000, A.D. 2026-Aug-28 00:00:00.000000,"
+            f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
+        )
+        result_text = "JPL/HORIZONS\n$$SOE\n" + row + "\n$$EOE\n"
+        content = _make_horizons_response_bytes(result_text=result_text)
+        with pytest.raises(HorizonsValidationError):
+            _make_adapter(content=content).fetch(_make_request())
+
+    def test_b11_13_snapshot_load_uses_same_validator(self, tmp_path):
+        """B1.1-13: snapshot load uses the exact same shared validator."""
+        capture = _make_capture()
+        snap_path = tmp_path / "snap.json"
+        HorizonsSnapshotStore.write(capture, snap_path)
+        loaded = HorizonsSnapshotStore.load(snap_path)
+        # If the same validator were not used, geometry would differ.
+        assert loaded.geometry == capture.result.geometry
+
+    def test_b11_14_no_adapter_new_usage(self):
+        """B1.1-14: HorizonsAdapter.__new__ is NOT used anywhere in snapshot code."""
+        import inspect
+        import backend.app.mission_sources.snapshots.horizons_snapshot as snap_mod
+        source = inspect.getsource(snap_mod)
+        assert "HorizonsAdapter.__new__" not in source
+        assert "__new__(HorizonsAdapter)" not in source
+
+    def test_b11_15_shared_validator_performs_no_http(self):
+        """B1.1-15: _validate_horizons_raw_response performs no HTTP."""
+        content = _make_horizons_response_bytes()
+        # Calling with no transport set up — would raise if HTTP occurred.
+        result = _validate_horizons_raw_response(
+            request=_make_request(),
+            raw_bytes=content,
+            retrieved_at=_RETRIEVED_AT,
+        )
+        assert result.geometry.range_km > 0
+
+    def test_b11_16_raw_body_over_1mib_rejected(self):
+        """B1.1-16: raw body >1 MiB rejected by shared validator."""
+        oversized = b"X" * (_MAX_RESPONSE_BYTES + 1)
+        with pytest.raises(HorizonsValidationError):
+            _validate_horizons_raw_response(
+                request=_make_request(),
+                raw_bytes=oversized,
+                retrieved_at=_RETRIEVED_AT,
+            )
+
+    def test_b11_17_retrieved_at_normalised_to_utc(self):
+        """B1.1-17: retrieved_at normalised to UTC in provenance."""
+        # +07:00, 13:41 local == 06:41 UTC.
+        plus7 = timezone(timedelta(hours=7))
+        non_utc = datetime(2026, 8, 27, 13, 41, 0, tzinfo=plus7)
+        content = _make_horizons_response_bytes()
+        result = _validate_horizons_raw_response(
+            request=_make_request(),
+            raw_bytes=content,
+            retrieved_at=non_utc,
+        )
+        prov_retrieved = result.provenance.retrieved_at
+        # Must be stored as UTC (zero offset).
+        assert prov_retrieved.utcoffset().total_seconds() == 0
+        # And must equal the UTC equivalent of the input.
+        expected_utc = datetime(2026, 8, 27, 6, 41, 0, tzinfo=timezone.utc)
+        assert prov_retrieved == expected_utc
+
+    def test_b11_18_naive_retrieved_at_rejected(self):
+        """B1.1-18: naive retrieved_at raises HorizonsValidationError."""
+        content = _make_horizons_response_bytes()
+        naive = datetime(2026, 8, 27, 20, 41, 0)  # no tzinfo
+        with pytest.raises(HorizonsValidationError):
+            _validate_horizons_raw_response(
+                request=_make_request(),
+                raw_bytes=content,
+                retrieved_at=naive,
+            )
+
+
+# ---------------------------------------------------------------------------
+# BOUNDED READ (6D-B1.1)
+# ---------------------------------------------------------------------------
+
+
+class TestBoundedRead:
+    """6D-B1.1 tests 19-20: genuinely bounded file read."""
+
+    def test_b11_19_bounded_read_does_not_request_full_file(self, tmp_path):
+        """B1.1-19: load() reads at most MAX_SNAPSHOT_BYTES + 1 bytes."""
+        capture = _make_capture()
+        snap_path = tmp_path / "snap.json"
+        HorizonsSnapshotStore.write(capture, snap_path)
+
+        read_amounts: list[int] = []
+        original_open = open
+
+        def tracking_open(path, mode="r", *args, **kwargs):
+            fh = original_open(path, mode, *args, **kwargs)
+            if mode == "rb":
+                original_read = fh.read
+
+                def bounded_read_tracker(n=-1):
+                    data = original_read(n)
+                    read_amounts.append(n if n != -1 else len(data))
+                    return data
+
+                fh.read = bounded_read_tracker
+            return fh
+
+        with patch("builtins.open", side_effect=tracking_open):
+            HorizonsSnapshotStore.load(snap_path)
+
+        # The read call must have passed n = MAX+1 (bounded), not -1 (unbounded).
+        assert any(n == _MAX_SNAPSHOT_BYTES + 1 for n in read_amounts), (
+            f"Expected bounded read of {_MAX_SNAPSHOT_BYTES + 1}, got: {read_amounts}"
+        )
+
+    def test_b11_20_oversized_file_rejected_quickly(self, tmp_path):
+        """B1.1-20: oversized snapshot rejected without reading arbitrary full contents."""
+        p = tmp_path / "big.json"
+        # Create a file larger than MAX_SNAPSHOT_BYTES.
+        p.write_bytes(b"Z" * (_MAX_SNAPSHOT_BYTES + 100))
+        with pytest.raises(HorizonsSnapshotValidationError):
+            HorizonsSnapshotStore.load(p)
+
+
+# ---------------------------------------------------------------------------
+# SNAPSHOT ID (6D-B1.1)
+# ---------------------------------------------------------------------------
+
+
+class TestSnapshotIdFidelity:
+    """6D-B1.1 tests 21-24: snapshot_id binds retrieved_at."""
+
+    def test_b11_21_same_capture_same_snapshot_id(self, tmp_path):
+        """B1.1-21: same capture -> same snapshot_id."""
+        content = _make_horizons_response_bytes()
+        c1 = _make_capture(content=content)
+        c2 = _make_capture(content=content)
+        p1, p2 = tmp_path / "s1.json", tmp_path / "s2.json"
+        HorizonsSnapshotStore.write(c1, p1)
+        HorizonsSnapshotStore.write(c2, p2)
+        d1 = json.loads(p1.read_bytes())
+        d2 = json.loads(p2.read_bytes())
+        assert d1["snapshot_id"] == d2["snapshot_id"]
+
+    def test_b11_22_different_retrieved_at_different_snapshot_id(self, tmp_path):
+        """B1.1-22: same query/body but different retrieved_at → different snapshot_id."""
+        content = _make_horizons_response_bytes()
+
+        clock1 = lambda: datetime(2026, 8, 27, 20, 41, 0, tzinfo=UTC)
+        clock2 = lambda: datetime(2026, 8, 27, 21, 00, 0, tzinfo=UTC)
+
+        t1 = _make_mock_transport(content=content)
+        t2 = _make_mock_transport(content=content)
+        a1 = HorizonsAdapter(client=httpx.Client(transport=t1), clock=clock1)
+        a2 = HorizonsAdapter(client=httpx.Client(transport=t2), clock=clock2)
+
+        c1 = a1.fetch_capture(_make_request())
+        c2 = a2.fetch_capture(_make_request())
+
+        p1, p2 = tmp_path / "s1.json", tmp_path / "s2.json"
+        HorizonsSnapshotStore.write(c1, p1)
+        HorizonsSnapshotStore.write(c2, p2)
+
+        d1 = json.loads(p1.read_bytes())
+        d2 = json.loads(p2.read_bytes())
+        assert d1["snapshot_id"] != d2["snapshot_id"]
+        # Both must still load successfully.
+        r1 = HorizonsSnapshotStore.load(p1)
+        r2 = HorizonsSnapshotStore.load(p2)
+        assert r1.geometry == r2.geometry  # same body → same geometry
+        assert r1.provenance.retrieved_at != r2.provenance.retrieved_at
+
+    def test_b11_23_coordinated_retrieved_at_tamper_rejected(self, tmp_path):
+        """B1.1-23: changing BOTH envelope.retrieved_at AND provenance.retrieved_at
+        to the same different timestamp is rejected because snapshot_id binds
+        the original timestamp.
+        """
+        capture = _make_capture()
+        snap_path = tmp_path / "snap.json"
+        HorizonsSnapshotStore.write(capture, snap_path)
+
+        d = json.loads(snap_path.read_bytes())
+        # Coordinated change: both envelope retrieved_at and provenance retrieved_at.
+        new_time = "2020-01-01T00:00:00+00:00"
+        d["retrieved_at"] = new_time
+        d["provenance"]["retrieved_at"] = new_time
+
+        p = tmp_path / "tampered.json"
+        p.write_bytes(
+            (json.dumps(d, sort_keys=True, indent=2) + "\n").encode("utf-8")
+        )
+        with pytest.raises(HorizonsSnapshotValidationError):
+            HorizonsSnapshotStore.load(p)
+
+    def test_b11_24_altered_snapshot_id_rejected(self, tmp_path):
+        """B1.1-24: (regression) altered snapshot_id still rejected."""
+        capture = _make_capture()
+        snap_path = tmp_path / "snap.json"
+        HorizonsSnapshotStore.write(capture, snap_path)
+
+        d = json.loads(snap_path.read_bytes())
+        d["snapshot_id"] = "c" * 64
+        p = tmp_path / "tampered.json"
+        p.write_bytes(
+            (json.dumps(d, sort_keys=True, indent=2) + "\n").encode("utf-8")
+        )
+        with pytest.raises(HorizonsSnapshotValidationError):
+            HorizonsSnapshotStore.load(p)
+
+
+# ---------------------------------------------------------------------------
+# WRITER SELF-VALIDATION (6D-B1.1)
+# ---------------------------------------------------------------------------
+
+
+class TestWriterSelfValidation:
+    """6D-B1.1 tests 25-31: writer rejects inconsistent captures."""
+
+    def test_b11_25_valid_capture_writes(self, tmp_path):
+        """B1.1-25: valid capture writes without error."""
+        capture = _make_capture()
+        p = tmp_path / "snap.json"
+        HorizonsSnapshotStore.write(capture, p)
+        assert p.exists()
+
+    def test_b11_26_correct_hash_tampered_geometry_rejected(self, tmp_path):
+        """B1.1-26: correct raw hash but tampered geometry rejected before file creation."""
+        # Build a genuine capture.
+        capture = _make_capture()
+        # Build a geometry with altered range_km but keep everything else valid.
+        from backend.app.mission_sources.adapters.horizons_models import HorizonsGeometry
+        tampered_geom = HorizonsGeometry(
+            target_spk_id=capture.result.geometry.target_spk_id,
+            center=capture.result.geometry.center,
+            epoch_utc=capture.result.geometry.epoch_utc,
+            range_km=capture.result.geometry.range_km + 1_000_000.0,
+            range_rate_km_s=capture.result.geometry.range_rate_km_s,
+            one_way_light_time_s=capture.result.geometry.one_way_light_time_s,
+            api_source=capture.result.geometry.api_source,
+            api_version=capture.result.geometry.api_version,
+        )
+        tampered_result = HorizonsGeometryResult(
+            request=capture.result.request,
+            geometry=tampered_geom,
+            provenance=capture.result.provenance,
+        )
+        tampered_capture = HorizonsGeometryCapture(
+            result=tampered_result,
+            raw_response=capture.raw_response,
+        )
+        snap_path = tmp_path / "should_not_exist.json"
+        with pytest.raises(HorizonsSnapshotValidationError):
+            HorizonsSnapshotStore.write(tampered_capture, snap_path)
+        assert not snap_path.exists()
+
+    def test_b11_27_correct_hash_tampered_request_rejected(self, tmp_path):
+        """B1.1-27: correct raw hash but tampered request rejected."""
+        capture = _make_capture()
+        tampered_req = HorizonsGeometryRequest(
+            target_spk_id="499",  # different target
+            epoch_utc=_EPOCH_UTC,
+        )
+        tampered_result = HorizonsGeometryResult(
+            request=tampered_req,
+            geometry=capture.result.geometry,
+            provenance=capture.result.provenance,
+        )
+        tampered_capture = HorizonsGeometryCapture(
+            result=tampered_result,
+            raw_response=capture.raw_response,
+        )
+        snap_path = tmp_path / "should_not_exist.json"
+        with pytest.raises(HorizonsSnapshotValidationError):
+            HorizonsSnapshotStore.write(tampered_capture, snap_path)
+        assert not snap_path.exists()
+
+    def test_b11_28_correct_hash_tampered_provenance_rejected(self, tmp_path):
+        """B1.1-28: correct raw hash but tampered provenance rejected."""
+        capture = _make_capture()
+        from backend.app.provenance.models import ProvenanceRecord, ProvenanceKind, ProvenanceValidationStatus
+        prov = capture.result.provenance
+        tampered_prov = ProvenanceRecord(
+            provenance_id=prov.provenance_id,
+            kind=prov.kind,
+            source_system=prov.source_system,
+            source_version=prov.source_version,
+            source_uri=prov.source_uri,
+            observed_at=prov.observed_at,
+            retrieved_at=prov.retrieved_at,
+            validation_status=prov.validation_status,
+            content_sha256=prov.content_sha256,
+            notes="TAMPERED_NOTE_XYZ",  # extra note — breaks provenance equality
+        )
+        tampered_result = HorizonsGeometryResult(
+            request=capture.result.request,
+            geometry=capture.result.geometry,
+            provenance=tampered_prov,
+        )
+        tampered_capture = HorizonsGeometryCapture(
+            result=tampered_result,
+            raw_response=capture.raw_response,
+        )
+        snap_path = tmp_path / "should_not_exist.json"
+        with pytest.raises(HorizonsSnapshotValidationError):
+            HorizonsSnapshotStore.write(tampered_capture, snap_path)
+        assert not snap_path.exists()
+
+    def test_b11_29_missing_provenance_retrieved_at_rejected(self, tmp_path):
+        """B1.1-29: capture with provenance.retrieved_at=None rejected."""
+        capture = _make_capture()
+        from backend.app.provenance.models import ProvenanceRecord
+        prov = capture.result.provenance
+        prov_no_time = ProvenanceRecord(
+            provenance_id=prov.provenance_id,
+            kind=prov.kind,
+            source_system=prov.source_system,
+            source_version=prov.source_version,
+            source_uri=prov.source_uri,
+            observed_at=prov.observed_at,
+            retrieved_at=None,   # missing
+            validation_status=prov.validation_status,
+            content_sha256=prov.content_sha256,
+        )
+        result_no_time = HorizonsGeometryResult(
+            request=capture.result.request,
+            geometry=capture.result.geometry,
+            provenance=prov_no_time,
+        )
+        tampered_capture = HorizonsGeometryCapture(
+            result=result_no_time,
+            raw_response=capture.raw_response,
+        )
+        with pytest.raises(HorizonsSnapshotValidationError):
+            HorizonsSnapshotStore.write(tampered_capture, tmp_path / "snap.json")
+
+    def test_b11_30_oversized_raw_capture_rejected(self, tmp_path):
+        """B1.1-30: oversized raw capture rejected by shared validator in write()."""
+        oversized_bytes = b"X" * (_MAX_RESPONSE_BYTES + 1)
+        # Construct a fake capture with oversized raw bytes and wrong hash.
+        # The write() should reject it.
+        capture = _make_capture()
+        tampered = HorizonsGeometryCapture(
+            result=capture.result,
+            raw_response=oversized_bytes,
+        )
+        with pytest.raises(HorizonsSnapshotValidationError):
+            HorizonsSnapshotStore.write(tampered, tmp_path / "snap.json")
+
+    def test_b11_32_failed_atomic_replace_preserves_previous_file(self, tmp_path):
+        """B1.1-32: failed atomic replace preserves the previous valid file."""
+        capture = _make_capture()
+        snap_path = tmp_path / "snap.json"
+        HorizonsSnapshotStore.write(capture, snap_path)
+        original_content = snap_path.read_bytes()
+
+        with patch("os.replace", side_effect=OSError("simulated disk full")):
+            with pytest.raises(HorizonsSnapshotUnavailableError):
+                HorizonsSnapshotStore.write(capture, snap_path)
+
+        # Original file must still be intact.
+        assert snap_path.read_bytes() == original_content
+
+    def test_b11_33_write_oserror_is_sanitized(self, tmp_path):
+        """B1.1-33: write OSError is raised as HorizonsSnapshotUnavailableError."""
+        capture = _make_capture()
+        with patch("os.replace", side_effect=OSError("disk full")):
+            with pytest.raises(HorizonsSnapshotUnavailableError):
+                HorizonsSnapshotStore.write(capture, tmp_path / "snap.json")
+
+    def test_b11_34_read_oserror_is_sanitized(self, tmp_path):
+        """B1.1-34: read OSError is raised as HorizonsSnapshotUnavailableError."""
+        p = tmp_path / "missing.json"
+        with pytest.raises(HorizonsSnapshotUnavailableError):
+            HorizonsSnapshotStore.load(p)

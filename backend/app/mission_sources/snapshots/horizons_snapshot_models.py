@@ -71,8 +71,12 @@ class HorizonsSnapshotEnvelope(BaseModel):
         Must equal ``1``.
 
     snapshot_id
-        Deterministic SHA-256 fingerprint.
-        Formula: SHA-256("gcsi.horizons_geometry_snapshot:v1:" + provenance_id)
+        Deterministic SHA-256 fingerprint that binds both the content provenance
+        and the historical retrieval timestamp.
+        Formula:
+            SHA-256("gcsi.horizons_geometry_snapshot:v1:"
+                    + provenance_id + ":"
+                    + retrieved_at_utc_iso)
 
     request
         Original :class:`HorizonsGeometryRequest` for this capture.

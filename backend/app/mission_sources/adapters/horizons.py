@@ -112,6 +112,7 @@ class HorizonsValidationError(HorizonsAdapterError, MissionSourceValidationError
     - Oversized response body
     - Malformed $$SOE/$$EOE table
     - Invalid or non-finite geometry values
+    - Returned ephemeris epoch does not match requested epoch
     """
 
 
@@ -134,14 +135,17 @@ _MAX_RESPONSE_BYTES: int = 1 * 1024 * 1024  # 1 MiB
 _HTTP_TIMEOUT: float = 30.0
 
 # VEC_TABLE=6 CSV column indices for the semantic data row.
-# When CSV_FORMAT=YES, VEC_TABLE=6, VEC_DELTA_T=NO, the semantic row is:
-#   JDTDB, Calendar Date, LT, RG, RR[, <trailing empty from Horizons comma>]
+# When CSV_FORMAT=YES, VEC_TABLE=6, VEC_DELTA_T=NO, TIME_DIGITS=FRACSEC,
+# the semantic row is:
+#   JDTDB, Calendar Date (UT), LT, RG, RR[, <trailing empty from Horizons comma>]
 # Semantic indices (0-based, after stripping trailing empty cell):
-#   0 = JDTDB
-#   1 = Calendar Date (TDB)
+#   0 = JDTDB  (Julian Date, TDB timescale — finite positive float)
+#   1 = Calendar Date (UT, TIME_TYPE=UT output)
 #   2 = LT  (one-way light-time, seconds)
 #   3 = RG  (range, km)
 #   4 = RR  (range-rate, km/s)
+_IDX_JDTDB: int = 0
+_IDX_CAL_DATE: int = 1
 _IDX_LIGHT_TIME: int = 2
 _IDX_RANGE: int = 3
 _IDX_RANGE_RATE: int = 4
@@ -150,6 +154,21 @@ _EXPECTED_SEMANTIC_COLUMNS: int = 5
 # VEC_TABLE=3 has 11 columns (JDTDB, Date, X, Y, Z, VX, VY, VZ, LT, RG, RR).
 # We use this count to detect and reject table-3-shaped rows.
 _VEC_TABLE_3_COLUMN_COUNT: int = 11
+
+# Horizons A.D. calendar-date pattern produced under:
+#   TIME_TYPE=UT, TLIST_TYPE=CAL, CAL_TYPE=GREGORIAN, TIME_DIGITS=FRACSEC
+# Expected form: "A.D. YYYY-Mon-DD HH:MM:SS.ffffff"
+# Microseconds: 6 fractional digits from FRACSEC.
+_HORIZONS_CAL_DATE_RE = re.compile(
+    r"^A\.D\.\s+"
+    r"(\d{4})-([A-Za-z]{3})-(\d{2})\s+"
+    r"(\d{2}):(\d{2}):(\d{2})\.(\d+)$"
+)
+
+_MONTH_ABBR_TO_NUM: dict[str, int] = {
+    "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
+    "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +206,7 @@ def _build_canonical_query_identity(
         "ref_plane": "FRAME",
         "ref_system": "ICRF",
         "target_spk_id": request.target_spk_id,
+        "time_digits": "FRACSEC",
         "time_type": "UT",
         "tlist_epoch_utc": epoch_str,
         "tlist_type": "CAL",
@@ -236,22 +256,95 @@ def _epoch_to_tlist(epoch: datetime) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Calendar-date parsing and epoch verification
+# ---------------------------------------------------------------------------
+
+
+def _parse_horizons_cal_date(cal_date_str: str) -> datetime:
+    """Parse a Horizons A.D. calendar-date string to an aware UTC datetime.
+
+    Expected format under TIME_TYPE=UT, TIME_DIGITS=FRACSEC:
+        ``A.D. YYYY-Mon-DD HH:MM:SS.ffffff``
+
+    The returned datetime is timezone-aware UTC with microsecond precision.
+    If Horizons returns more than 6 fractional digits, only the first 6 are
+    used (deterministic truncation to microsecond precision).
+
+    Raises HorizonsValidationError if the string does not match the expected
+    pattern or contains an unrecognised month abbreviation.
+    """
+    m = _HORIZONS_CAL_DATE_RE.match(cal_date_str.strip())
+    if m is None:
+        raise HorizonsValidationError(
+            "Horizons calendar-date field does not match expected "
+            "A.D. YYYY-Mon-DD HH:MM:SS.f+ format."
+        )
+    year_s, mon_s, day_s, hr_s, min_s, sec_s, frac_s = m.groups()
+
+    month_num = _MONTH_ABBR_TO_NUM.get(mon_s.capitalize())
+    if month_num is None:
+        raise HorizonsValidationError(
+            "Horizons calendar-date field contains unrecognised month abbreviation."
+        )
+
+    # Normalise fractional seconds to exactly 6 digits (microseconds).
+    # Pad or truncate deterministically.
+    frac_6 = (frac_s + "000000")[:6]
+    microsecond = int(frac_6)
+
+    try:
+        return datetime(
+            int(year_s), month_num, int(day_s),
+            int(hr_s), int(min_s), int(sec_s), microsecond,
+            tzinfo=timezone.utc,
+        )
+    except ValueError as exc:
+        raise HorizonsValidationError(
+            "Horizons calendar-date field contains an invalid date/time value."
+        ) from exc
+
+
+def _verify_returned_epoch(
+    returned_epoch: datetime,
+    requested_epoch: datetime,
+) -> None:
+    """Verify the returned Horizons epoch matches the requested UTC epoch.
+
+    Both datetimes are compared at microsecond precision after normalising to
+    UTC.  A mismatch is rejected with HorizonsValidationError.
+    """
+    # Both must be UTC-normalised before comparison.
+    ret_utc = returned_epoch.astimezone(timezone.utc)
+    req_utc = requested_epoch.astimezone(timezone.utc)
+
+    if ret_utc != req_utc:
+        raise HorizonsValidationError(
+            "Horizons returned epoch does not match the requested UTC epoch."
+        )
+
+
+# ---------------------------------------------------------------------------
 # $$SOE/$$EOE parser
 # ---------------------------------------------------------------------------
 
 
-def _parse_vector_table(result_text: str) -> tuple[float, float, float]:
+def _parse_vector_table(
+    result_text: str,
+    request: HorizonsGeometryRequest,
+) -> tuple[float, float, float]:
     """Parse the $$SOE/$$EOE vector table from a Horizons result string.
+
+    Validates the Julian-time field (column 0) and the calendar-date field
+    (column 1) against the requested epoch, then returns the geometry values.
 
     Returns:
         (one_way_light_time_s, range_km, range_rate_km_s)
 
     Raises:
-        HorizonsValidationError: if markers are missing/wrong order/duplicated,
-            zero or multiple data rows, wrong column count, or numeric values
-            are invalid.
+        HorizonsValidationError: for all structural, numeric, or epoch
+            mismatch failures.
     """
-    # --- Correction 5: require exactly ONE $$SOE and ONE $$EOE ---
+    # --- Require exactly ONE $$SOE and ONE $$EOE ---
     soe_count = result_text.count("$$SOE")
     eoe_count = result_text.count("$$EOE")
 
@@ -311,7 +404,7 @@ def _parse_vector_table(result_text: str) -> tuple[float, float, float]:
 
     row = data_rows[0]
 
-    # --- Correction 3: reject VEC_TABLE=3-shaped rows ---
+    # Reject VEC_TABLE=3-shaped rows.
     if len(row) == _VEC_TABLE_3_COLUMN_COUNT:
         raise HorizonsValidationError(
             "Horizons data row has 11 columns matching VEC_TABLE=3 layout "
@@ -319,7 +412,7 @@ def _parse_vector_table(result_text: str) -> tuple[float, float, float]:
             "this adapter requires VEC_TABLE=6 (JDTDB, Date, LT, RG, RR)."
         )
 
-    # --- Correction 2: require exactly 5 semantic columns ---
+    # Require exactly 5 semantic columns.
     if len(row) != _EXPECTED_SEMANTIC_COLUMNS:
         raise HorizonsValidationError(
             f"Horizons VEC_TABLE=6 data row has {len(row)} semantic columns; "
@@ -327,6 +420,18 @@ def _parse_vector_table(result_text: str) -> tuple[float, float, float]:
             "(JDTDB, Calendar Date, LT, RG, RR)."
         )
 
+    # --- Column 0: Julian-time value must be a finite positive float ---
+    jd_value = _parse_finite_float(row[_IDX_JDTDB], "julian_date")
+    if jd_value <= 0.0:
+        raise HorizonsValidationError(
+            "Horizons JDTDB value must be a positive Julian date."
+        )
+
+    # --- Column 1: Calendar Date — parse and verify against requested epoch ---
+    returned_epoch = _parse_horizons_cal_date(row[_IDX_CAL_DATE])
+    _verify_returned_epoch(returned_epoch, request.epoch_utc)
+
+    # --- Columns 2-4: LT, RG, RR ---
     light_time_s = _parse_finite_float(row[_IDX_LIGHT_TIME], "one_way_light_time_s")
     range_km = _parse_finite_float(row[_IDX_RANGE], "range_km")
     range_rate = _parse_finite_float(row[_IDX_RANGE_RATE], "range_rate_km_s")
@@ -351,6 +456,169 @@ def _parse_finite_float(cell: str, field_name: str) -> float:
             f"Horizons response field '{field_name}' is infinite."
         )
     return value
+
+
+# ---------------------------------------------------------------------------
+# Pure shared raw-response validator
+# ---------------------------------------------------------------------------
+
+
+def _validate_horizons_raw_response(
+    request: HorizonsGeometryRequest,
+    raw_bytes: bytes,
+    retrieved_at: datetime,
+) -> HorizonsGeometryResult:
+    """Validate raw Horizons response bytes and produce a HorizonsGeometryResult.
+
+    This is the single authoritative validation boundary shared by:
+    - the live HTTP fetch path (HorizonsAdapter.fetch_capture)
+    - the offline snapshot reload path (HorizonsSnapshotStore.load)
+
+    It performs NO HTTP requests.  The caller supplies the exact raw bytes
+    and the acquisition timestamp.
+
+    Parameters
+    ----------
+    request:
+        The original :class:`HorizonsGeometryRequest` (target + epoch).
+
+    raw_bytes:
+        Exact raw HTTP response body bytes.  Must not exceed
+        ``_MAX_RESPONSE_BYTES`` (1 MiB).
+
+    retrieved_at:
+        Timezone-aware datetime representing when the response was acquired.
+        Must be a ``datetime`` instance with ``tzinfo`` set.
+        Normalised to UTC for canonical provenance storage.
+
+    Returns
+    -------
+    HorizonsGeometryResult
+        Fully validated and normalised geometry result.
+
+    Raises
+    ------
+    HorizonsValidationError
+        For any validation failure: oversized body, malformed JSON, wrong
+        signature, Horizons error field, malformed table, epoch mismatch,
+        invalid geometry values, or invalid ``retrieved_at``.
+    """
+    # 0. Validate retrieved_at before doing any parsing work.
+    if not isinstance(retrieved_at, datetime):
+        raise HorizonsValidationError(
+            "retrieved_at did not receive a datetime object."
+        )
+    if retrieved_at.tzinfo is None or retrieved_at.utcoffset() is None:
+        raise HorizonsValidationError(
+            "retrieved_at must be timezone-aware."
+        )
+    # Normalise to UTC for canonical provenance storage.
+    retrieved_at_utc = retrieved_at.astimezone(timezone.utc)
+
+    # 1. Enforce raw response size limit.
+    if len(raw_bytes) > _MAX_RESPONSE_BYTES:
+        raise HorizonsValidationError(
+            f"JPL Horizons response body exceeds maximum allowed size "
+            f"({_MAX_RESPONSE_BYTES} bytes)."
+        )
+
+    # 2. Hash the raw bytes (before any decoding can fail).
+    content_sha256 = hashlib.sha256(raw_bytes).hexdigest()
+
+    # 3. Parse JSON — normalise UnicodeDecodeError as well as JSONDecodeError.
+    try:
+        payload = json.loads(raw_bytes)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise HorizonsValidationError(
+            "JPL Horizons response could not be decoded as valid JSON."
+        ) from exc
+
+    if not isinstance(payload, dict):
+        raise HorizonsValidationError(
+            "JPL Horizons response JSON is not an object."
+        )
+
+    # 4. Validate signature.
+    signature = payload.get("signature")
+    if not isinstance(signature, dict):
+        raise HorizonsValidationError(
+            "JPL Horizons response is missing a valid 'signature' object."
+        )
+
+    sig_source = signature.get("source")
+    if sig_source != _EXPECTED_SIGNATURE_SOURCE:
+        raise HorizonsValidationError(
+            "JPL Horizons response has unexpected API source in signature."
+        )
+
+    sig_version = signature.get("version")
+    if sig_version != _EXPECTED_SIGNATURE_VERSION:
+        raise HorizonsValidationError(
+            "JPL Horizons response has unexpected API version in signature."
+        )
+
+    # 5. Fail closed if Horizons error field present.
+    if "error" in payload:
+        raise HorizonsValidationError(
+            "JPL Horizons returned an error in the response payload."
+        )
+
+    # 6. Validate result text is present.
+    result_text = payload.get("result")
+    if not isinstance(result_text, str) or not result_text.strip():
+        raise HorizonsValidationError(
+            "JPL Horizons response is missing the 'result' text field."
+        )
+
+    # 7. Parse vector table — validates JDTDB, calendar date epoch, LT/RG/RR.
+    one_way_light_time_s, range_km, range_rate_km_s = _parse_vector_table(
+        result_text, request
+    )
+
+    # 8. Domain validation of geometry values.
+    if range_km <= 0.0:
+        raise HorizonsValidationError(
+            "Horizons range_km must be > 0."
+        )
+    if one_way_light_time_s <= 0.0:
+        raise HorizonsValidationError(
+            "Horizons one_way_light_time_s must be > 0."
+        )
+
+    # 9. Build HorizonsGeometry (model validators enforce finite/positive).
+    geometry = HorizonsGeometry(
+        target_spk_id=request.target_spk_id,
+        center=_EARTH_CENTER,
+        epoch_utc=request.epoch_utc,
+        range_km=range_km,
+        range_rate_km_s=range_rate_km_s,
+        one_way_light_time_s=one_way_light_time_s,
+        api_source=sig_source,
+        api_version=sig_version,
+    )
+
+    # 10. Build deterministic provenance_id.
+    canonical_identity = _build_canonical_query_identity(request)
+    provenance_id = _compute_provenance_id(canonical_identity, content_sha256)
+
+    # 11. Build ProvenanceRecord.
+    provenance = ProvenanceRecord(
+        provenance_id=provenance_id,
+        kind=ProvenanceKind.EXTERNAL_AUTHORITATIVE,
+        source_system=_EXPECTED_SIGNATURE_SOURCE,
+        source_version=sig_version,
+        source_uri=_HORIZONS_ENDPOINT,
+        observed_at=request.epoch_utc,
+        retrieved_at=retrieved_at_utc,
+        validation_status=ProvenanceValidationStatus.VALIDATED,
+        content_sha256=content_sha256,
+    )
+
+    return HorizonsGeometryResult(
+        request=request,
+        geometry=geometry,
+        provenance=provenance,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -449,8 +717,8 @@ class HorizonsAdapter:
             Network/transport failure or HTTP 5xx/429.
 
         HorizonsValidationError
-            HTTP 4xx, malformed/invalid Horizons payload, or geometry
-            validation failure.
+            HTTP 4xx, malformed/invalid Horizons payload, geometry
+            validation failure, or returned epoch mismatch.
         """
         return self.fetch_capture(request).result
 
@@ -481,12 +749,13 @@ class HorizonsAdapter:
             Network/transport failure or HTTP 5xx/429.
 
         HorizonsValidationError
-            HTTP 4xx, malformed/invalid Horizons payload, or geometry
-            validation failure.
+            HTTP 4xx, malformed/invalid Horizons payload, geometry
+            validation failure, or returned epoch mismatch.
         """
         params = self._build_params(request)
         raw_bytes = self._execute_request(params)
-        result = self._process_response(request, raw_bytes)
+        retrieved_at = self._clock()
+        result = _validate_horizons_raw_response(request, raw_bytes, retrieved_at)
         return HorizonsGeometryCapture(result=result, raw_response=raw_bytes)
 
     # ------------------------------------------------------------------
@@ -510,6 +779,7 @@ class HorizonsAdapter:
             "TLIST": f"'{tlist_value}'",
             "TLIST_TYPE": "CAL",
             "TIME_TYPE": "UT",
+            "TIME_DIGITS": "FRACSEC",
             "OUT_UNITS": "KM-S",
             "VEC_TABLE": "6",
             "VEC_CORR": "NONE",
@@ -538,19 +808,11 @@ class HorizonsAdapter:
                 "Network error while contacting JPL Horizons."
             ) from exc
 
-        # Check response body size BEFORE decoding.
-        raw_bytes = response.content
-        if len(raw_bytes) > _MAX_RESPONSE_BYTES:
-            raise HorizonsValidationError(
-                f"JPL Horizons response body exceeds maximum allowed size "
-                f"({_MAX_RESPONSE_BYTES} bytes)."
-            )
-
         # HTTP transport validation.
         status = response.status_code
         if status == 200:
-            return raw_bytes
-        # Correction 6: ALL HTTP 5xx are availability failures.
+            return response.content
+        # ALL HTTP 5xx are availability failures.
         if status == 429 or (500 <= status < 600):
             raise HorizonsUnavailableError(
                 f"JPL Horizons returned HTTP {status}."
@@ -562,144 +824,4 @@ class HorizonsAdapter:
         # Any other unexpected non-200 status — fail closed.
         raise HorizonsValidationError(
             f"JPL Horizons returned unexpected HTTP status {status}."
-        )
-
-    def _process_response(
-        self,
-        request: HorizonsGeometryRequest,
-        raw_bytes: bytes,
-        retrieved_at: Optional[datetime] = None,
-    ) -> HorizonsGeometryResult:
-        """Parse and validate the raw Horizons response bytes.
-
-        This is the single authoritative Horizons parser used by both the live
-        fetch path and the offline snapshot reload path.
-
-        Parameters
-        ----------
-        request:
-            The original geometry request.
-
-        raw_bytes:
-            Exact raw HTTP response bytes to parse.
-
-        retrieved_at:
-            Timezone-aware UTC datetime representing when the response was
-            acquired.  When ``None`` the adapter's clock is consulted (live
-            fetch).  When provided (snapshot reload) the caller's stored
-            timestamp is used so that provenance is reconstructed identically.
-
-        Returns a fully assembled HorizonsGeometryResult.
-        """
-        # 1. Hash the raw bytes first (before any decoding can fail).
-        content_sha256 = hashlib.sha256(raw_bytes).hexdigest()
-
-        # 2. Get retrieved_at — either from the caller (snapshot) or clock (live).
-        if retrieved_at is None:
-            retrieved_at = self._clock()
-        # Guard against non-datetime or naive clock/caller values.
-        if not isinstance(retrieved_at, datetime):
-            raise HorizonsValidationError(
-                "Injected clock did not return a datetime object."
-            )
-        if retrieved_at.tzinfo is None or retrieved_at.utcoffset() is None:
-            raise HorizonsValidationError(
-                "Injected clock returned a naive datetime; retrieved_at must be "
-                "timezone-aware."
-            )
-
-        # 3. Parse JSON.
-        # Correction 7: normalize UnicodeDecodeError as well as JSONDecodeError.
-        try:
-            payload = json.loads(raw_bytes)
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise HorizonsValidationError(
-                "JPL Horizons response could not be decoded as valid JSON."
-            ) from exc
-
-        if not isinstance(payload, dict):
-            raise HorizonsValidationError(
-                "JPL Horizons response JSON is not an object."
-            )
-
-        # 4. Validate signature.
-        signature = payload.get("signature")
-        if not isinstance(signature, dict):
-            raise HorizonsValidationError(
-                "JPL Horizons response is missing a valid 'signature' object."
-            )
-
-        sig_source = signature.get("source")
-        if sig_source != _EXPECTED_SIGNATURE_SOURCE:
-            raise HorizonsValidationError(
-                "JPL Horizons response has unexpected API source in signature."
-            )
-
-        sig_version = signature.get("version")
-        if sig_version != _EXPECTED_SIGNATURE_VERSION:
-            raise HorizonsValidationError(
-                "JPL Horizons response has unexpected API version in signature."
-            )
-
-        # 5. Fail closed if Horizons error field present.
-        if "error" in payload:
-            raise HorizonsValidationError(
-                "JPL Horizons returned an error in the response payload."
-            )
-
-        # 6. Validate result text is present.
-        result_text = payload.get("result")
-        if not isinstance(result_text, str) or not result_text.strip():
-            raise HorizonsValidationError(
-                "JPL Horizons response is missing the 'result' text field."
-            )
-
-        # 7. Parse vector table.
-        one_way_light_time_s, range_km, range_rate_km_s = _parse_vector_table(
-            result_text
-        )
-
-        # 8. Domain validation of geometry values.
-        if range_km <= 0.0:
-            raise HorizonsValidationError(
-                "Horizons range_km must be > 0."
-            )
-        if one_way_light_time_s <= 0.0:
-            raise HorizonsValidationError(
-                "Horizons one_way_light_time_s must be > 0."
-            )
-
-        # 9. Build HorizonsGeometry (model validators enforce finite/positive).
-        geometry = HorizonsGeometry(
-            target_spk_id=request.target_spk_id,
-            center=_EARTH_CENTER,
-            epoch_utc=request.epoch_utc,
-            range_km=range_km,
-            range_rate_km_s=range_rate_km_s,
-            one_way_light_time_s=one_way_light_time_s,
-            api_source=sig_source,
-            api_version=sig_version,
-        )
-
-        # 10. Build deterministic provenance_id.
-        canonical_identity = _build_canonical_query_identity(request)
-        provenance_id = _compute_provenance_id(canonical_identity, content_sha256)
-
-        # 11. Build ProvenanceRecord.
-        provenance = ProvenanceRecord(
-            provenance_id=provenance_id,
-            kind=ProvenanceKind.EXTERNAL_AUTHORITATIVE,
-            source_system=_EXPECTED_SIGNATURE_SOURCE,
-            source_version=sig_version,
-            source_uri=_HORIZONS_ENDPOINT,
-            observed_at=request.epoch_utc,
-            retrieved_at=retrieved_at,
-            validation_status=ProvenanceValidationStatus.VALIDATED,
-            content_sha256=content_sha256,
-        )
-
-        return HorizonsGeometryResult(
-            request=request,
-            geometry=geometry,
-            provenance=provenance,
         )

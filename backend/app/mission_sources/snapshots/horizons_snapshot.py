@@ -1,4 +1,4 @@
-"""GCSI Phase 6D-B1 — Horizons Verified Snapshot Store.
+"""GCSI Phase 6D-B1 — Horizons Content-Addressed Snapshot Store.
 
 This module provides:
 
@@ -8,8 +8,8 @@ This module provides:
    - HorizonsSnapshotValidationError
 
 2. HorizonsSnapshotStore
-   - write(capture, path)   — atomically persist a verified snapshot
-   - load(path)             — offline reload with full re-validation
+   - write(capture, path)   — atomically persist a checksum-verified snapshot
+   - load(path)             — offline reload with full integrity re-validation
 
 Trust principle
 ---------------
@@ -20,20 +20,33 @@ Load sequence
 ::
 
     stored snapshot
-        ↓  structural validation
-        ↓  raw-response hash verification
-        ↓  raw Horizons response re-validated by SAME adapter parser
-        ↓  geometry re-derived
-        ↓  provenance re-derived
-        ↓  stored normalized values must match
-        ↓  snapshot_id recomputed and verified
+        ↓  genuinely bounded file read
+        ↓  UTF-8 decode
+        ↓  JSON parse
+        ↓  structural Pydantic envelope validation
+        ↓  schema name + version check
+        ↓  strict Base64 decode raw response
+        ↓  SHA-256(raw bytes) == raw_response_sha256
+        ↓  SHA-256(raw bytes) == provenance.content_sha256
+        ↓  raw bytes re-validated by SAME shared parser
+        ↓  re-derived geometry == stored geometry
+        ↓  re-derived provenance == stored provenance
+        ↓  recomputed snapshot_id == stored snapshot_id
     VERIFIED SNAPSHOT ACCEPTED
 
 One authoritative parser
 ------------------------
-``HorizonsAdapter._process_response`` is the single shared parser for both
-the live fetch path and the snapshot reload path.  There is no separate
-``parser_for_snapshot``.
+``_validate_horizons_raw_response`` (module-level pure function in horizons.py)
+is the single shared parser for both the live fetch path and the snapshot
+reload path.  There is no separate ``parser_for_snapshot``.
+
+Integrity model
+---------------
+The SHA-256 checksums provide content-integrity verification and
+reproducibility.  They are NOT a digital signature.  An agent with write
+access to the file system could rewrite the file and recompute consistent
+hashes.  NASA/JPL authority is established by the validated live source
+acquisition, not by the hash alone.
 """
 
 from __future__ import annotations
@@ -44,14 +57,18 @@ import hashlib
 import json
 import os
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Union
 
-from backend.app.mission_sources.adapters.horizons import HorizonsAdapter
+from pydantic import ValidationError as PydanticValidationError
+
+from backend.app.mission_sources.adapters.horizons import (
+    HorizonsValidationError,
+    _validate_horizons_raw_response,
+)
 from backend.app.mission_sources.adapters.horizons_models import (
     HorizonsGeometryCapture,
-    HorizonsGeometryRequest,
     HorizonsGeometryResult,
 )
 from backend.app.mission_sources.errors import (
@@ -103,13 +120,14 @@ class HorizonsSnapshotValidationError(
     - Malformed JSON
     - Wrong schema name or unsupported version
     - Invalid Base64
-    - Hash mismatch (raw bytes vs stored sha256)
+    - Hash mismatch (raw bytes vs stored raw_response_sha256)
     - Hash mismatch (raw bytes vs provenance.content_sha256)
-    - Request validation failure
     - Raw Horizons response re-validation failure
-    - Stored geometry mismatch
-    - Stored provenance mismatch
+    - Stored geometry mismatch vs re-derived geometry
+    - Stored provenance mismatch vs re-derived provenance
     - Snapshot ID mismatch
+    - Capture self-consistency failure (on write)
+    - Oversized capture/serialized content (on write)
 
     Public messages are sanitized and do not expose raw response content,
     file paths, or arbitrary internal validation text.
@@ -130,16 +148,40 @@ _MAX_SNAPSHOT_BYTES: int = 2 * 1024 * 1024  # 2 MiB
 # ---------------------------------------------------------------------------
 
 
-def _compute_snapshot_id(provenance_id: str) -> str:
+def _compute_snapshot_id(provenance_id: str, retrieved_at_utc_iso: str) -> str:
     """Compute the deterministic snapshot_id.
 
+    The snapshot_id binds both the content provenance and the historical
+    acquisition timestamp, so the same Horizons query/response retrieved at a
+    different time produces a different snapshot_id.
+
     Formula:
-        SHA-256("gcsi.horizons_geometry_snapshot:v1:" + provenance_id)
+        SHA-256(
+            "gcsi.horizons_geometry_snapshot:v1:"
+            + provenance_id
+            + ":"
+            + retrieved_at_utc_iso
+        )
+
+    ``retrieved_at_utc_iso`` must be the canonical UTC ISO-8601 representation
+    of the acquisition datetime (e.g. ``"2026-08-27T20:41:00+00:00"``).
 
     Returns a 64-character lowercase hex string.
     """
-    payload = f"{SNAPSHOT_SCHEMA}:v{SNAPSHOT_VERSION}:{provenance_id}"
+    payload = (
+        f"{SNAPSHOT_SCHEMA}:v{SNAPSHOT_VERSION}:"
+        f"{provenance_id}:{retrieved_at_utc_iso}"
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _canonical_retrieved_at(dt: datetime) -> str:
+    """Return the canonical UTC ISO-8601 string for a snapshot_id input.
+
+    The datetime is normalised to UTC before formatting so that the
+    snapshot_id is independent of input timezone representation.
+    """
+    return dt.astimezone(timezone.utc).isoformat()
 
 
 # ---------------------------------------------------------------------------
@@ -148,25 +190,31 @@ def _compute_snapshot_id(provenance_id: str) -> str:
 
 
 class HorizonsSnapshotStore:
-    """Write and load verified immutable Horizons geometry snapshots.
+    """Write and load checksum-verified reproducible Horizons geometry snapshots.
 
     This class has no instance state; all methods are static.
 
     Write
     -----
-    :meth:`write` accepts a :class:`HorizonsGeometryCapture` (validated result
-    + raw bytes), independently re-verifies the hash, builds the envelope,
-    and writes it atomically via a temporary file + ``os.replace()``.
+    :meth:`write` performs full self-consistency verification of the capture
+    (re-runs the shared raw-response validator, compares results), then writes
+    atomically via a temporary file + ``os.replace()``.
 
     Load
     ----
-    :meth:`load` reads the snapshot, performs full structural validation,
-    decodes and verifies the raw bytes, re-runs the SAME Horizons parser
-    (``HorizonsAdapter._process_response``) using the stored ``retrieved_at``
-    timestamp, and compares the re-derived geometry and provenance against the
-    stored values before returning the verified result.
+    :meth:`load` uses a genuinely bounded file read (reads at most
+    MAX_SNAPSHOT_BYTES + 1), performs full structural validation, decodes and
+    verifies the raw bytes, re-runs the same shared Horizons validator using
+    the stored ``retrieved_at`` timestamp, and compares re-derived values
+    against stored values before returning the verified result.
 
     No HTTP requests are made during load.
+
+    Integrity model
+    ---------------
+    SHA-256 checksums provide content-integrity verification and reproducibility.
+    They are NOT a digital signature.  Source authority comes from the validated
+    live acquisition provenance, not from the checksum alone.
     """
 
     @staticmethod
@@ -174,7 +222,10 @@ class HorizonsSnapshotStore:
         capture: HorizonsGeometryCapture,
         path: Union[str, Path],
     ) -> None:
-        """Atomically write a verified snapshot to *path*.
+        """Atomically write a self-consistent, checksum-verified snapshot to *path*.
+
+        The capture is fully re-validated before any file is written.  The
+        re-derived result must exactly match the stored result.
 
         Parameters
         ----------
@@ -183,21 +234,34 @@ class HorizonsSnapshotStore:
             and the exact raw HTTP response bytes.
 
         path:
-            Destination file path.  Parent directories must already exist.
+            Destination file path.  Parent directory must already exist.
 
         Raises
         ------
         HorizonsSnapshotValidationError
-            If the capture's content_sha256 does not match SHA-256(raw_bytes).
+            If the capture fails self-consistency verification (hash mismatch,
+            geometry/provenance/request inconsistency, missing retrieved_at,
+            oversized raw response, or oversized serialized snapshot).
 
-        OSError
-            Raw OS write failure (not wrapped — callers may handle directly).
+        HorizonsSnapshotUnavailableError
+            If the file cannot be written due to an OS-level error.
         """
         path = Path(path)
         result = capture.result
         raw_bytes = capture.raw_response
 
-        # 1. Independently verify hash matches provenance.
+        # 1. Verify provenance.retrieved_at is present and timezone-aware.
+        retrieved_at = result.provenance.retrieved_at
+        if retrieved_at is None:
+            raise HorizonsSnapshotValidationError(
+                "Snapshot write rejected: provenance.retrieved_at is missing."
+            )
+        if retrieved_at.tzinfo is None or retrieved_at.utcoffset() is None:
+            raise HorizonsSnapshotValidationError(
+                "Snapshot write rejected: provenance.retrieved_at is not timezone-aware."
+            )
+
+        # 2. Independently verify SHA-256(raw_bytes) == provenance.content_sha256.
         computed_hash = hashlib.sha256(raw_bytes).hexdigest()
         stored_hash = result.provenance.content_sha256
         if stored_hash is None or computed_hash != stored_hash:
@@ -206,16 +270,46 @@ class HorizonsSnapshotStore:
                 "provenance.content_sha256."
             )
 
-        # 2. Encode raw bytes as standard Base64.
+        # 3. Re-run the SAME shared raw-response validator to confirm the capture
+        #    is internally self-consistent.  The re-derived result must equal
+        #    the stored result so that load() will accept this snapshot.
+        try:
+            rederived = _validate_horizons_raw_response(
+                request=result.request,
+                raw_bytes=raw_bytes,
+                retrieved_at=retrieved_at,
+            )
+        except HorizonsValidationError as exc:
+            raise HorizonsSnapshotValidationError(
+                "Snapshot write rejected: capture failed raw-response re-validation."
+            ) from exc
+
+        if rederived.geometry != result.geometry:
+            raise HorizonsSnapshotValidationError(
+                "Snapshot write rejected: stored geometry is not consistent "
+                "with the raw response."
+            )
+        if rederived.provenance != result.provenance:
+            raise HorizonsSnapshotValidationError(
+                "Snapshot write rejected: stored provenance is not consistent "
+                "with the raw response."
+            )
+        if rederived.request != result.request:
+            raise HorizonsSnapshotValidationError(
+                "Snapshot write rejected: stored request is not consistent "
+                "with the raw response."
+            )
+
+        # 4. Encode raw bytes as standard Base64.
         raw_b64 = base64.b64encode(raw_bytes).decode("ascii")
 
-        # 3. Compute deterministic snapshot_id.
-        snapshot_id = _compute_snapshot_id(result.provenance.provenance_id)
+        # 5. Compute deterministic snapshot_id (binds provenance_id + retrieved_at).
+        retrieved_at_iso = _canonical_retrieved_at(retrieved_at)
+        snapshot_id = _compute_snapshot_id(
+            result.provenance.provenance_id, retrieved_at_iso
+        )
 
-        # 4. Build the retrieved_at value (from stored provenance, not clock).
-        retrieved_at: datetime = result.provenance.retrieved_at  # type: ignore[assignment]
-
-        # 5. Assemble the envelope as a dict for stable serialization.
+        # 6. Assemble the envelope as a dict for stable serialization.
         #    Use model_dump(mode="json") for nested Pydantic models so that
         #    datetimes and enums serialize as JSON-native values.
         envelope_dict: dict = {
@@ -223,28 +317,44 @@ class HorizonsSnapshotStore:
             "snapshot_version": SNAPSHOT_VERSION,
             "snapshot_id": snapshot_id,
             "request": result.request.model_dump(mode="json"),
-            "retrieved_at": retrieved_at.isoformat(),
+            "retrieved_at": retrieved_at_iso,
             "raw_response_base64": raw_b64,
             "raw_response_sha256": computed_hash,
             "geometry": result.geometry.model_dump(mode="json"),
             "provenance": result.provenance.model_dump(mode="json"),
         }
 
-        # 6. Serialize deterministically: sorted keys, indent=2, UTF-8, newline at EOF.
+        # 7. Serialize deterministically: sorted keys, indent=2, UTF-8, newline at EOF.
         serialized = json.dumps(envelope_dict, sort_keys=True, indent=2)
         content_bytes = (serialized + "\n").encode("utf-8")
 
-        # 7. Atomic write: write to temp file in same directory, then os.replace().
+        # 8. Enforce serialized snapshot size limit.
+        if len(content_bytes) > _MAX_SNAPSHOT_BYTES:
+            raise HorizonsSnapshotValidationError(
+                "Snapshot write rejected: serialized snapshot exceeds maximum "
+                f"allowed size ({_MAX_SNAPSHOT_BYTES} bytes)."
+            )
+
+        # 9. Atomic write: temp file in same directory, then os.replace().
         dir_path = path.parent
-        fd, tmp_path = tempfile.mkstemp(dir=dir_path, suffix=".tmp")
+        fd, tmp_path_str = tempfile.mkstemp(dir=dir_path, suffix=".tmp")
         try:
             with os.fdopen(fd, "wb") as f:
                 f.write(content_bytes)
-            os.replace(tmp_path, path)
-        except BaseException:
-            # Clean up temp file on any failure.
+            os.replace(tmp_path_str, path)
+        except OSError as exc:
+            # Clean up temp file; raise sanitized typed error.
             try:
-                os.unlink(tmp_path)
+                os.unlink(tmp_path_str)
+            except OSError:
+                pass
+            raise HorizonsSnapshotUnavailableError(
+                "Snapshot could not be written due to a filesystem error."
+            ) from exc
+        except BaseException:
+            # Any other unexpected failure: clean up temp file and re-raise.
+            try:
+                os.unlink(tmp_path_str)
             except OSError:
                 pass
             raise
@@ -253,21 +363,21 @@ class HorizonsSnapshotStore:
     def load(
         path: Union[str, Path],
     ) -> HorizonsGeometryResult:
-        """Load and fully re-validate a verified snapshot from *path*.
+        """Load and fully re-validate a checksum-verified snapshot from *path*.
 
         Re-validation sequence
         ----------------------
-        1.  Read bytes with conservative max size check.
-        2.  Decode UTF-8.
-        3.  Parse JSON.
-        4.  Validate strict snapshot envelope.
-        5.  Validate schema name and version.
-        6.  Strict Base64 decode raw response.
-        7.  Compute SHA-256 of decoded bytes.
-        8.  Require hash == raw_response_sha256.
-        9.  Require hash == provenance.content_sha256.
-        10. Reconstruct HorizonsGeometryRequest.
-        11. Run SAME adapter parser with stored retrieved_at.
+        1.  Genuinely bounded file read (reads at most MAX_SNAPSHOT_BYTES + 1).
+        2.  Enforce size limit.
+        3.  Decode UTF-8.
+        4.  Parse JSON.
+        5.  Pre-check schema name and version.
+        6.  Validate strict Pydantic envelope.
+        7.  Strict Base64 decode raw response.
+        8.  Compute SHA-256 of decoded bytes.
+        9.  Require hash == raw_response_sha256.
+        10. Require hash == provenance.content_sha256.
+        11. Run shared raw-response validator with stored retrieved_at.
         12. Compare re-derived geometry == stored geometry.
         13. Compare re-derived provenance == stored provenance.
         14. Recompute snapshot_id; require match.
@@ -293,9 +403,10 @@ class HorizonsSnapshotStore:
         """
         path = Path(path)
 
-        # 1. Read bytes.
+        # 1. Genuinely bounded file read — never request more than MAX + 1 bytes.
         try:
-            raw_file_bytes = path.read_bytes()
+            with open(path, "rb") as fh:
+                raw_file_bytes = fh.read(_MAX_SNAPSHOT_BYTES + 1)
         except FileNotFoundError as exc:
             raise HorizonsSnapshotUnavailableError(
                 "Horizons snapshot is not available."
@@ -305,7 +416,7 @@ class HorizonsSnapshotStore:
                 "Horizons snapshot could not be read."
             ) from exc
 
-        # 2. Conservative size check.
+        # 2. Size limit (exact check after bounded read).
         if len(raw_file_bytes) > _MAX_SNAPSHOT_BYTES:
             raise HorizonsSnapshotValidationError(
                 f"Snapshot file exceeds maximum allowed size "
@@ -333,7 +444,7 @@ class HorizonsSnapshotStore:
                 "Snapshot JSON top level is not an object."
             )
 
-        # 5. Validate schema name and version before Pydantic to give clean errors.
+        # 5. Pre-check schema name and version for clean error messages.
         schema_val = raw_envelope.get("snapshot_schema")
         if schema_val != SNAPSHOT_SCHEMA:
             raise HorizonsSnapshotValidationError(
@@ -346,16 +457,15 @@ class HorizonsSnapshotStore:
                 f"got {version_val!r}."
             )
 
-        # 6. Validate full Pydantic envelope.
+        # 6. Validate full Pydantic envelope (catches type/constraint violations).
         try:
-            from pydantic import ValidationError as PydanticValidationError
             envelope = HorizonsSnapshotEnvelope.model_validate(raw_envelope)
-        except Exception as exc:
+        except PydanticValidationError as exc:
             raise HorizonsSnapshotValidationError(
                 "Snapshot envelope failed structural validation."
             ) from exc
 
-        # 7. Strict Base64 decode — validate=True rejects garbage/whitespace.
+        # 7. Strict Base64 decode — validate=True rejects whitespace/garbage.
         try:
             decoded_raw = base64.b64decode(envelope.raw_response_base64, validate=True)
         except (binascii.Error, ValueError) as exc:
@@ -379,20 +489,15 @@ class HorizonsSnapshotStore:
                 "provenance.content_sha256."
             )
 
-        # 11. Run SAME adapter parser using stored retrieved_at (not current time).
-        #     Build a minimal HorizonsAdapter with no clock and no HTTP client.
-        #     We reuse _process_response which is the single authoritative parser.
-        adapter = HorizonsAdapter.__new__(HorizonsAdapter)
-        # _process_response does not use _client; only used when retrieved_at=None.
-        # We pass retrieved_at explicitly so the clock is never called.
-
+        # 11. Re-run the SAME shared raw-response validator.
+        #     Uses the stored retrieved_at (historical timestamp) — NOT current time.
         try:
-            rederived = adapter._process_response(  # noqa: SLF001
+            rederived = _validate_horizons_raw_response(
                 request=envelope.request,
                 raw_bytes=decoded_raw,
                 retrieved_at=envelope.retrieved_at,
             )
-        except Exception as exc:
+        except HorizonsValidationError as exc:
             raise HorizonsSnapshotValidationError(
                 "Snapshot raw Horizons response failed re-validation."
             ) from exc
@@ -410,7 +515,10 @@ class HorizonsSnapshotStore:
             )
 
         # 14. Recompute snapshot_id and require match.
-        expected_id = _compute_snapshot_id(rederived.provenance.provenance_id)
+        retrieved_at_iso = _canonical_retrieved_at(envelope.retrieved_at)
+        expected_id = _compute_snapshot_id(
+            rederived.provenance.provenance_id, retrieved_at_iso
+        )
         if expected_id != envelope.snapshot_id:
             raise HorizonsSnapshotValidationError(
                 "Snapshot ID does not match expected deterministic value."
