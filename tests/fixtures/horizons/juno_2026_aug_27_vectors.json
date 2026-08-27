@@ -1,0 +1,8 @@
+{
+  "_fixture_note": "REPRESENTATIVE TEST FIXTURE — NOT a verified NASA snapshot. Modelled on the official JPL Horizons API JSON response format. See Phase 6D-B for verified snapshot workflow.",
+  "signature": {
+    "source": "NASA/JPL Horizons API",
+    "version": "1.3"
+  },
+  "result": "JPL/HORIZONS                      JUNO (-61)               2026-Aug-27 20:41:00\n Rec #:-61 (+COB)   Soln.date: 2025-Jun-04_07:11:14   # obs: 3850 (2011-2025)\n \n IAU76/J2000 helio. ecliptic obl.:  23 26 21.40  (2000)\n\n Revised: 2025-Jun-04    Juno (-61)                              -61\n\n PHYSICAL DATA:\n  Mass x10^18 (kg)      = N/A         Density (g/cm^3)       = N/A\n  Radius (km)           = N/A         Geometric Albedo       = N/A\n\n\n*******************************************************************************\nJPL/HORIZONS                      JUNO (-61)               2026-Aug-27 20:41:00\nRec #:-61 (+COB)   Soln.date: 2025-Jun-04_07:11:14   # obs: 3850 (2011-2025)\n\nCoverage:  2011-Aug-05 to 2026-Aug-22\n\n*******************************************************************************\n\n\n$$SOE\n2460933.500000000, A.D. 2026-Aug-27 00:00:00.0000, -5.984637826741320E+08, -4.062735178649830E+08,  1.068093831283030E+08, -4.526282376341250E+00, -7.218339253834060E+00, -2.187436812374460E+00,  2.795812640498820E+03,  8.382499621496450E+08,  1.463917532194680E+01,\n$$EOE\n*******************************************************************************\nCoord. ref. frame : ICRF\n"
+}
