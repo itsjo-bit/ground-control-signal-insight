@@ -1541,6 +1541,7 @@ export default function MissionControl() {
             choreographyActive={choreographyActive}
             pendingExecutionPlan={pendingExecutionPlan}
             onExecuteApproval={handleExecuteApproval}
+            executionResult={executionId ? (executionResultRef.current.get(executionId) ?? null) : null}
             onChoreographyComplete={handleChoreographyComplete}
             onChoreographyError={(msg) => {
               // Phase 5.1F (WORKSTREAM D): Check scenario identity before committing error state.

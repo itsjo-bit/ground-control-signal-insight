@@ -202,6 +202,12 @@ interface CommonProps {
    * so that remounting TransmissionSequencePanel resumes at the correct phase.
    */
   presentationPhase: import('./TransmissionSequencePanel').TransmissionChoreographyPhase;
+  /**
+   * Phase 5.1G FIX #1: authoritative execution result from MissionControl.executionResultRef.
+   * When non-null, TransmissionSequencePanel hydrates approveResult/simResult on mount
+   * so that navigation during TRANSMITTING / SIGNAL_TRANSIT / COMPLETE preserves playback.
+   */
+  executionResult?: import('../types/domain').ApproveResponse | null;
   // ── Phase 4.2F3 props ─────────────────────────────────────────────────────────
   /** Called when operator approves AI recommendation — does NOT execute transmission. */
   onApproveAiPlan: () => void;
@@ -1831,6 +1837,7 @@ function TransmissionSection(props: CommonProps) {
         playbackStartedAtMs={props.playbackStartedAtMs}
         onSetPlaybackStarted={props.onSetPlaybackStarted}
         onExecuteApproval={props.onExecuteApproval}
+        executionResult={props.executionResult}
         onComplete={props.onChoreographyComplete}
         onError={props.onChoreographyError}
         onAttemptPulse={props.onAttemptPulse}

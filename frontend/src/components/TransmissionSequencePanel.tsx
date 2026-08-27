@@ -347,6 +347,19 @@ interface Props {
    * No new backend call is made by calling this.
    */
   onExecuteApproval: (executionId: string) => Promise<ApproveResponse>;
+  /**
+   * Phase 5.1G correction (FIX #1): authoritative execution result from application level.
+   * Populated by MissionControl when the approval Promise resolves, stored in executionResultRef.
+   * On remount during TRANSMITTING / SIGNAL_TRANSIT / COMPLETE, this value is used to
+   * immediately hydrate approveResult/simResult — no second backend call is made.
+   *
+   * If null: result has not yet arrived (early phases or pending Promise).
+   * If non-null: result is already available — panel hydrates immediately on mount.
+   *
+   * This is the fix for the remount bug where local approveResult/simResult state
+   * disappeared when TransmissionSequencePanel unmounted during active transmission.
+   */
+  executionResult?: ApproveResponse | null;
   /** Called when transmission sequence is fully complete. */
   onComplete: (result: ApproveResponse) => void;
   /** Called on error during approval. */
@@ -387,14 +400,22 @@ export function TransmissionSequencePanel({
   playbackStartedAtMs,
   onSetPlaybackStarted,
   onExecuteApproval,
+  executionResult = null,
   onComplete,
   onError,
   onAttemptPulse,
   onPhaseChange,
 }: Props) {
   const [phase, setPhase] = useState<TransmissionChoreographyPhase>(initialPhase);
-  const [simResult, setSimResult] = useState<SimulationResult | null>(null);
-  const [approveResult, setApproveResult] = useState<ApproveResponse | null>(null);
+  // Phase 5.1G FIX #1: hydrate from application-level executionResult on mount/remount.
+  // If the result is already available (e.g. remounting during TRANSMITTING), use it immediately
+  // so playback does not stall waiting for a Promise that already resolved.
+  const [simResult, setSimResult] = useState<SimulationResult | null>(
+    executionResult?.simulation_result ?? null
+  );
+  const [approveResult, setApproveResult] = useState<ApproveResponse | null>(
+    executionResult ?? null
+  );
   /**
    * Phase 5.1G: Track whether we are actively awaiting the backend result
    * after early presentation phases have elapsed (AWAITING AUTHORITATIVE RESULT state).
