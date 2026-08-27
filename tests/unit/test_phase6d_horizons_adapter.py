@@ -1,6 +1,7 @@
-"""Phase 6D-A — JPL Horizons Geometry Adapter Unit Tests.
+"""Phase 6D-A.1 — JPL Horizons Geometry Adapter Unit Tests.
 
-Covers all 66 required cases from the Phase 6D-A specification.
+Covers all required cases from the Phase 6D-A specification plus the
+Phase 6D-A.1 protocol correction tests.
 Uses httpx.MockTransport exclusively — zero live JPL/NASA network calls.
 
 Test cases
@@ -25,16 +26,26 @@ REQUEST GENERATION:
 15.  START_TIME / STOP_TIME / STEP_SIZE absent
 16.  no arbitrary caller-controlled Horizons options
 17.  one fetch performs one HTTP request
+17b. VEC_DELTA_T=NO explicitly sent
 
-SUCCESS RESPONSE:
+SUCCESS RESPONSE (VEC_TABLE=6 shape):
 18.  valid signature source accepted
 19.  exact API version 1.3 accepted
 20.  result table parsed between $$SOE/$$EOE
-21.  range parsed correctly
-22.  range-rate parsed correctly
-23.  one-way light-time parsed correctly
+21.  range parsed correctly  (column 3)
+22.  range-rate parsed correctly  (column 4)
+23.  one-way light-time parsed correctly  (column 2)
 24.  negative range-rate accepted
 25.  normalized geometry model is strict (extra fields forbidden)
+25b. trailing comma / terminal empty cell is handled safely
+25c. LT is read from semantic column 2
+25d. RG is read from semantic column 3
+25e. RR is read from semantic column 4
+25f. representative fixture has true VEC_TABLE=6 shape (5 columns)
+
+PARSER REJECTION:
+25g. VEC_TABLE=3-shaped 11-column row is rejected
+25h. unexpected extra non-empty semantic columns are rejected
 
 PROVENANCE:
 26.  kind == EXTERNAL_AUTHORITATIVE
@@ -47,6 +58,7 @@ PROVENANCE:
 33.  different response body changes provenance_id
 34.  different target/epoch changes provenance_id
 35.  provenance record is VALIDATED
+35b. canonical provenance query identity includes VEC_DELTA_T and all fixed settings
 
 PAYLOAD FAILURE:
 36.  HTTP 200 + Horizons error field rejected
@@ -58,6 +70,9 @@ PAYLOAD FAILURE:
 42.  missing $$SOE rejected
 43.  missing $$EOE rejected
 44.  reversed/invalid markers rejected
+44b. duplicate $$SOE rejected
+44c. duplicate $$EOE rejected
+44d. two complete SOE/EOE sections rejected
 45.  zero data rows rejected
 46.  multiple data rows rejected for single-TLIST request
 47.  malformed numeric range rejected
@@ -74,11 +89,19 @@ TRANSPORT:
 56.  HTTP 503 → HorizonsUnavailableError
 57.  HTTP 429 → HorizonsUnavailableError
 58.  HTTP 400 → HorizonsValidationError
+58b. HTTP 501 → HorizonsUnavailableError
+58c. HTTP 599 → HorizonsUnavailableError
 
 TRUST / REDACTION:
 59.  public error does not include raw response sentinel
 60.  public error does not include full request URL/query
 61.  original lower-level exception preserved as __cause__
+
+HARDENING:
+61b. malformed non-UTF byte payload → HorizonsValidationError
+61c. malformed JSON → HorizonsValidationError (existing)
+61d. clock returning a non-datetime value → HorizonsValidationError (not AttributeError)
+61e. no raw response sentinel appears in public validation errors
 
 REGRESSION:
 62.  Phase 6B provenance tests still pass (import sanity)
@@ -174,20 +197,26 @@ def _make_horizons_response(
     return json.dumps(payload).encode("utf-8")
 
 
-# VEC_TABLE=6 CSV data row format:
-#   JDTDB, CalDate, X, Y, Z, VX, VY, VZ, LT, RG, RR
-# Our representative values:
-#   LT  = 2795.812640498820  (one-way light-time, seconds)
-#   RG  = 838249962.1496450  (range, km)
-#   RR  = 14.63917532194680  (range-rate, km/s)
-_LT_VALUE = 2795.812640498820
-_RG_VALUE = 838249962.14964500
-_RR_VALUE = 14.639175321946800
+# ---------------------------------------------------------------------------
+# TRUE VEC_TABLE=6 test data
+#
+# VEC_TABLE=6, VEC_DELTA_T=NO CSV row format:
+#   JDTDB, CalDate, LT, RG, RR[,]
+# Semantic columns (after stripping trailing empty):
+#   col 0 = JDTDB
+#   col 1 = Calendar Date
+#   col 2 = LT  (one-way light-time, seconds)
+#   col 3 = RG  (range, km)
+#   col 4 = RR  (range-rate, km/s)
+# ---------------------------------------------------------------------------
 
+_LT_VALUE = 2795.812640498820       # one-way light-time, seconds
+_RG_VALUE = 838249962.14964500      # range, km
+_RR_VALUE = 14.639175321946800      # range-rate, km/s
+
+# True VEC_TABLE=6 data row: JDTDB, Date, LT, RG, RR + trailing comma
 _VALID_DATA_ROW = (
     " 2460933.500000000, A.D. 2026-Aug-27 00:00:00.0000,"
-    " -5.984637826741320E+08, -4.062735178649830E+08,  1.068093831283030E+08,"
-    "  -4.526282376341250E+00, -7.218339253834060E+00, -2.187436812374460E+00,"
     f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
 )
 
@@ -201,8 +230,6 @@ _VALID_RESULT_TEXT = (
 
 _NEGATIVE_RR_DATA_ROW = (
     " 2460933.500000000, A.D. 2026-Aug-27 00:00:00.0000,"
-    " -5.984637826741320E+08, -4.062735178649830E+08,  1.068093831283030E+08,"
-    "  -4.526282376341250E+00, -7.218339253834060E+00, -2.187436812374460E+00,"
     f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  -7.500000000000000E+00,"
 )
 
@@ -211,6 +238,14 @@ _NEGATIVE_RR_RESULT = (
     "$$SOE\n"
     + _NEGATIVE_RR_DATA_ROW
     + "\n$$EOE\n"
+)
+
+# VEC_TABLE=3-shaped row (11 columns) — must be rejected.
+_VEC_TABLE_3_DATA_ROW = (
+    " 2460933.500000000, A.D. 2026-Aug-27 00:00:00.0000,"
+    " -5.984637826741320E+08, -4.062735178649830E+08,  1.068093831283030E+08,"
+    "  -4.526282376341250E+00, -7.218339253834060E+00, -2.187436812374460E+00,"
+    f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
 )
 
 
@@ -323,12 +358,12 @@ class TestRequestModel:
 
 
 # ---------------------------------------------------------------------------
-# REQUEST GENERATION  (tests 8-17)
+# REQUEST GENERATION  (tests 8-17b)
 # ---------------------------------------------------------------------------
 
 
 class TestRequestGeneration:
-    """Tests 8-17: verify the Horizons HTTP request parameters."""
+    """Tests 8-17b: verify the Horizons HTTP request parameters."""
 
     def _capture_params(self) -> dict:
         """Send one fetch and capture the query params sent to the adapter."""
@@ -441,14 +476,19 @@ class TestRequestGeneration:
         adapter.fetch(_make_request())
         assert call_count == 1
 
+    def test_17b_vec_delta_t_no_sent(self):
+        """Test 17b: request explicitly includes VEC_DELTA_T=NO."""
+        params = self._capture_params()
+        assert params.get("VEC_DELTA_T") == "NO"
+
 
 # ---------------------------------------------------------------------------
-# SUCCESS RESPONSE  (tests 18-25)
+# SUCCESS RESPONSE  (tests 18-25f)
 # ---------------------------------------------------------------------------
 
 
 class TestSuccessResponse:
-    """Tests 18-25: valid response handling and geometry parsing."""
+    """Tests 18-25f: valid response handling and geometry parsing."""
 
     def _fetch_valid(
         self,
@@ -476,17 +516,17 @@ class TestSuccessResponse:
         assert result.geometry.range_km > 0
 
     def test_21_range_parsed_correctly(self):
-        """Test 21: range_km parsed correctly."""
+        """Test 21: range_km parsed correctly from semantic column 3."""
         result = self._fetch_valid()
         assert abs(result.geometry.range_km - _RG_VALUE) < 1.0  # within 1 km
 
     def test_22_range_rate_parsed_correctly(self):
-        """Test 22: range_rate_km_s parsed correctly."""
+        """Test 22: range_rate_km_s parsed correctly from semantic column 4."""
         result = self._fetch_valid()
         assert abs(result.geometry.range_rate_km_s - _RR_VALUE) < 0.001
 
     def test_23_light_time_parsed_correctly(self):
-        """Test 23: one_way_light_time_s parsed correctly."""
+        """Test 23: one_way_light_time_s parsed correctly from semantic column 2."""
         result = self._fetch_valid()
         assert abs(result.geometry.one_way_light_time_s - _LT_VALUE) < 0.001
 
@@ -512,14 +552,120 @@ class TestSuccessResponse:
                 unexpected_field="bad",
             )
 
+    def test_25b_trailing_comma_empty_cell_handled(self):
+        """Test 25b: trailing comma / terminal empty cell is handled safely.
+
+        Horizons emits a trailing comma which csv.reader produces as a final
+        empty cell.  The adapter must strip it and still parse 5 columns.
+        """
+        # _VALID_DATA_ROW ends with a trailing comma — confirm success.
+        assert _VALID_DATA_ROW.endswith(",")
+        result = self._fetch_valid()
+        assert result.geometry.range_km > 0
+
+    def test_25c_lt_is_column_2(self):
+        """Test 25c: LT (one-way light time) is read from semantic column 2."""
+        result = self._fetch_valid()
+        assert abs(result.geometry.one_way_light_time_s - _LT_VALUE) < 0.001
+
+    def test_25d_rg_is_column_3(self):
+        """Test 25d: RG (range) is read from semantic column 3."""
+        result = self._fetch_valid()
+        assert abs(result.geometry.range_km - _RG_VALUE) < 1.0
+
+    def test_25e_rr_is_column_4(self):
+        """Test 25e: RR (range-rate) is read from semantic column 4."""
+        result = self._fetch_valid()
+        assert abs(result.geometry.range_rate_km_s - _RR_VALUE) < 0.001
+
+    def test_25f_fixture_has_vec_table_6_shape(self):
+        """Test 25f: representative fixture has true VEC_TABLE=6 shape (5 semantic columns).
+
+        Load the fixture and verify the data row contains exactly 5 semantic
+        columns (JDTDB, Date, LT, RG, RR) — not 11 VEC_TABLE=3 columns.
+        """
+        import pathlib
+        import csv
+        import io
+
+        fixture_path = (
+            pathlib.Path(__file__).parent.parent
+            / "fixtures"
+            / "horizons"
+            / "juno_2026_aug_27_vectors.json"
+        )
+        raw = fixture_path.read_bytes()
+        payload = json.loads(raw)
+        result_text = payload["result"]
+
+        # Extract SOE block
+        soe_idx = result_text.index("$$SOE")
+        eoe_idx = result_text.index("$$EOE")
+        block = result_text[soe_idx + len("$$SOE"):eoe_idx]
+
+        reader = csv.reader(io.StringIO(block))
+        data_rows = []
+        for raw_row in reader:
+            stripped = [c.strip() for c in raw_row]
+            if stripped and stripped[-1] == "":
+                stripped = stripped[:-1]
+            if stripped and stripped[0]:
+                data_rows.append(stripped)
+
+        assert len(data_rows) == 1, "fixture must have exactly one data row"
+        row = data_rows[0]
+        # VEC_TABLE=6: exactly 5 semantic columns
+        assert len(row) == 5, (
+            f"fixture data row has {len(row)} columns; expected 5 (VEC_TABLE=6 shape)"
+        )
+        # Must NOT be 11 (VEC_TABLE=3)
+        assert len(row) != 11, "fixture must not contain X/Y/Z/VX/VY/VZ columns"
+
 
 # ---------------------------------------------------------------------------
-# PROVENANCE  (tests 26-35)
+# PARSER REJECTION  (tests 25g-25h)
+# ---------------------------------------------------------------------------
+
+
+class TestParserRejection:
+    """Tests 25g-25h: reject wrong-shaped rows."""
+
+    def test_25g_vec_table_3_row_rejected(self):
+        """Test 25g: VEC_TABLE=3-shaped 11-column row is rejected."""
+        result_text = (
+            "$$SOE\n"
+            + _VEC_TABLE_3_DATA_ROW
+            + "\n$$EOE\n"
+        )
+        content = _make_horizons_response(result_text=result_text)
+        adapter = _make_adapter(content=content)
+        with pytest.raises(HorizonsValidationError) as exc_info:
+            adapter.fetch(_make_request())
+        # Error message should indicate VEC_TABLE=3 layout
+        assert "11" in str(exc_info.value) or "VEC_TABLE=3" in str(exc_info.value)
+
+    def test_25h_extra_non_empty_columns_rejected(self):
+        """Test 25h: unexpected extra non-empty semantic columns are rejected."""
+        # Build a 6-column row (not 5, not 11)
+        extra_col_row = (
+            " 2460933.500000000, A.D. 2026-Aug-27 00:00:00.0000,"
+            f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
+            "  9.999999999999999E+99,"
+        )
+        result_text = "$$SOE\n" + extra_col_row + "\n$$EOE\n"
+        content = _make_horizons_response(result_text=result_text)
+        adapter = _make_adapter(content=content)
+        with pytest.raises(HorizonsValidationError):
+            adapter.fetch(_make_request())
+
+
+# ---------------------------------------------------------------------------
+# PROVENANCE  (tests 26-35b)
 # ---------------------------------------------------------------------------
 
 
 class TestProvenance:
-    """Tests 26-35: provenance record construction."""
+    """Tests 26-35b: provenance record construction."""
 
     def _fetch_valid(
         self,
@@ -608,6 +754,41 @@ class TestProvenance:
         """Test 35: provenance record validation_status is VALIDATED."""
         result = self._fetch_valid()
         assert result.provenance.validation_status == ProvenanceValidationStatus.VALIDATED
+
+    def test_35b_canonical_identity_includes_all_fixed_settings(self):
+        """Test 35b: canonical provenance query identity includes VEC_DELTA_T
+        and all other fixed protocol settings.
+        """
+        req = _make_request()
+        identity_str = _build_canonical_query_identity(req)
+        identity = json.loads(identity_str)
+
+        # All required keys must be present.
+        required_keys = {
+            "target_spk_id",
+            "tlist_epoch_utc",
+            "center",
+            "ephem_type",
+            "out_units",
+            "vec_table",
+            "vec_corr",
+            "vec_delta_t",
+            "time_type",
+            "tlist_type",
+            "csv_format",
+            "ref_system",
+            "ref_plane",
+            "cal_type",
+        }
+        for key in required_keys:
+            assert key in identity, f"canonical identity missing key: {key}"
+
+        # VEC_DELTA_T must be NO.
+        assert identity["vec_delta_t"] == "NO"
+        # VEC_TABLE must be 6.
+        assert identity["vec_table"] == "6"
+        # VEC_CORR must be NONE.
+        assert identity["vec_corr"] == "NONE"
 
     def test_provenance_id_not_uuid4_based(self):
         """provenance_id must not contain uuid4 randomness (deterministic)."""
@@ -704,6 +885,44 @@ class TestPayloadFailure:
             + "\n$$SOE\n"
         )
         content = _make_horizons_response(result_text=reversed_text)
+        self._expect_validation_error(content)
+
+    def test_44b_duplicate_soe_rejected(self):
+        """Test 44b: duplicate $$SOE rejected."""
+        dup_soe_text = (
+            "$$SOE\n"
+            + _VALID_DATA_ROW
+            + "\n$$EOE\n"
+            "$$SOE\n"
+            + _VALID_DATA_ROW
+            + "\n"
+        )
+        content = _make_horizons_response(result_text=dup_soe_text)
+        err = self._expect_validation_error(content)
+        assert "duplicate" in str(err).lower() or "$$SOE" in str(err)
+
+    def test_44c_duplicate_eoe_rejected(self):
+        """Test 44c: duplicate $$EOE rejected."""
+        dup_eoe_text = (
+            "$$SOE\n"
+            + _VALID_DATA_ROW
+            + "\n$$EOE\n$$EOE\n"
+        )
+        content = _make_horizons_response(result_text=dup_eoe_text)
+        err = self._expect_validation_error(content)
+        assert "duplicate" in str(err).lower() or "$$EOE" in str(err)
+
+    def test_44d_two_complete_sections_rejected(self):
+        """Test 44d: two complete SOE/EOE sections are rejected."""
+        two_sections = (
+            "$$SOE\n"
+            + _VALID_DATA_ROW
+            + "\n$$EOE\n"
+            "$$SOE\n"
+            + _VALID_DATA_ROW
+            + "\n$$EOE\n"
+        )
+        content = _make_horizons_response(result_text=two_sections)
         self._expect_validation_error(content)
 
     def test_45_zero_data_rows_rejected(self):
@@ -819,12 +1038,12 @@ class TestPayloadFailure:
 
 
 # ---------------------------------------------------------------------------
-# TRANSPORT  (tests 53-58)
+# TRANSPORT  (tests 53-58c)
 # ---------------------------------------------------------------------------
 
 
 class TestTransport:
-    """Tests 53-58: HTTP transport error mapping."""
+    """Tests 53-58c: HTTP transport error mapping."""
 
     def test_53_timeout_raises_unavailable(self):
         """Test 53: timeout → HorizonsUnavailableError."""
@@ -874,6 +1093,18 @@ class TestTransport:
         with pytest.raises(HorizonsValidationError):
             adapter.fetch(_make_request())
 
+    def test_58b_http_501_raises_unavailable(self):
+        """Test 58b: HTTP 501 → HorizonsUnavailableError (all 5xx are availability)."""
+        adapter = _make_adapter(status_code=501, content=b"Not Implemented")
+        with pytest.raises(HorizonsUnavailableError):
+            adapter.fetch(_make_request())
+
+    def test_58c_http_599_raises_unavailable(self):
+        """Test 58c: HTTP 599 → HorizonsUnavailableError (all 5xx are availability)."""
+        adapter = _make_adapter(status_code=599, content=b"Unknown Server Error")
+        with pytest.raises(HorizonsUnavailableError):
+            adapter.fetch(_make_request())
+
     def test_http_502_raises_unavailable(self):
         """HTTP 502 → HorizonsUnavailableError (additional coverage)."""
         adapter = _make_adapter(status_code=502, content=b"Bad Gateway")
@@ -888,12 +1119,12 @@ class TestTransport:
 
 
 # ---------------------------------------------------------------------------
-# TRUST / REDACTION  (tests 59-61)
+# TRUST / REDACTION  (tests 59-61e)
 # ---------------------------------------------------------------------------
 
 
 class TestTrustRedaction:
-    """Tests 59-61: error messages do not leak sensitive data."""
+    """Tests 59-61e: error messages do not leak sensitive data."""
 
     _SENTINEL = "SECRET_HORIZONS_RAW_CONTENT_SENTINEL_XYZ"
 
@@ -905,7 +1136,6 @@ class TestTrustRedaction:
 
     def test_59_error_does_not_include_raw_response(self):
         """Test 59: public error message does not include raw response content."""
-        sentinel_bytes = self._SENTINEL.encode()
         payload = {
             "signature": {"source": "NASA/JPL Horizons API", "version": "1.3"},
             "error": self._SENTINEL,
@@ -935,6 +1165,50 @@ class TestTrustRedaction:
         # __cause__ must be the original httpx exception
         assert exc_info.value.__cause__ is not None
         assert isinstance(exc_info.value.__cause__, httpx.TimeoutException)
+
+    def test_61b_malformed_non_utf_bytes_raises_validation_error(self):
+        """Test 61b: malformed non-UTF byte payload → HorizonsValidationError."""
+        # \xff\xfe is invalid UTF-8 (it is a UTF-16 BOM, but not valid JSON).
+        bad_bytes = b"\xff\xfe\x00\x01invalid utf-8 sequence"
+        adapter = _make_adapter(content=bad_bytes)
+        with pytest.raises(HorizonsValidationError) as exc_info:
+            adapter.fetch(_make_request())
+        # Must not be a raw UnicodeDecodeError leaking through.
+        assert isinstance(exc_info.value, HorizonsValidationError)
+
+    def test_61c_malformed_json_raises_validation_error(self):
+        """Test 61c: malformed JSON still → HorizonsValidationError (with __cause__)."""
+        bad_json = b'{"incomplete": '
+        adapter = _make_adapter(content=bad_json)
+        with pytest.raises(HorizonsValidationError) as exc_info:
+            adapter.fetch(_make_request())
+        assert exc_info.value.__cause__ is not None
+
+    def test_61d_non_datetime_clock_raises_validation_error(self):
+        """Test 61d: clock returning a non-datetime value → HorizonsValidationError."""
+        def bad_clock():
+            return "not a datetime"
+
+        content = _make_horizons_response()
+        transport = _make_mock_transport(content=content)
+        client = httpx.Client(transport=transport)
+        adapter = HorizonsAdapter(client=client, clock=bad_clock)
+        with pytest.raises(HorizonsValidationError) as exc_info:
+            adapter.fetch(_make_request())
+        # Must be HorizonsValidationError, NOT AttributeError.
+        assert isinstance(exc_info.value, HorizonsValidationError)
+        assert not isinstance(exc_info.value, AttributeError)
+
+    def test_61e_no_sentinel_in_public_validation_errors(self):
+        """Test 61e: no raw response sentinel appears in public validation errors."""
+        # Use the sentinel as a bad result field to verify it doesn't leak.
+        payload = {
+            "signature": {"source": "NASA/JPL Horizons API", "version": "1.3"},
+            "result": self._SENTINEL,  # no $$SOE/$$EOE — will fail parsing
+        }
+        content = json.dumps(payload).encode()
+        err_msg = self._get_validation_error_msg(content)
+        assert self._SENTINEL not in err_msg
 
 
 # ---------------------------------------------------------------------------
@@ -1104,3 +1378,21 @@ class TestFixtureLoading:
         assert payload["signature"]["version"] == "1.3"
         assert "$$SOE" in payload["result"]
         assert "$$EOE" in payload["result"]
+
+    def test_fixture_parses_via_adapter(self):
+        """The representative fixture parses successfully through the adapter."""
+        import pathlib
+
+        fixture_path = (
+            pathlib.Path(__file__).parent.parent
+            / "fixtures"
+            / "horizons"
+            / "juno_2026_aug_27_vectors.json"
+        )
+        raw = fixture_path.read_bytes()
+        adapter = _make_adapter(content=raw)
+        result = adapter.fetch(_make_request())
+        # Fixture values: LT=2795.8..., RG=838249962..., RR=14.63...
+        assert abs(result.geometry.one_way_light_time_s - _LT_VALUE) < 0.01
+        assert abs(result.geometry.range_km - _RG_VALUE) < 1.0
+        assert abs(result.geometry.range_rate_km_s - _RR_VALUE) < 0.001

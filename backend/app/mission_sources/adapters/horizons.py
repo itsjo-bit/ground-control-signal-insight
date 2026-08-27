@@ -132,25 +132,23 @@ _MAX_RESPONSE_BYTES: int = 1 * 1024 * 1024  # 1 MiB
 # HTTP request timeout (seconds).
 _HTTP_TIMEOUT: float = 30.0
 
-# VEC_TABLE=6 column indices in the CSV data row.
-# When CSV_FORMAT=YES and VEC_TABLE=6, the row format is:
-#   JDTDB, Calendar Date (TDB), X, Y, Z, VX, VY, VZ, LT, RG, RR
-# Indices (0-based):
-#   0  = JDTDB
-#   1  = Calendar Date (TDB)
-#   2  = X
-#   3  = Y
-#   4  = Z
-#   5  = VX
-#   6  = VY
-#   7  = VZ
-#   8  = LT  (one-way light-time, seconds)
-#   9  = RG  (range, km)
-#   10 = RR  (range-rate, km/s)
-_IDX_LIGHT_TIME: int = 8
-_IDX_RANGE: int = 9
-_IDX_RANGE_RATE: int = 10
-_MIN_COLUMNS: int = 11
+# VEC_TABLE=6 CSV column indices for the semantic data row.
+# When CSV_FORMAT=YES, VEC_TABLE=6, VEC_DELTA_T=NO, the semantic row is:
+#   JDTDB, Calendar Date, LT, RG, RR[, <trailing empty from Horizons comma>]
+# Semantic indices (0-based, after stripping trailing empty cell):
+#   0 = JDTDB
+#   1 = Calendar Date (TDB)
+#   2 = LT  (one-way light-time, seconds)
+#   3 = RG  (range, km)
+#   4 = RR  (range-rate, km/s)
+_IDX_LIGHT_TIME: int = 2
+_IDX_RANGE: int = 3
+_IDX_RANGE_RATE: int = 4
+_EXPECTED_SEMANTIC_COLUMNS: int = 5
+
+# VEC_TABLE=3 has 11 columns (JDTDB, Date, X, Y, Z, VX, VY, VZ, LT, RG, RR).
+# We use this count to detect and reject table-3-shaped rows.
+_VEC_TABLE_3_COLUMN_COUNT: int = 11
 
 
 # ---------------------------------------------------------------------------
@@ -175,15 +173,24 @@ def _build_canonical_query_identity(
 
     The identity is determined by: target SPK ID, normalized UTC epoch,
     Earth center, and the fixed protocol settings that affect output.
+    All fixed adapter-owned protocol parameters are included so that any
+    protocol change is reflected in the provenance_id.
     """
     epoch_str = request.epoch_utc.strftime("%Y-%b-%d %H:%M:%S.%f")
     identity: dict = {
+        "cal_type": "GREGORIAN",
         "center": _EARTH_CENTER,
+        "csv_format": "YES",
         "ephem_type": "VECTORS",
         "out_units": "KM-S",
+        "ref_plane": "FRAME",
+        "ref_system": "ICRF",
         "target_spk_id": request.target_spk_id,
+        "time_type": "UT",
         "tlist_epoch_utc": epoch_str,
+        "tlist_type": "CAL",
         "vec_corr": "NONE",
+        "vec_delta_t": "NO",
         "vec_table": "6",
     }
     # Sorted keys for determinism.
@@ -216,7 +223,7 @@ def _epoch_to_tlist(epoch: datetime) -> str:
     """Format a UTC-normalized datetime as a Horizons TLIST calendar string.
 
     Uses the pattern: ``YYYY-Mon-DD HH:MM:SS.ffffff``
-    Example: ``2016-07-04 00:00:00.000000``
+    Example: ``2016-Jul-04 00:00:00.000000``
 
     The epoch must be UTC-normalized before calling this helper.
     """
@@ -239,20 +246,36 @@ def _parse_vector_table(result_text: str) -> tuple[float, float, float]:
         (one_way_light_time_s, range_km, range_rate_km_s)
 
     Raises:
-        HorizonsValidationError: if markers are missing/wrong order, zero or
-            multiple data rows, or numeric values are invalid.
+        HorizonsValidationError: if markers are missing/wrong order/duplicated,
+            zero or multiple data rows, wrong column count, or numeric values
+            are invalid.
     """
-    soe_idx = result_text.find("$$SOE")
-    eoe_idx = result_text.find("$$EOE")
+    # --- Correction 5: require exactly ONE $$SOE and ONE $$EOE ---
+    soe_count = result_text.count("$$SOE")
+    eoe_count = result_text.count("$$EOE")
 
-    if soe_idx == -1:
+    if soe_count == 0:
         raise HorizonsValidationError(
             "Horizons response is missing the $$SOE table marker."
         )
-    if eoe_idx == -1:
+    if eoe_count == 0:
         raise HorizonsValidationError(
             "Horizons response is missing the $$EOE table marker."
         )
+    if soe_count > 1:
+        raise HorizonsValidationError(
+            "Horizons response contains duplicate $$SOE markers; "
+            "expected exactly one ephemeris section."
+        )
+    if eoe_count > 1:
+        raise HorizonsValidationError(
+            "Horizons response contains duplicate $$EOE markers; "
+            "expected exactly one ephemeris section."
+        )
+
+    soe_idx = result_text.index("$$SOE")
+    eoe_idx = result_text.index("$$EOE")
+
     if eoe_idx <= soe_idx:
         raise HorizonsValidationError(
             "Horizons $$EOE appears before or at same position as $$SOE."
@@ -264,10 +287,13 @@ def _parse_vector_table(result_text: str) -> tuple[float, float, float]:
     # Use csv reader to robustly parse rows.
     reader = csv.reader(io.StringIO(table_block))
     data_rows: list[list[str]] = []
-    for row in reader:
+    for raw_row in reader:
         # Strip whitespace from all cells.
-        stripped = [cell.strip() for cell in row]
-        # A valid data row must have enough columns and a non-empty first cell.
+        stripped = [cell.strip() for cell in raw_row]
+        # Remove a single trailing empty cell caused by Horizons' trailing comma.
+        if stripped and stripped[-1] == "":
+            stripped = stripped[:-1]
+        # A valid data row must have a non-empty first cell.
         if stripped and stripped[0]:
             data_rows.append(stripped)
 
@@ -283,10 +309,21 @@ def _parse_vector_table(result_text: str) -> tuple[float, float, float]:
         )
 
     row = data_rows[0]
-    if len(row) < _MIN_COLUMNS:
+
+    # --- Correction 3: reject VEC_TABLE=3-shaped rows ---
+    if len(row) == _VEC_TABLE_3_COLUMN_COUNT:
         raise HorizonsValidationError(
-            f"Horizons VEC_TABLE=6 data row has {len(row)} columns; "
-            f"expected at least {_MIN_COLUMNS}."
+            "Horizons data row has 11 columns matching VEC_TABLE=3 layout "
+            "(JDTDB, Date, X, Y, Z, VX, VY, VZ, LT, RG, RR); "
+            "this adapter requires VEC_TABLE=6 (JDTDB, Date, LT, RG, RR)."
+        )
+
+    # --- Correction 2: require exactly 5 semantic columns ---
+    if len(row) != _EXPECTED_SEMANTIC_COLUMNS:
+        raise HorizonsValidationError(
+            f"Horizons VEC_TABLE=6 data row has {len(row)} semantic columns; "
+            f"expected exactly {_EXPECTED_SEMANTIC_COLUMNS} "
+            "(JDTDB, Calendar Date, LT, RG, RR)."
         )
 
     light_time_s = _parse_finite_float(row[_IDX_LIGHT_TIME], "one_way_light_time_s")
@@ -335,7 +372,7 @@ class HorizonsAdapter:
         Optional callable returning an aware UTC ``datetime`` used as
         ``retrieved_at``.  Defaults to :func:`_utc_now`.  Tests must inject a
         fixed aware timestamp.  The adapter raises :class:`HorizonsValidationError`
-        if the clock returns a naive datetime.
+        if the clock returns a naive datetime or a non-datetime value.
 
     Usage
     -----
@@ -442,6 +479,7 @@ class HorizonsAdapter:
             "OUT_UNITS": "KM-S",
             "VEC_TABLE": "6",
             "VEC_CORR": "NONE",
+            "VEC_DELTA_T": "NO",
             "CSV_FORMAT": "YES",
             "REF_SYSTEM": "ICRF",
             "REF_PLANE": "FRAME",
@@ -478,7 +516,8 @@ class HorizonsAdapter:
         status = response.status_code
         if status == 200:
             return raw_bytes
-        if status in (429, 500, 502, 503, 504):
+        # Correction 6: ALL HTTP 5xx are availability failures.
+        if status == 429 or (500 <= status < 600):
             raise HorizonsUnavailableError(
                 f"JPL Horizons returned HTTP {status}."
             )
@@ -504,7 +543,12 @@ class HorizonsAdapter:
         content_sha256 = hashlib.sha256(raw_bytes).hexdigest()
 
         # 2. Get retrieved_at from the injected clock.
+        # Correction 7: guard against non-datetime clock return values.
         retrieved_at = self._clock()
+        if not isinstance(retrieved_at, datetime):
+            raise HorizonsValidationError(
+                "Injected clock did not return a datetime object."
+            )
         if retrieved_at.tzinfo is None or retrieved_at.utcoffset() is None:
             raise HorizonsValidationError(
                 "Injected clock returned a naive datetime; retrieved_at must be "
@@ -512,11 +556,12 @@ class HorizonsAdapter:
             )
 
         # 3. Parse JSON.
+        # Correction 7: normalize UnicodeDecodeError as well as JSONDecodeError.
         try:
             payload = json.loads(raw_bytes)
-        except json.JSONDecodeError as exc:
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise HorizonsValidationError(
-                "JPL Horizons response is not valid JSON."
+                "JPL Horizons response could not be decoded as valid JSON."
             ) from exc
 
         if not isinstance(payload, dict):
