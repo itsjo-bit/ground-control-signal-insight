@@ -22,7 +22,7 @@ if (-not (Get-Command uvicorn -ErrorAction SilentlyContinue)) {
 }
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-    Write-Error "ERROR: Node.js not found. Install Node.js 18+ and retry."
+    Write-Error "ERROR: Node.js not found. Install Node.js 24 and retry."
     exit 1
 }
 

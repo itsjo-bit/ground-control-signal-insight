@@ -250,6 +250,20 @@ function SceneContent({
             }}>
               {distLabel}
             </div>
+            {/* NOT TO SCALE label — visual spacing is presentation only */}
+            <div
+              data-testid="not-to-scale-label"
+              style={{
+                fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
+                fontSize: 7,
+                color: 'rgba(180,200,255,0.45)',
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                marginTop: 1,
+              }}
+            >
+              visual spacing not to scale
+            </div>
             {linkStatus !== 'good' && (
               <div style={{
                 fontFamily: '"IBM Plex Mono", ui-monospace, monospace',

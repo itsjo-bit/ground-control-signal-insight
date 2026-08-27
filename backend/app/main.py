@@ -10,9 +10,10 @@ Run locally (from backend/ directory):
 Run locally (from project root):
     uvicorn backend.app.main:app --reload --port 8000
 
-The default scenario (mission_data_v3.json) is resolved relative to this file's
-location, so the startup path is always correct regardless of the current
-working directory.  Set GCSI_SCENARIO_PATH to override.
+The default scenario is ASTERIA-7 (asteria7_thermal_priority_contact_v1.json),
+resolved as an absolute path relative to this file's location so the startup
+path is always correct regardless of the current working directory.
+Set GCSI_SCENARIO_PATH to override with a different scenario.
 """
 
 import logging
@@ -121,9 +122,12 @@ def _log_active_scenario() -> None:
             f"  [GCSI] Mission         : {ms.mission_id}\n"
             f"  [GCSI] Packets         : {pkt_count}\n"
             f"  [GCSI] High-volume AI prioritization : UNAVAILABLE\n"
-            f"  [GCSI] To use the full V3.4 demo experience, set:\n"
-            f"  [GCSI]   GCSI_SCENARIO_PATH=data/scenarios/mission_data_v3.json\n"
-            f"  [GCSI]   (or remove GCSI_SCENARIO_PATH from .env to use the default)\n",
+            f"  [GCSI] To use the canonical ASTERIA-7 demo experience:\n"
+            f"  [GCSI]   Remove GCSI_SCENARIO_PATH from .env (uses the default)\n"
+            f"  [GCSI]   or explicitly set:\n"
+            f"  [GCSI]   GCSI_SCENARIO_PATH=data/scenarios/asteria7_thermal_priority_contact_v1.json\n"
+            f"  [GCSI] Alternative lightweight scenario (150 products):\n"
+            f"  [GCSI]   GCSI_SCENARIO_PATH=data/scenarios/mission_data_v3.json\n",
             file=sys.stderr,
         )
 
@@ -137,8 +141,9 @@ async def _lifespan(app: FastAPI):  # noqa: ARG001
        Relative paths in GCSI_SCENARIO_PATH are left as-is (resolved against
        the process cwd, matching the documented behaviour in .env.example).
     2. _DEFAULT_SCENARIO_PATH — the project-relative absolute path to
-       mission_data_v3.json.  This path is always correct regardless of which
-       directory uvicorn was started from.
+       asteria7_thermal_priority_contact_v1.json (ASTERIA-7 canonical mission).
+       This path is always correct regardless of which directory uvicorn was
+       started from.
 
     A clear startup banner is printed so the active scenario is immediately
     visible in the terminal — no silent fallbacks.

@@ -66,9 +66,9 @@ class TestPathResolution:
         )
 
     def test_default_scenario_path_exists(self):
-        """The default path must actually point to mission_data_v3.json."""
+        """The default path (ASTERIA-7) must exist on disk."""
         assert Path(_DEFAULT_SCENARIO_PATH).exists(), (
-            f"mission_data_v3.json not found at: {_DEFAULT_SCENARIO_PATH}"
+            f"asteria7_thermal_priority_contact_v1.json not found at: {_DEFAULT_SCENARIO_PATH}"
         )
 
     def test_default_scenario_path_is_asteria7(self):

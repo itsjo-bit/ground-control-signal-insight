@@ -357,7 +357,7 @@ export interface MissionOutcomeResult {
 
   delivered_by_subsystem: Record<string, number>;
 
-  anomaly_coverage_by_id: Record<string, AnomalyCoverageDetail>;
+  anomaly_coverage_by_id: AnomalyCoverageDetail[];
 }
 
 /** Capacity summary for the selected plan — mirrors backend capacity_summary dict. */

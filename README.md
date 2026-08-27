@@ -511,7 +511,7 @@ GCSI_OLLAMA_ENABLED=true GCSI_OLLAMA_MODEL=llama3.2 uvicorn app.main:app ...
 
 ## Quick Start (Fresh Clone)
 
-**Supported versions**: Python 3.11+, Node.js 18+
+**Supported versions**: Python 3.11+, Node.js 24 (Node.js 24 is the supported frontend development/CI version)
 
 ### 1. Clone and navigate
 
@@ -556,7 +556,7 @@ cp .env.example .env
 ### 5. Start the backend
 
 The backend can be started from either the project root or the `backend/` directory.
-The default scenario (`mission_data_v3.json`) loads automatically — no environment variable required.
+The canonical ASTERIA-7 scenario loads by default — no environment variable required.
 
 **From the project root (recommended):**
 
@@ -639,7 +639,9 @@ The default scenario is **ASTERIA-7**: 1,284 products, active thermal anomaly, 1
 2. **Observe the startup banner** confirming 1,284 products, thermal anomaly, geometry available.
 3. **Open the browser** at `http://localhost:5173`.
 4. **Inspect the 3D visualization** — Earth, spacecraft at 182M km, and the communication link.
-   The distance is to scale: the one-way signal delay is 10 minutes 8 seconds.
+   The displayed mission distance and propagation delay are authoritative scenario values.
+   The 3D Earth-spacecraft spacing is a presentation visualization and is not spatially to scale.
+   The one-way signal delay is 10 minutes 8 seconds (authoritative geometry-derived value).
 5. **Open Data Products** — browse all 1,284 products. Filter by criticality or anomaly.
    Notice: 1,284 products, 2.74 GB total, only ~85.7 MB fits in the contact window.
 6. **Choose a workflow:**

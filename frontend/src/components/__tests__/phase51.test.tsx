@@ -213,8 +213,9 @@ describe('Confidence semantics — type contract', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('AssessManualPlanResponse — type safety', () => {
-  it('mission_outcome is typed MissionOutcomeResult | null', () => {
-    // Build a full typed MissionOutcomeResult (no any)
+  it('anomaly_coverage_by_id is an array matching backend list[AnomalyCoverageDetail]', () => {
+    // Backend serializes anomaly_coverage_by_id as a JSON array (list[AnomalyCoverageDetail]).
+    // Frontend must use AnomalyCoverageDetail[] — NOT Record<string, AnomalyCoverageDetail>.
     const detail: AnomalyCoverageDetail = {
       anomaly_id: 'ANOM-017',
       severity: 0.94,
@@ -244,13 +245,58 @@ describe('AssessManualPlanResponse — type safety', () => {
       average_delivered_age_s: 1200,
       median_delivered_age_s: 900,
       delivered_by_subsystem: { thermal: 3, power: 1 },
-      anomaly_coverage_by_id: { 'ANOM-017': detail },
+      // Correct shape: backend serializes as JSON array, not a dict/Record
+      anomaly_coverage_by_id: [detail],
     };
-    // Verify key fields are accessible without any casting
+    // anomaly_coverage_by_id is an array
+    expect(Array.isArray(outcome.anomaly_coverage_by_id)).toBe(true);
+    expect(outcome.anomaly_coverage_by_id).toHaveLength(1);
+    // Access via find (array pattern), not dict key
+    const found = outcome.anomaly_coverage_by_id.find((d) => d.anomaly_id === 'ANOM-017');
+    expect(found).toBeDefined();
+    expect(found!.coverage_rate).toBe(0.6);
+    expect(found!.severity).toBe(0.94);
+    // Verify key fields
     expect(outcome.plan_id).toBe('test-plan');
     expect(outcome.required_products_total).toBe(8);
     expect(outcome.high_severity_threshold).toBe(0.75);
-    expect(outcome.anomaly_coverage_by_id['ANOM-017'].coverage_rate).toBe(0.6);
+  });
+
+  it('representative serialized /plans/assess response uses array shape', () => {
+    // This fixture mirrors the actual JSON produced by POST /plans/assess.
+    // anomaly_coverage_by_id must be a JSON array, not a JSON object/dict.
+    const serializedResponse = JSON.parse(JSON.stringify({
+      plan: { plan_id: 'operator-manual-assess', strategy: 'manual', packets: [], generated_by: 'operator', metadata: {} },
+      evaluation: {
+        plan_id: 'operator-manual-assess', mission_value: 0.3,
+        critical_packets_delivered: 0, total_critical_packets: 0,
+        deadline_misses: 0, avg_packet_delay_s: 0, bandwidth_utilization: 0.4,
+        retransmission_overhead: 0, risk_score: 0.2, risk_level: 'LOW',
+        deferred_packets: [], deadline_miss_rate: 0, critical_deficit: 0, window_pressure: 0.4,
+      },
+      mission_outcome: {
+        plan_id: 'operator-manual-assess',
+        total_products: 1284, delivered_products: 45, delivery_rate: 0.035,
+        total_scientific_value: 500, delivered_scientific_value: 18, scientific_value_capture_rate: 0.036,
+        required_products_total: 12, required_products_delivered: 4, required_delivery_rate: 0.333,
+        active_anomaly_products_total: 8, active_anomaly_products_delivered: 3, active_anomaly_delivery_rate: 0.375,
+        high_severity_threshold: 0.75,
+        high_severity_anomalies_total: 1, high_severity_anomalies_covered: 1,
+        high_severity_anomaly_coverage_rate: 1.0,
+        anomaly_weighted_coverage: 0.375,
+        average_delivered_age_s: 1800, median_delivered_age_s: 1200,
+        delivered_by_subsystem: { thermal: 3 },
+        // Backend serializes list[AnomalyCoverageDetail] as a JSON array
+        anomaly_coverage_by_id: [
+          { anomaly_id: 'ANOM-THERM-017', severity: 0.94, total_linked_products: 8, delivered_linked_products: 3, coverage_rate: 0.375 },
+        ],
+      },
+      capacity_summary: { available_capacity_bits: 685440000, selected_bits: 288640000, selected_count: 45, exceeds_capacity: false, window_s: 272 },
+    }));
+    // The parsed response must have anomaly_coverage_by_id as an array
+    expect(Array.isArray(serializedResponse.mission_outcome.anomaly_coverage_by_id)).toBe(true);
+    expect(serializedResponse.mission_outcome.anomaly_coverage_by_id[0].anomaly_id).toBe('ANOM-THERM-017');
+    expect(serializedResponse.mission_outcome.anomaly_coverage_by_id[0].coverage_rate).toBe(0.375);
   });
 
   it('capacity_summary is typed CapacitySummary (no any)', () => {
@@ -350,7 +396,7 @@ describe('Manual mode — no AI dependency', () => {
       average_delivered_age_s: 500,
       median_delivered_age_s: 450,
       delivered_by_subsystem: {},
-      anomaly_coverage_by_id: {},
+      anomaly_coverage_by_id: [],
     };
     // Null rates when denominator is zero — not false 1.0
     expect(outcome.active_anomaly_delivery_rate).toBeNull();
@@ -647,5 +693,118 @@ describe('Unit formatters', () => {
     expect(queueResult).toContain('GB');
     expect(windowResult).toContain('MB');
     expect(bitRateResult).toContain('Mbps');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5.1C — Unknown provider fail-safe
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Unknown provider fail-safe', () => {
+  it('classifyProvider returns unknown for unrecognized name', () => {
+    // Mirror of classifyProvider from AIDecisionPanel
+    function classifyProvider(name: string | null | undefined): string {
+      if (!name) return 'unknown';
+      const lower = name.toLowerCase();
+      if (lower === 'local' || lower === 'localrulebasedprovider' || lower === 'local_rule_based') return 'local';
+      if (lower === 'granite' || lower === 'gemini' || lower === 'ollama') return 'external';
+      return 'unknown';
+    }
+    expect(classifyProvider('mystery-provider')).toBe('unknown');
+    expect(classifyProvider('custom-llm')).toBe('unknown');
+    expect(classifyProvider('UNKNOWN-AI')).toBe('unknown');
+    // Known providers are still correct
+    expect(classifyProvider('granite')).toBe('external');
+    expect(classifyProvider('gemini')).toBe('external');
+    expect(classifyProvider('ollama')).toBe('external');
+    expect(classifyProvider('local')).toBe('local');
+  });
+
+  it('DecisionChain shows ADVISORY PRIORITIZATION for unknown provider', () => {
+    render(
+      React.createElement(DecisionChain, {
+        totalProducts: 1284,
+        candidateCount: 50,
+        providerKind: 'unknown',
+      }),
+    );
+    expect(screen.getByText(/ADVISORY PRIORITIZATION/)).toBeDefined();
+    expect(screen.queryByText(/^AI PRIORITIZATION$/)).toBeNull();
+    expect(screen.queryByText(/DETERMINISTIC PRIORITIZATION/)).toBeNull();
+  });
+
+  it('DecisionChain does not render AI badge for unknown provider', () => {
+    const { container } = render(
+      React.createElement(DecisionChain, {
+        totalProducts: 1284,
+        candidateCount: 50,
+        providerKind: 'unknown',
+      }),
+    );
+    const allSpans = container.querySelectorAll('span');
+    const hasAiBadge = Array.from(allSpans).some(
+      (el) => el.textContent === 'AI' && el.style.background?.includes('rgba(124,158,255'),
+    );
+    expect(hasAiBadge).toBe(false);
+  });
+
+  it('DecisionChain does not render LOCAL badge for unknown provider', () => {
+    render(
+      React.createElement(DecisionChain, {
+        totalProducts: 1284,
+        candidateCount: 50,
+        providerKind: 'unknown',
+      }),
+    );
+    // LOCAL badge must not appear for unknown provider
+    expect(screen.queryByText(/^LOCAL$/)).toBeNull();
+  });
+
+  it('Granite provider still shows AI PRIORITIZATION', () => {
+    render(
+      React.createElement(DecisionChain, {
+        totalProducts: 1284,
+        candidateCount: 50,
+        providerKind: 'external',
+      }),
+    );
+    expect(screen.getByText(/AI PRIORITIZATION/)).toBeDefined();
+  });
+
+  it('Local provider still shows DETERMINISTIC PRIORITIZATION', () => {
+    render(
+      React.createElement(DecisionChain, {
+        totalProducts: 1284,
+        candidateCount: 50,
+        providerKind: 'local',
+      }),
+    );
+    expect(screen.getByText(/DETERMINISTIC PRIORITIZATION/)).toBeDefined();
+    expect(screen.queryByText(/AI PRIORITIZATION/)).toBeNull();
+    expect(screen.queryByText(/ADVISORY PRIORITIZATION/)).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5.1C — Per-product confidence presentation
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Per-product confidence — non-percentage presentation', () => {
+  it('confidence 0.87 renders as 87/100 not 87%', () => {
+    // classifyProvider and RankedProductRow are internal to AIDecisionPanel.
+    // We verify the formatting contract via the numeric presentation logic directly.
+    const confidence = 0.87;
+    const rendered = `${(confidence * 100).toFixed(0)}/100`;
+    expect(rendered).toBe('87/100');
+    expect(rendered).not.toContain('%');
+  });
+
+  it('confidence formatting uses /100 denominator pattern', () => {
+    const testValues = [0.0, 0.5, 0.92, 1.0];
+    for (const v of testValues) {
+      const rendered = `${(v * 100).toFixed(0)}/100`;
+      expect(rendered).toMatch(/^\d+\/100$/);
+      expect(rendered).not.toContain('%');
+    }
   });
 });

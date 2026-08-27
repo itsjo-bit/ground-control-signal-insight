@@ -108,7 +108,7 @@ function RankedProductRow({ rp, rank }: { rp: RankedProduct; rank: number }) {
           cursor: 'pointer', userSelect: 'none',
         }}
         onClick={() => setExpanded((e) => !e)}
-        title={expanded ? 'Collapse' : 'Expand AI reasoning'}
+        title={expanded ? 'Collapse' : 'Expand provider rationale'}
       >
         {/* Rank number */}
         <span style={{
@@ -145,8 +145,11 @@ function RankedProductRow({ rp, rank }: { rp: RankedProduct; rank: number }) {
 
         {/* Per-product confidence (if present) */}
         {rp.confidence !== null && rp.confidence !== undefined && (
-          <span style={{ fontSize: 9, color: MUTED, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
-            {(rp.confidence * 100).toFixed(0)}%
+          <span
+            style={{ fontSize: 9, color: MUTED, fontFamily: 'var(--font-mono)', flexShrink: 0 }}
+            title="Advisory provider score; not a probability of mission success."
+          >
+            {(rp.confidence * 100).toFixed(0)}/100
           </span>
         )}
 
@@ -259,10 +262,14 @@ export function DecisionChain({ totalProducts, candidateCount, providerKind }: D
 
   const prioritizationLabel = isLocal
     ? 'DETERMINISTIC PRIORITIZATION'
-    : 'AI PRIORITIZATION';
+    : isAiProvider
+    ? 'AI PRIORITIZATION'
+    : 'ADVISORY PRIORITIZATION';
   const prioritizationSub = isLocal
     ? 'Local deterministic mission triage'
-    : 'Semantic mission reasoning';
+    : isAiProvider
+    ? 'Semantic mission reasoning'
+    : 'Advisory provider reasoning';
   const prioritizationIsAi = isAiProvider;
 
   const steps: Array<{ label: string; sub: string; ai?: boolean; local?: boolean }> = [
@@ -278,7 +285,7 @@ export function DecisionChain({ totalProducts, candidateCount, providerKind }: D
     },
     {
       label: 'RANKED DATA',
-      sub: isLocal ? 'Deterministic advisory ordering' : 'AI advisory ordering',
+      sub: isLocal ? 'Deterministic advisory ordering' : isAiProvider ? 'AI advisory ordering' : 'Advisory ordering',
     },
     { label: 'DETERMINISTIC FEASIBILITY', sub: 'Authoritative telecom & mission evaluation' },
     { label: 'HUMAN DECISION', sub: 'Approve / modify / reject' },
@@ -377,10 +384,12 @@ export function AIDecisionPanel({
   const isExternal = providerKind === 'external';
 
   // Panel heading changes based on provider kind
-  const panelHeadingIcon = isLocal ? '◆' : '◈';
+  const panelHeadingIcon = isLocal ? '◆' : isExternal ? '◈' : '◇';
   const panelHeading = isLocal
     ? 'Deterministic Mission Triage'
-    : 'AI Prioritization';
+    : isExternal
+    ? 'AI Mission Triage'
+    : 'Advisory Prioritization';
 
   // Confidence label per provider kind
   const confidenceLabel = isLocal
@@ -477,8 +486,8 @@ export function AIDecisionPanel({
       {/* No prioritization at all */}
       {!prioritization && !hasFallback && (
         <div style={{ color: DIM, fontSize: 12 }}>
-          AI prioritization is not available for this scenario (legacy packet mode).
-          Use a v2 scenario with data_products to enable AI decision transparency.
+          Semantic prioritization is not available for this scenario (legacy packet mode).
+          Use a v2 scenario with data_products to enable decision transparency.
         </div>
       )}
 
@@ -546,7 +555,7 @@ export function AIDecisionPanel({
           </div>
 
           {/* Overall reasoning */}
-          <h3>{isLocal ? 'Deterministic Reasoning' : 'AI Reasoning'}</h3>
+          <h3>{isLocal ? 'Deterministic Reasoning' : isExternal ? 'AI Reasoning' : 'Provider Rationale'}</h3>
           <p style={{ fontSize: 12, color: MUTED, lineHeight: 1.55, marginBottom: 10 }}>
             {prioritization.overall_reasoning}
           </p>

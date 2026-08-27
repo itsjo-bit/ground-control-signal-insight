@@ -26,7 +26,7 @@ if ! command -v uvicorn &>/dev/null; then
 fi
 
 if ! command -v node &>/dev/null; then
-  echo "ERROR: Node.js not found. Install Node.js 18+ and retry."
+  echo "ERROR: Node.js not found. Install Node.js 24 and retry."
   exit 1
 fi
 
