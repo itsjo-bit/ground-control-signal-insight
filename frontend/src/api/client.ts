@@ -5,9 +5,11 @@
 
 import type {
   ApproveResponse,
+  CapacitySummary,
   CandidatePlan,
   DataProductsResponse,
   EvaluationResult,
+  MissionOutcomeResult,
   RecommendResponse,
   ScenariosResponse,
   SimulationResult,
@@ -20,10 +22,8 @@ import type { ExperienceResponse } from '../types/experience';
 export type AssessManualPlanResponse = {
   plan: CandidatePlan;
   evaluation: EvaluationResult;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  mission_outcome: any | null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  capacity_summary: any;
+  mission_outcome: MissionOutcomeResult | null;
+  capacity_summary: CapacitySummary;
 };
 
 const BASE = '/api';

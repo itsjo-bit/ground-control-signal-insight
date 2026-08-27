@@ -79,7 +79,8 @@ Complete this checklist before final competition submission.
 
 ## Frontend Tests
 
-- [ ] `npx tsc --noEmit` — zero TypeScript errors
+- [ ] `npm test` — all Vitest component/unit tests pass
+- [ ] `npm run typecheck` — zero TypeScript errors
 - [ ] `npm run build` — production build succeeds
 - [ ] Build output in `frontend/dist/`
 

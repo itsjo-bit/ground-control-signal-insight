@@ -314,6 +314,61 @@ export interface WhatIfLinkContext {
 }
 
 // What-if evaluation response (Feature 5 / Phase 3)
+// ── Manual assessment typed contracts ─────────────────────────────────────────
+
+/** Per-anomaly coverage detail — mirrors AnomalyCoverageDetail Pydantic model. */
+export interface AnomalyCoverageDetail {
+  anomaly_id: string;
+  severity: number;
+  total_linked_products: number;
+  delivered_linked_products: number;
+  coverage_rate: number | null;
+}
+
+/** Full mission outcome result — mirrors MissionOutcomeResult Pydantic model. */
+export interface MissionOutcomeResult {
+  plan_id: string;
+
+  total_products: number;
+  delivered_products: number;
+  delivery_rate: number | null;
+
+  total_scientific_value: number;
+  delivered_scientific_value: number;
+  scientific_value_capture_rate: number | null;
+
+  required_products_total: number;
+  required_products_delivered: number;
+  required_delivery_rate: number | null;
+
+  active_anomaly_products_total: number;
+  active_anomaly_products_delivered: number;
+  active_anomaly_delivery_rate: number | null;
+
+  high_severity_threshold: number;
+  high_severity_anomalies_total: number;
+  high_severity_anomalies_covered: number;
+  high_severity_anomaly_coverage_rate: number | null;
+
+  anomaly_weighted_coverage: number | null;
+
+  average_delivered_age_s: number | null;
+  median_delivered_age_s: number | null;
+
+  delivered_by_subsystem: Record<string, number>;
+
+  anomaly_coverage_by_id: Record<string, AnomalyCoverageDetail>;
+}
+
+/** Capacity summary for the selected plan — mirrors backend capacity_summary dict. */
+export interface CapacitySummary {
+  available_capacity_bits: number;
+  selected_bits: number;
+  selected_count: number;
+  exceeds_capacity: boolean;
+  window_s: number;
+}
+
 export interface WhatIfEvalResponse {
   /** Phase 3: full provenance of what the backend evaluated. */
   what_if_context: WhatIfLinkContext;

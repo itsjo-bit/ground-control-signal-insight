@@ -97,7 +97,15 @@ export function RecommendationPanel({
   };
 
   const hasFallback = !!recommendationFallbackReason;
-  const heading = providerName
+
+  // Determine provider kind for truthful labeling
+  const lower = (providerName ?? '').toLowerCase();
+  const isLocal = lower === 'local' || lower === 'localrulebasedprovider' || lower === 'local_rule_based';
+  const isExternal = lower === 'granite' || lower === 'gemini' || lower === 'ollama';
+
+  const heading = isLocal
+    ? `Deterministic Recommendation — ${providerName}`
+    : providerName
     ? `AI Reasoning — ${providerName}`
     : 'AI Reasoning';
 
@@ -146,14 +154,20 @@ export function RecommendationPanel({
         )}
       </p>
 <p>
-        <strong>Confidence:</strong>{' '}
-        {(rec.confidence * 100).toFixed(0)}%{' '}
+        <strong>
+          {rec.confidence_semantics === 'heuristic'
+            ? 'Heuristic Score:'
+            : rec.confidence_semantics === 'uncalibrated_llm' || isExternal
+            ? 'AI Confidence Score:'
+            : 'Advisory Score:'}
+        </strong>{' '}
+        {(rec.confidence * 100).toFixed(0)} / 100{' '}
         <span style={{ fontSize: 10, color: 'var(--text-dim, #57606a)', fontStyle: 'italic' }}>
           ({rec.confidence_semantics === 'uncalibrated_llm'
-            ? 'advisory — uncalibrated LLM estimate'
+            ? 'uncalibrated model judgment — not a probability of mission success'
             : rec.confidence_semantics === 'heuristic'
-            ? 'advisory — deterministic heuristic estimate'
-            : 'advisory — uncalibrated estimate'})
+            ? 'deterministic heuristic — not a probability of mission success'
+            : 'advisory — not a probability of mission success'})
         </span>
         &nbsp;
         <strong>Plan risk:</strong>{' '}

@@ -1625,6 +1625,7 @@ function AiSection(props: CommonProps) {
                   providerName={props.aiActualProvider ?? props.aiProvider}
                   requestedProviderName={props.aiRequestedProvider}
                   candidateCount={props.aiCandidateCount}
+                  totalProducts={props.dataProductsCount > 0 ? props.dataProductsCount : null}
                   prioritizationFallbackReason={props.aiPrioritizationFallbackReason}
                   recommendationFallbackReason={props.aiRecommendationFallbackReason}
                 />

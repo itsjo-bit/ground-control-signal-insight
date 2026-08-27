@@ -13,8 +13,8 @@
 ## Extended (two sentences)
 
 > "GCSI uses AI to semantically prioritize spacecraft data products by mission relevance —
-> then evaluates the AI plan against four deterministic alternatives using the same physics-based
-> evaluators, and requires explicit human approval before any transmission."
+> then evaluates the AI plan against four deterministic alternatives using the same
+> deterministic analytical evaluators, and requires explicit human approval before any transmission."
 
 ---
 
@@ -33,4 +33,4 @@
 
 ---
 
-*GCSI Architecture One-Liner — Phase 5*
+*GCSI Architecture One-Liner — Phase 5.1*

@@ -87,11 +87,9 @@ class TestManualPlanAssessment:
         result = assess_manual_plan(req)
 
         cs = result.capacity_summary
-        assert "available_capacity_bits" in cs
-        assert "selected_bits" in cs
-        assert "selected_count" in cs
-        assert cs["selected_count"] == 2
-        assert cs["selected_bits"] > 0
+        assert cs.available_capacity_bits >= 0
+        assert cs.selected_bits > 0
+        assert cs.selected_count == 2
 
     def test_assess_mission_outcome_has_required_delivery_rate(self):
         """mission_outcome includes required_delivery_rate for ASTERIA scenario."""

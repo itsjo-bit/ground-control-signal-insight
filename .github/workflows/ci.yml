@@ -37,7 +37,7 @@ jobs:
           python -m pytest tests/ -q --tb=short -m "not granite"
 
   frontend:
-    name: Frontend — TypeScript typecheck and build
+    name: Frontend — tests, typecheck, and build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -56,8 +56,11 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Frontend tests
+        run: npm test
+
       - name: TypeScript typecheck
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
       - name: Production build
         run: npm run build

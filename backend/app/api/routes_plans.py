@@ -26,8 +26,6 @@ POST /plans/assess
     Does NOT invalidate the issued-plan registry.
 """
 
-from typing import Any
-
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -43,7 +41,7 @@ from ..domain.plan_integrity import (
     get_authoritative_packets,
     reconstruct_authoritative_plan,
 )
-from ..evaluator.mission_outcome_evaluator import MissionOutcomeEvaluator
+from ..evaluator.mission_outcome_evaluator import MissionOutcomeEvaluator, MissionOutcomeResult
 from ..evaluator.plan_evaluator import PlanEvaluator
 from ..models.bridge import data_products_to_packets
 from ..models.candidate_plan import CandidatePlan
@@ -252,13 +250,23 @@ class AssessRequest(BaseModel):
     order: list[str] | None = None  # if None, use product_ids order
 
 
+class CapacitySummary(BaseModel):
+    """Typed capacity summary for POST /plans/assess."""
+
+    available_capacity_bits: int
+    selected_bits: int
+    selected_count: int
+    exceeds_capacity: bool
+    window_s: float
+
+
 class AssessResponse(BaseModel):
     """Response for POST /plans/assess."""
 
     plan: CandidatePlan
     evaluation: EvaluationResult
-    mission_outcome: Any  # MissionOutcomeResult
-    capacity_summary: dict
+    mission_outcome: MissionOutcomeResult | None = None
+    capacity_summary: CapacitySummary
 
 
 @router.post("/plans/assess", response_model=AssessResponse)
@@ -347,17 +355,17 @@ def assess_manual_plan(req: AssessRequest) -> AssessResponse:
     )
     available_capacity_bits = int(link.link_goodput_bps * window_s)
     selected_bits = sum(pkt.size_bits for pkt in auth_plan.packets)
-    capacity_summary = {
-        "available_capacity_bits": available_capacity_bits,
-        "selected_bits": selected_bits,
-        "selected_count": len(auth_plan.packets),
-        "exceeds_capacity": selected_bits > available_capacity_bits,
-        "window_s": window_s,
-    }
+    capacity = CapacitySummary(
+        available_capacity_bits=available_capacity_bits,
+        selected_bits=selected_bits,
+        selected_count=len(auth_plan.packets),
+        exceeds_capacity=selected_bits > available_capacity_bits,
+        window_s=window_s,
+    )
 
     return AssessResponse(
         plan=auth_plan,
         evaluation=evaluation,
         mission_outcome=mission_outcome,
-        capacity_summary=capacity_summary,
+        capacity_summary=capacity,
     )

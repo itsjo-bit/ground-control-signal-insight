@@ -195,7 +195,7 @@ Capture:
 
 Capture:
 - Before: information objectives "unknown"
-- After: objectives resolved (Fresh thermal history, Anomaly event timeline, etc.)
+- After: ground objectives now available (Fresh thermal history, Anomaly event timeline, etc.)
 - Evidence coverage percentage / HIGH / MEDIUM / LOW
 
 **Key message**: What Earth knows has changed. The right data was transmitted.

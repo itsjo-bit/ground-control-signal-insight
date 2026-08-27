@@ -618,10 +618,11 @@ python -m pytest tests/unit/             # unit tests only
 python -m pytest tests/integration/     # integration tests only
 ```
 
-### 8. Frontend typecheck and build
+### 8. Frontend tests, typecheck, and build
 
 ```bash
 cd frontend
+npm test              # Vitest component/unit tests (non-watch)
 npm run typecheck     # TypeScript type check (no emit)
 npm run build         # production build
 ```

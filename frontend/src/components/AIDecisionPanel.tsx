@@ -1,23 +1,39 @@
 /**
- * AIDecisionPanel — Phase 2D AI Decision Transparency component.
+ * AIDecisionPanel — Phase 5.1 provider-aware decision transparency.
  *
- * Shows the operator what the AI actually did:
- * - Which provider performed the prioritization
- * - How many candidates were analysed
- * - Overall AI confidence
+ * Shows the operator what the prioritization provider actually did:
+ * - Which provider performed the prioritization (with truthful labeling)
+ * - How many products were screened and how many candidates resulted
+ * - Overall confidence (semantics depend on provider kind)
  * - Ranked list of data products with reasons, factors, anomaly links
  * - Expandable per-product detail
- * - Decision chain diagram (AI vs Deterministic)
- * - Graceful AI-unavailable state
+ * - Dynamic decision chain diagram
+ * - Graceful AI-unavailable and Local-fallback states
  *
  * IMPORTANT VISUAL CONTRACT:
- * - AI-derived information is labelled with a purple "AI" badge
- * - Deterministic information (risk score, window, etc.) is labelled separately
+ * - External AI (Granite/Gemini/Ollama): AI badge, AI PRIORITIZATION label
+ * - Local deterministic provider: DETERMINISTIC PRIORITIZATION — no AI badge
+ * - Confidence semantics are explicit: heuristic vs uncalibrated LLM
  * - AI confidence is NEVER equated with physical mission confidence
  */
 
 import { useState } from 'react';
 import type { CandidatePrioritization, RankedProduct } from '../types/domain';
+
+// ─── Provider kind helper ─────────────────────────────────────────────────────
+
+/** Returns 'local' | 'external' | 'unknown' based on provider name string. */
+function classifyProvider(name: string | null | undefined): 'local' | 'external' | 'unknown' {
+  if (!name) return 'unknown';
+  const lower = name.toLowerCase();
+  if (lower === 'local' || lower === 'localrulebasedprovider' || lower === 'local_rule_based') {
+    return 'local';
+  }
+  if (lower === 'granite' || lower === 'gemini' || lower === 'ollama') {
+    return 'external';
+  }
+  return 'unknown';
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -147,13 +163,13 @@ function RankedProductRow({ rp, rank }: { rp: RankedProduct; rank: number }) {
           background: 'rgba(124,158,255,0.03)',
           borderTop: '1px solid rgba(255,255,255,0.04)',
         }}>
-          {/* WHY AI PRIORITIZED THIS header */}
+          {/* WHY THIS WAS PRIORITIZED header — text is set by parent via data-attr on expand */}
           <div style={{
             fontFamily: 'var(--font-mono)', fontSize: 9, color: DIM,
             textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6,
             display: 'flex', alignItems: 'center', gap: 6,
           }}>
-            <span style={{ color: AI_COLOR }}>◈</span> WHY AI PRIORITIZED THIS
+            <span style={{ color: AI_COLOR }}>◈</span> WHY THIS WAS PRIORITIZED
           </div>
 
           {rp.subsystem && (
@@ -186,20 +202,20 @@ function RankedProductRow({ rp, rank }: { rp: RankedProduct; rank: number }) {
           {rp.confidence !== null && rp.confidence !== undefined && (
             <div style={{ marginBottom: 4, fontSize: 12 }}>
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: DIM }}>
-                AI confidence{' '}
+                Provider score{' '}
               </span>
               <span style={{ color: AI_COLOR, fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
-                {(rp.confidence * 100).toFixed(0)}%
+                {(rp.confidence * 100).toFixed(0)} / 100
               </span>
               <span style={{ fontSize: 10, color: DIM, marginLeft: 6 }}>
-                (AI judgment only — not physical mission confidence)
+                (advisory — not a probability of mission success)
               </span>
             </div>
           )}
 
           <div style={{ marginTop: 6 }}>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: DIM, marginBottom: 3 }}>
-              AI reasoning
+              Provider rationale
             </div>
             <div style={{
               fontSize: 12, color: MUTED, lineHeight: 1.5,
@@ -217,44 +233,104 @@ function RankedProductRow({ rp, rank }: { rp: RankedProduct; rank: number }) {
 
 // ─── Decision chain diagram ────────────────────────────────────────────────────
 
-function DecisionChain() {
-  const steps: Array<{ label: string; sub: string; ai?: boolean }> = [
+interface DecisionChainProps {
+  totalProducts: number | null;
+  candidateCount: number | null;
+  providerKind: 'local' | 'external' | 'unknown';
+}
+
+export function DecisionChain({ totalProducts, candidateCount, providerKind }: DecisionChainProps) {
+  const productLabel = totalProducts != null
+    ? `${totalProducts.toLocaleString()} PRODUCTS`
+    : 'PRODUCTS';
+  const productSub = totalProducts != null
+    ? `${totalProducts.toLocaleString()} queued data products`
+    : 'Full queued data product set';
+
+  const candidateLabel = candidateCount != null
+    ? `${candidateCount} CANDIDATES`
+    : 'CANDIDATES';
+  const candidateSub = candidateCount != null
+    ? `Bounded to ${candidateCount} for semantic context`
+    : 'Bounded semantic context';
+
+  const isAiProvider = providerKind === 'external';
+  const isLocal = providerKind === 'local';
+
+  const prioritizationLabel = isLocal
+    ? 'DETERMINISTIC PRIORITIZATION'
+    : 'AI PRIORITIZATION';
+  const prioritizationSub = isLocal
+    ? 'Local deterministic mission triage'
+    : 'Semantic mission reasoning';
+  const prioritizationIsAi = isAiProvider;
+
+  const steps: Array<{ label: string; sub: string; ai?: boolean; local?: boolean }> = [
     { label: 'SPACECRAFT DATA', sub: 'Raw telemetry & products' },
-    { label: '~150 PRODUCTS', sub: 'Full queued data product set' },
-    { label: 'CANDIDATE FILTER', sub: 'Deterministic pre-filter — token-safe' },
-    { label: '≤50 CANDIDATES', sub: 'Bounded for AI context window' },
-    { label: 'AI PRIORITIZATION', sub: 'Semantic mission reasoning', ai: true },
-    { label: 'RANKED DATA', sub: 'AI advisory ordering' },
-    { label: 'SAFETY / FEASIBILITY', sub: 'Deterministic — authoritative' },
-    { label: 'TRANSMISSION PLAN', sub: 'Final approved plan' },
+    { label: productLabel, sub: productSub },
+    { label: 'CANDIDATE FILTER', sub: 'Deterministic bounded screening' },
+    { label: candidateLabel, sub: candidateSub },
+    {
+      label: prioritizationLabel,
+      sub: prioritizationSub,
+      ai: prioritizationIsAi,
+      local: isLocal,
+    },
+    {
+      label: 'RANKED DATA',
+      sub: isLocal ? 'Deterministic advisory ordering' : 'AI advisory ordering',
+    },
+    { label: 'DETERMINISTIC FEASIBILITY', sub: 'Authoritative telecom & mission evaluation' },
+    { label: 'HUMAN DECISION', sub: 'Approve / modify / reject' },
   ];
+
+  const localColor = DETERM_COLOR;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0, fontSize: 10 }}>
-      {steps.map((s, i) => (
-        <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <div style={{
-            width: '100%', padding: '4px 10px', borderRadius: 3, textAlign: 'center',
-            background: s.ai ? 'rgba(124,158,255,0.12)' : 'rgba(255,255,255,0.03)',
-            border: `1px solid ${s.ai ? 'rgba(124,158,255,0.35)' : 'rgba(255,255,255,0.06)'}`,
-            fontFamily: 'var(--font-mono)',
-          }}>
-            <div style={{ fontWeight: 700, fontSize: 9, color: s.ai ? AI_COLOR : MUTED, letterSpacing: '0.07em' }}>
-              {s.label}
-              {s.ai && (
-                <span style={{
-                  marginLeft: 5, background: 'rgba(124,158,255,0.2)', color: AI_COLOR,
-                  borderRadius: 2, padding: '0 4px', fontSize: 8,
-                }}>AI</span>
-              )}
+      {steps.map((s, i) => {
+        const stepColor = s.ai ? AI_COLOR : s.local ? localColor : MUTED;
+        const stepBg = s.ai
+          ? 'rgba(124,158,255,0.12)'
+          : s.local
+          ? 'rgba(53,231,183,0.08)'
+          : 'rgba(255,255,255,0.03)';
+        const stepBorder = s.ai
+          ? 'rgba(124,158,255,0.35)'
+          : s.local
+          ? 'rgba(53,231,183,0.25)'
+          : 'rgba(255,255,255,0.06)';
+        return (
+          <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <div style={{
+              width: '100%', padding: '4px 10px', borderRadius: 3, textAlign: 'center',
+              background: stepBg,
+              border: `1px solid ${stepBorder}`,
+              fontFamily: 'var(--font-mono)',
+            }}>
+              <div style={{ fontWeight: 700, fontSize: 9, color: stepColor, letterSpacing: '0.07em' }}>
+                {s.label}
+                {s.ai && (
+                  <span style={{
+                    marginLeft: 5, background: 'rgba(124,158,255,0.2)', color: AI_COLOR,
+                    borderRadius: 2, padding: '0 4px', fontSize: 8,
+                  }}>AI</span>
+                )}
+                {s.local && (
+                  <span style={{
+                    marginLeft: 5, background: 'rgba(53,231,183,0.12)', color: localColor,
+                    borderRadius: 2, padding: '0 4px', fontSize: 8,
+                  }}>LOCAL</span>
+                )}
+              </div>
+              <div style={{ fontSize: 8, color: DIM, marginTop: 1 }}>{s.sub}</div>
             </div>
-            <div style={{ fontSize: 8, color: DIM, marginTop: 1 }}>{s.sub}</div>
+            {i < steps.length - 1 && (
+              <div style={{ color: DIM, fontSize: 10, lineHeight: '12px' }}>↓</div>
+            )}
           </div>
-          {i < steps.length - 1 && (
-            <div style={{ color: DIM, fontSize: 10, lineHeight: '12px' }}>↓</div>
-          )}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -268,6 +344,8 @@ interface Props {
   /** The provider originally requested by configuration (may differ on fallback). */
   requestedProviderName?: string | null;
   candidateCount: number | null;
+  /** Total products in the active scenario queue (for dynamic decision chain). */
+  totalProducts?: number | null;
   /** Fallback reason for Stage 1 (candidate prioritization). */
   prioritizationFallbackReason?: string | null;
   /** Fallback reason for Stage 2 (plan recommendation). */
@@ -279,6 +357,7 @@ export function AIDecisionPanel({
   providerName,
   requestedProviderName,
   candidateCount,
+  totalProducts,
   prioritizationFallbackReason,
   recommendationFallbackReason,
 }: Props) {
@@ -292,11 +371,29 @@ export function AIDecisionPanel({
   // Stage 2 or both-stage fallback — actual_provider is Local
   const providerSwitchedToLocal = hasStage2Fallback;
 
+  // Determine provider kind for decision chain and labels
+  const providerKind = classifyProvider(providerName);
+  const isLocal = providerKind === 'local';
+  const isExternal = providerKind === 'external';
+
+  // Panel heading changes based on provider kind
+  const panelHeadingIcon = isLocal ? '◆' : '◈';
+  const panelHeading = isLocal
+    ? 'Deterministic Mission Triage'
+    : 'AI Prioritization';
+
+  // Confidence label per provider kind
+  const confidenceLabel = isLocal
+    ? 'HEURISTIC SCORE'
+    : isExternal
+    ? 'AI CONFIDENCE SCORE'
+    : 'ADVISORY SCORE';
+
   return (
     <section className="panel ai-hero">
       {/* Header */}
       <h2>
-        <span style={{ color: AI_COLOR }}>◈</span>&nbsp;AI Prioritization
+        <span style={{ color: isLocal ? DETERM_COLOR : AI_COLOR }}>{panelHeadingIcon}</span>&nbsp;{panelHeading}
         {providerName && (
           <span style={{
             marginLeft: 8, fontSize: 9, fontWeight: 700,
@@ -391,7 +488,7 @@ export function AIDecisionPanel({
           <div style={{ display: 'flex', gap: 16, marginBottom: 10, flexWrap: 'wrap' }}>
             <div>
               <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: DIM, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                AI Candidates
+                Candidates
               </div>
               <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: MUTED }}>
                 {candidateCount ?? prioritization.candidate_count ?? prioritization.ranked_products.length}
@@ -407,10 +504,13 @@ export function AIDecisionPanel({
             </div>
             <div>
               <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: DIM, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                AI Confidence
+                {confidenceLabel}
               </div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: AI_COLOR }}>
-                {(prioritization.confidence * 100).toFixed(0)}%
+              <div
+                style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: isLocal ? DETERM_COLOR : AI_COLOR }}
+                title="Advisory provider score; not a probability of mission success."
+              >
+                {(prioritization.confidence * 100).toFixed(0)} / 100
               </div>
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -423,27 +523,30 @@ export function AIDecisionPanel({
             </div>
           </div>
 
-          {/* AI vs Deterministic label row */}
+          {/* Provider vs Deterministic label row */}
           <div style={{
             display: 'flex', gap: 10, marginBottom: 10, fontSize: 10,
             fontFamily: 'var(--font-mono)', flexWrap: 'wrap',
           }}>
             <span style={{
-              background: 'rgba(124,158,255,0.08)', color: AI_COLOR,
-              border: '1px solid rgba(124,158,255,0.25)', borderRadius: 2, padding: '2px 7px',
+              background: isLocal ? 'rgba(53,231,183,0.06)' : 'rgba(124,158,255,0.08)',
+              color: isLocal ? DETERM_COLOR : AI_COLOR,
+              border: `1px solid ${isLocal ? 'rgba(53,231,183,0.2)' : 'rgba(124,158,255,0.25)'}`,
+              borderRadius: 2, padding: '2px 7px',
             }}>
-              AI CONFIDENCE: {(prioritization.confidence * 100).toFixed(0)}% — semantic judgment
+              {confidenceLabel}: {(prioritization.confidence * 100).toFixed(0)} / 100
+              {isExternal ? ' — uncalibrated model judgment' : isLocal ? ' — deterministic heuristic' : ' — advisory estimate'}
             </span>
             <span style={{
               background: 'rgba(53,231,183,0.06)', color: DETERM_COLOR,
               border: '1px solid rgba(53,231,183,0.2)', borderRadius: 2, padding: '2px 7px',
             }}>
-              RISK / FEASIBILITY: deterministic — authoritative
+              DETERMINISTIC FEASIBILITY: authoritative
             </span>
           </div>
 
           {/* Overall reasoning */}
-          <h3>Overall Reasoning</h3>
+          <h3>{isLocal ? 'Deterministic Reasoning' : 'AI Reasoning'}</h3>
           <p style={{ fontSize: 12, color: MUTED, lineHeight: 1.55, marginBottom: 10 }}>
             {prioritization.overall_reasoning}
           </p>
@@ -469,7 +572,11 @@ export function AIDecisionPanel({
       {showChain && (
         <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
           <h3>Decision Chain</h3>
-          <DecisionChain />
+          <DecisionChain
+            totalProducts={totalProducts ?? null}
+            candidateCount={candidateCount ?? prioritization?.candidate_count ?? null}
+            providerKind={providerKind}
+          />
         </div>
       )}
     </section>
