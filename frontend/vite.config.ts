@@ -15,4 +15,19 @@ export default defineConfig({
       },
     },
   },
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./src/test-setup.ts'],
+    include: ['src/**/*.test.{ts,tsx}'],
+    exclude: [
+      // Legacy pre-Vitest test files: use self-executing patterns, no describe/it blocks.
+      // They validate logic via TypeScript only and are not wired to Vitest.
+      'src/components/__tests__/MissionDecisionPanel.test.ts',
+      'src/components/__tests__/MissionReportPanel.test.ts',
+      'src/components/__tests__/OrbitBackground.test.ts',
+      'src/components/__tests__/TransmissionNarrativePanel.test.ts',
+      'src/components/__tests__/TransmissionOutcomeBanner.test.ts',
+    ],
+  },
 })

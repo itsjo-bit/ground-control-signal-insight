@@ -241,10 +241,10 @@ interface DecisionChainProps {
 
 export function DecisionChain({ totalProducts, candidateCount, providerKind }: DecisionChainProps) {
   const productLabel = totalProducts != null
-    ? `${totalProducts.toLocaleString()} PRODUCTS`
+    ? `${totalProducts.toLocaleString('en-US')} PRODUCTS`
     : 'PRODUCTS';
   const productSub = totalProducts != null
-    ? `${totalProducts.toLocaleString()} queued data products`
+    ? `${totalProducts.toLocaleString('en-US')} queued data products`
     : 'Full queued data product set';
 
   const candidateLabel = candidateCount != null
