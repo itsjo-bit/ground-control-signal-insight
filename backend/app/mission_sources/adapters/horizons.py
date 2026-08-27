@@ -123,11 +123,33 @@ class HorizonsValidationError(HorizonsAdapterError, MissionSourceValidationError
 # Protocol constants  (adapter-owned — NOT configurable by callers)
 # ---------------------------------------------------------------------------
 
+
 _HORIZONS_ENDPOINT: str = "https://ssd.jpl.nasa.gov/api/horizons.api"
 
 _EXPECTED_SIGNATURE_SOURCE: str = "NASA/JPL Horizons API"
-_EXPECTED_SIGNATURE_VERSION: str = "1.3"
 
+# Explicit allow-list of reviewed Horizons API signature versions.
+#
+# Both versions have been deliberately reviewed before being added here.
+# Future versions require the same explicit review before inclusion.
+#
+# - "1.3": Version shown by the official JPL Horizons API documentation
+#   as of 2025 June.
+#
+# - "1.2": Version observed from the official production endpoint during
+#   GCSI's first controlled live capture attempt (Phase 6D-B2).  JPL's own
+#   change log (2022 September) lists this as the introduction of CAL_TYPE.
+#
+# Both versions are accepted because GCSI independently validates every
+# required response element for both: signature source, $$SOE/$$EOE table
+# structure, VEC_TABLE=6 column count, target/center identity headers, epoch
+# match, and geometry domain constraints.  The version string alone does not
+# imply identical full-format compatibility; it only gates acceptance of
+# responses whose explicit structure GCSI has confirmed it can validate.
+#
+# This is NOT a generic "accept any 1.x" or "accept >= 1.2" policy.
+# Adding a new version (e.g. "1.4" or "2.0") requires deliberate review.
+_SUPPORTED_SIGNATURE_VERSIONS: frozenset[str] = frozenset({"1.2", "1.3"})
 # Earth geocenter CENTER code — fixed for Phase 6D-A.
 _EARTH_CENTER: str = "500@399"
 
@@ -696,7 +718,7 @@ def _validate_horizons_raw_response(
         )
 
     sig_version = signature.get("version")
-    if sig_version != _EXPECTED_SIGNATURE_VERSION:
+    if sig_version not in _SUPPORTED_SIGNATURE_VERSIONS:
         raise HorizonsValidationError(
             "JPL Horizons response has unexpected API version in signature."
         )

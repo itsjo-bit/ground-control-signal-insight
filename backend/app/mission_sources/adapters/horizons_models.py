@@ -52,9 +52,12 @@ from backend.app.provenance.models import ProvenanceRecord
 # Accepted Earth geocenter Horizons CENTER code.
 _EARTH_CENTER: str = "500@399"
 
-# Fixed API source/version strings required by Phase 6D-A.
+# Fixed API source string required by Phase 6D-A.
 _HORIZONS_API_SOURCE: str = "NASA/JPL Horizons API"
-_HORIZONS_API_VERSION: str = "1.3"
+
+# Explicit allow-list of accepted API versions, mirroring the adapter policy.
+# Must be kept in sync with _SUPPORTED_SIGNATURE_VERSIONS in horizons.py.
+_HORIZONS_API_VERSIONS: frozenset[str] = frozenset({"1.2", "1.3"})
 
 # SPK numeric-only pattern (optional leading minus, then digits only).
 _SPK_RE = re.compile(r"^-?\d+$")
@@ -225,9 +228,9 @@ class HorizonsGeometry(BaseModel):
     @field_validator("api_version", mode="after")
     @classmethod
     def _validate_api_version(cls, v: str) -> str:
-        if v != _HORIZONS_API_VERSION:
+        if v not in _HORIZONS_API_VERSIONS:
             raise ValueError(
-                f"api_version must be {_HORIZONS_API_VERSION!r}; got {v!r}."
+                f"api_version must be one of {sorted(_HORIZONS_API_VERSIONS)!r}; got {v!r}."
             )
         return v
 

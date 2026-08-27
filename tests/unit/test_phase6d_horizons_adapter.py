@@ -7,6 +7,29 @@ Uses httpx.MockTransport exclusively — zero live JPL/NASA network calls.
 Test cases
 ----------
 REQUEST MODEL:
+PHASE 6D-B2A — API VERSION COMPATIBILITY (1.2 / 1.3):
+ B2A-1.  signature version "1.2" accepted
+ B2A-2.  signature version "1.3" remains accepted
+ B2A-3.  geometry.api_version preserves "1.2"
+ B2A-4.  geometry.api_version preserves "1.3"
+ B2A-5.  provenance.source_version preserves "1.2"
+ B2A-6.  provenance.source_version preserves "1.3"
+ B2A-7.  version "1.1" rejected
+ B2A-8.  version "1.4" rejected
+ B2A-9.  version "2.0" rejected
+ B2A-10. empty version rejected
+ B2A-11. missing version rejected
+ B2A-12. non-string version rejected cleanly
+ B2A-13. source must still exactly equal "NASA/JPL Horizons API"
+ B2A-14. 1.2 response still requires valid target identity
+ B2A-15. 1.2 response still requires center 399
+ B2A-16. 1.2 response still requires matching epoch
+ B2A-17. 1.2 response still requires exactly one VEC_TABLE=6 row
+ B2A-18. 1.2 response with Horizons error field is rejected
+ B2A-19. malformed 1.2 geometry still rejected
+ B2A-20. 1.2 and 1.3 equivalent raw responses produce different content_sha256 and provenance_id
+
+REQUEST MODEL:
  1.  valid Juno -61 target accepted
  2.  positive numeric target accepted
  3.  target name rejected
@@ -134,6 +157,7 @@ from backend.app.mission_sources.adapters.horizons import (
     _validate_horizons_raw_response,
     _HORIZONS_ENDPOINT,
     _MAX_RESPONSE_BYTES,
+    _SUPPORTED_SIGNATURE_VERSIONS,
 )
 from backend.app.mission_sources.adapters.horizons_models import (
     HorizonsGeometry,
@@ -1886,3 +1910,303 @@ class TestIdentityValidation:
         )
         result = self._fetch_with_result_text(result_text, target="-61")
         assert result.geometry.range_km > 0
+
+
+# ---------------------------------------------------------------------------
+# PHASE 6D-B2A — API VERSION COMPATIBILITY (1.2 / 1.3)
+# ---------------------------------------------------------------------------
+
+# Mocked 1.2 response helper.
+# The 1.2 fixture is a representative mock constructed from the same structural
+# evidence confirmed during Phase 6D-B2's live capture attempt: HTTP 200,
+# signature.source = "NASA/JPL Horizons API", signature.version = "1.2",
+# $$SOE/$$EOE present, VEC_TABLE=6 (5-column) data row, target/center identity
+# headers present.  It is NOT the raw payload returned by JPL; the failed live
+# capture was not preserved.
+
+
+def _make_horizons_response_v12(
+    *,
+    result_text: Optional[str] = None,
+    include_error: bool = False,
+    extra_fields: Optional[dict] = None,
+) -> bytes:
+    """Build a representative mock Horizons JSON response with version '1.2'."""
+    if result_text is None:
+        result_text = _VALID_RESULT_TEXT
+    payload: dict = {
+        "signature": {
+            "source": "NASA/JPL Horizons API",
+            "version": "1.2",
+        },
+    }
+    if include_error:
+        payload["error"] = "No ephemeris data for target body"
+    if result_text is not None:
+        payload["result"] = result_text
+    if extra_fields:
+        payload.update(extra_fields)
+    return json.dumps(payload).encode("utf-8")
+
+
+class TestApiVersionCompatibility:
+    """Phase 6D-B2A tests B2A-1 through B2A-20.
+
+    Verifies explicit dual support for Horizons API signature versions 1.2 and
+    1.3.  All semantic validation rules remain unchanged for both versions.
+
+    Mocked 1.2 responses are representative constructs based on structural
+    evidence observed during Phase 6D-B2 live capture attempt #1.  They are
+    NOT copies of the failed live payload, which was not preserved.
+    """
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _fetch_v12(
+        self,
+        result_text: Optional[str] = None,
+        target: str = _JUNO_ID,
+    ) -> HorizonsGeometryResult:
+        """Fetch using a mocked 1.2 response."""
+        content = _make_horizons_response_v12(result_text=result_text)
+        adapter = _make_adapter(content=content)
+        return adapter.fetch(_make_request(target=target))
+
+    def _fetch_v13(
+        self,
+        result_text: Optional[str] = None,
+        target: str = _JUNO_ID,
+    ) -> HorizonsGeometryResult:
+        """Fetch using a mocked 1.3 response (existing behavior)."""
+        content = _make_horizons_response(result_text=result_text)
+        adapter = _make_adapter(content=content)
+        return adapter.fetch(_make_request(target=target))
+
+    def _expect_version_error(self, version_value) -> HorizonsValidationError:
+        """Build a response with the given version and expect validation failure."""
+        if version_value is None:
+            sig = {"source": "NASA/JPL Horizons API"}  # version key absent
+        else:
+            sig = {"source": "NASA/JPL Horizons API", "version": version_value}
+        content = _make_horizons_response(signature=sig)
+        adapter = _make_adapter(content=content)
+        with pytest.raises(HorizonsValidationError) as exc_info:
+            adapter.fetch(_make_request())
+        return exc_info.value
+
+    # ------------------------------------------------------------------
+    # Acceptance tests (B2A-1, B2A-2)
+    # ------------------------------------------------------------------
+
+    def test_b2a_01_version_12_accepted(self):
+        """B2A-1: signature version '1.2' is accepted."""
+        result = self._fetch_v12()
+        assert result.geometry.range_km > 0
+
+    def test_b2a_02_version_13_still_accepted(self):
+        """B2A-2: signature version '1.3' remains accepted."""
+        result = self._fetch_v13()
+        assert result.geometry.range_km > 0
+
+    # ------------------------------------------------------------------
+    # api_version provenance (B2A-3, B2A-4)
+    # ------------------------------------------------------------------
+
+    def test_b2a_03_geometry_api_version_preserves_12(self):
+        """B2A-3: geometry.api_version preserves '1.2'."""
+        result = self._fetch_v12()
+        assert result.geometry.api_version == "1.2"
+
+    def test_b2a_04_geometry_api_version_preserves_13(self):
+        """B2A-4: geometry.api_version preserves '1.3'."""
+        result = self._fetch_v13()
+        assert result.geometry.api_version == "1.3"
+
+    # ------------------------------------------------------------------
+    # source_version provenance (B2A-5, B2A-6)
+    # ------------------------------------------------------------------
+
+    def test_b2a_05_provenance_source_version_preserves_12(self):
+        """B2A-5: provenance.source_version preserves '1.2'."""
+        result = self._fetch_v12()
+        assert result.provenance.source_version == "1.2"
+
+    def test_b2a_06_provenance_source_version_preserves_13(self):
+        """B2A-6: provenance.source_version preserves '1.3'."""
+        result = self._fetch_v13()
+        assert result.provenance.source_version == "1.3"
+
+    # ------------------------------------------------------------------
+    # Version rejection (B2A-7 through B2A-12)
+    # ------------------------------------------------------------------
+
+    def test_b2a_07_version_11_rejected(self):
+        """B2A-7: version '1.1' rejected."""
+        self._expect_version_error("1.1")
+
+    def test_b2a_08_version_14_rejected(self):
+        """B2A-8: version '1.4' rejected."""
+        self._expect_version_error("1.4")
+
+    def test_b2a_09_version_20_rejected(self):
+        """B2A-9: version '2.0' rejected."""
+        self._expect_version_error("2.0")
+
+    def test_b2a_10_empty_version_rejected(self):
+        """B2A-10: empty string version rejected."""
+        self._expect_version_error("")
+
+    def test_b2a_11_missing_version_key_rejected(self):
+        """B2A-11: missing version key rejected."""
+        self._expect_version_error(None)
+
+    def test_b2a_12_non_string_version_rejected_cleanly(self):
+        """B2A-12: non-string version (integer 1) rejected as HorizonsValidationError."""
+        err = self._expect_version_error(1)
+        # Must be HorizonsValidationError, not TypeError or AttributeError.
+        assert isinstance(err, HorizonsValidationError)
+
+    # ------------------------------------------------------------------
+    # Source string unchanged (B2A-13)
+    # ------------------------------------------------------------------
+
+    def test_b2a_13_source_must_still_be_exact(self):
+        """B2A-13: source 'NASA/JPL Horizons API' must still match exactly."""
+        sig = {"source": "NASA JPL Horizons", "version": "1.2"}
+        content = _make_horizons_response(signature=sig)
+        adapter = _make_adapter(content=content)
+        with pytest.raises(HorizonsValidationError):
+            adapter.fetch(_make_request())
+
+    # ------------------------------------------------------------------
+    # Full semantic validation still enforced on 1.2 (B2A-14 through B2A-19)
+    # ------------------------------------------------------------------
+
+    def test_b2a_14_12_requires_valid_target_identity(self):
+        """B2A-14: 1.2 response still requires valid matching target identity."""
+        # Response says Mars (499) but request is for Juno (-61)
+        result_text = (
+            "JPL/HORIZONS header\n"
+            "Target body name: Mars (499)\n"
+            "Center body name: Earth (399)\n"
+            "$$SOE\n"
+            + _VALID_DATA_ROW
+            + "\n$$EOE\n"
+        )
+        content = _make_horizons_response_v12(result_text=result_text)
+        adapter = _make_adapter(content=content)
+        with pytest.raises(HorizonsValidationError):
+            adapter.fetch(_make_request(target=_JUNO_ID))
+
+    def test_b2a_15_12_requires_center_399(self):
+        """B2A-15: 1.2 response still requires center body ID 399."""
+        result_text = (
+            "JPL/HORIZONS header\n"
+            "Target body name: Juno (spacecraft) (-61)\n"
+            "Center body name: Sun (10)\n"
+            "$$SOE\n"
+            + _VALID_DATA_ROW
+            + "\n$$EOE\n"
+        )
+        content = _make_horizons_response_v12(result_text=result_text)
+        adapter = _make_adapter(content=content)
+        with pytest.raises(HorizonsValidationError):
+            adapter.fetch(_make_request())
+
+    def test_b2a_16_12_requires_matching_epoch(self):
+        """B2A-16: 1.2 response still requires the returned epoch to match the request."""
+        # Data row epoch is 2026-Aug-27 but request epoch is 2026-Aug-27 (matches) —
+        # use a different date to trigger the mismatch:
+        wrong_epoch_row = (
+            " 2460934.500000000, A.D. 2026-Aug-28 00:00:00.000000,"
+            f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
+        )
+        result_text = (
+            "JPL/HORIZONS header\n"
+            + _JUNO_IDENTITY_HEADERS
+            + "$$SOE\n"
+            + wrong_epoch_row
+            + "\n$$EOE\n"
+        )
+        content = _make_horizons_response_v12(result_text=result_text)
+        adapter = _make_adapter(content=content)
+        with pytest.raises(HorizonsValidationError):
+            adapter.fetch(_make_request())
+
+    def test_b2a_17_12_requires_exactly_one_vec_table6_row(self):
+        """B2A-17: 1.2 response still requires exactly one VEC_TABLE=6 data row."""
+        multi_rows = (
+            "JPL/HORIZONS header\n"
+            + _JUNO_IDENTITY_HEADERS
+            + "$$SOE\n"
+            + _VALID_DATA_ROW + "\n"
+            + _VALID_DATA_ROW + "\n"
+            + "$$EOE\n"
+        )
+        content = _make_horizons_response_v12(result_text=multi_rows)
+        adapter = _make_adapter(content=content)
+        with pytest.raises(HorizonsValidationError):
+            adapter.fetch(_make_request())
+
+    def test_b2a_18_12_error_field_rejected(self):
+        """B2A-18: 1.2 response with Horizons error field is rejected."""
+        content = _make_horizons_response_v12(include_error=True, result_text=None)
+        adapter = _make_adapter(content=content)
+        with pytest.raises(HorizonsValidationError):
+            adapter.fetch(_make_request())
+
+    def test_b2a_19_12_malformed_geometry_rejected(self):
+        """B2A-19: malformed 1.2 geometry (non-numeric range) still rejected."""
+        bad_row = _VALID_DATA_ROW.replace(
+            f"  {_RG_VALUE:.15E}", "  NOT_A_NUMBER"
+        )
+        result_text = (
+            _JUNO_IDENTITY_HEADERS
+            + "$$SOE\n"
+            + bad_row
+            + "\n$$EOE\n"
+        )
+        content = _make_horizons_response_v12(result_text=result_text)
+        adapter = _make_adapter(content=content)
+        with pytest.raises(HorizonsValidationError):
+            adapter.fetch(_make_request())
+
+    # ------------------------------------------------------------------
+    # Provenance identity differentiation (B2A-20)
+    # ------------------------------------------------------------------
+
+    def test_b2a_20_12_and_13_produce_different_sha_and_provenance_id(self):
+        """B2A-20: 1.2 and 1.3 responses with equivalent result text produce
+        different content_sha256 and provenance_id.
+
+        The raw bytes differ because signature.version differs, so SHA-256
+        of the raw bytes naturally produces different values.  The
+        provenance_id formula includes content_sha256, so it also differs.
+        """
+        raw_12 = _make_horizons_response_v12()
+        raw_13 = _make_horizons_response()
+
+        r12 = _make_adapter(content=raw_12).fetch(_make_request())
+        r13 = _make_adapter(content=raw_13).fetch(_make_request())
+
+        # content_sha256 must differ because the raw bytes differ.
+        assert r12.provenance.content_sha256 != r13.provenance.content_sha256
+
+        # provenance_id also differs (it includes content_sha256).
+        assert r12.provenance.provenance_id != r13.provenance.provenance_id
+
+    # ------------------------------------------------------------------
+    # Allow-list introspection
+    # ------------------------------------------------------------------
+
+    def test_b2a_allow_list_is_frozenset(self):
+        """_SUPPORTED_SIGNATURE_VERSIONS is a frozenset containing exactly 1.2 and 1.3."""
+        assert isinstance(_SUPPORTED_SIGNATURE_VERSIONS, frozenset)
+        assert "1.2" in _SUPPORTED_SIGNATURE_VERSIONS
+        assert "1.3" in _SUPPORTED_SIGNATURE_VERSIONS
+        # Ensure it doesn't accidentally contain other versions.
+        assert "1.1" not in _SUPPORTED_SIGNATURE_VERSIONS
+        assert "1.4" not in _SUPPORTED_SIGNATURE_VERSIONS
+        assert "2.0" not in _SUPPORTED_SIGNATURE_VERSIONS

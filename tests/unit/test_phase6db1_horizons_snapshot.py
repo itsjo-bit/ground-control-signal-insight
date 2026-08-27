@@ -1487,3 +1487,90 @@ class TestMkstempErrorNormalization:
 
         # Original file must still be intact
         assert snap_path.read_bytes() == original_content
+
+
+# ---------------------------------------------------------------------------
+# PHASE 6D-B2A — SNAPSHOT 1.2 ROUND-TRIP (tests B2A-21 through B2A-23)
+# ---------------------------------------------------------------------------
+
+
+def _make_horizons_response_bytes_v12(
+    result_text: Optional[str] = None,
+) -> bytes:
+    """Build a representative mock Horizons JSON response with version '1.2'."""
+    if result_text is None:
+        result_text = _VALID_RESULT_TEXT
+    payload = {
+        "signature": {
+            "source": "NASA/JPL Horizons API",
+            "version": "1.2",
+        },
+        "result": result_text,
+    }
+    return json.dumps(payload).encode("utf-8")
+
+
+class TestSnapshotVersion12RoundTrip:
+    """Phase 6D-B2A tests B2A-21 through B2A-23.
+
+    Verifies that a mocked validated 1.2 capture round-trips correctly through
+    the snapshot store and that the stored source_version is preserved as '1.2'.
+
+    Mocked 1.2 responses are representative constructs based on structural
+    evidence observed during Phase 6D-B2 live capture attempt #1.
+    """
+
+    def _make_v12_capture(self) -> HorizonsGeometryCapture:
+        content = _make_horizons_response_bytes_v12()
+        transport = _make_mock_transport(content=content)
+        client = httpx.Client(transport=transport)
+        adapter = HorizonsAdapter(client=client, clock=_fixed_clock)
+        return adapter.fetch_capture(_make_request())
+
+    def test_b2a_21_snapshot_round_trips_v12_capture(self, tmp_path):
+        """B2A-21: snapshot machinery can write and reload a mocked validated 1.2 capture."""
+        capture = self._make_v12_capture()
+
+        # Verify capture has 1.2 version before writing.
+        assert capture.result.geometry.api_version == "1.2"
+        assert capture.result.provenance.source_version == "1.2"
+
+        snap_path = tmp_path / "juno_v12_snap.json"
+        HorizonsSnapshotStore.write(capture, snap_path)
+
+        loaded = HorizonsSnapshotStore.load(snap_path)
+
+        # Equality checks
+        assert loaded.request == capture.result.request
+        assert loaded.geometry == capture.result.geometry
+        assert loaded.provenance == capture.result.provenance
+
+    def test_b2a_22_snapshot_loader_preserves_source_version_12(self, tmp_path):
+        """B2A-22: snapshot loader preserves source_version '1.2' after reload."""
+        capture = self._make_v12_capture()
+        snap_path = tmp_path / "juno_v12_snap.json"
+        HorizonsSnapshotStore.write(capture, snap_path)
+        loaded = HorizonsSnapshotStore.load(snap_path)
+        assert loaded.provenance.source_version == "1.2"
+        assert loaded.geometry.api_version == "1.2"
+
+    def test_b2a_23_existing_v13_snapshot_tests_still_pass(self, tmp_path):
+        """B2A-23: existing 1.3 snapshot round-trip still works after the policy change."""
+        content = _make_horizons_response_bytes()
+        transport = _make_mock_transport(content=content)
+        client = httpx.Client(transport=transport)
+        adapter = HorizonsAdapter(client=client, clock=_fixed_clock)
+        capture = adapter.fetch_capture(_make_request())
+
+        assert capture.result.geometry.api_version == "1.3"
+        assert capture.result.provenance.source_version == "1.3"
+
+        snap_path = tmp_path / "juno_v13_snap.json"
+        HorizonsSnapshotStore.write(capture, snap_path)
+        loaded = HorizonsSnapshotStore.load(snap_path)
+
+        assert loaded.geometry.api_version == "1.3"
+        assert loaded.provenance.source_version == "1.3"
+        assert loaded.request == capture.result.request
+        assert loaded.geometry == capture.result.geometry
+        assert loaded.provenance == capture.result.provenance
