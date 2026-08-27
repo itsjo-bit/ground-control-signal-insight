@@ -10,6 +10,7 @@
  * - workspaceMode stored in localStorage
  */
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { classifyProvider, buildProviderBadgeLabel } from './utils/providerClassification';
 import {
   getState,
   getQueue,
@@ -342,13 +343,15 @@ export default function MissionControl() {
   const [manualOrder, setManualOrder] = useState<string[]>([]);
   const manualSelectedIds = useMemo(() => new Set(manualOrder), [manualOrder]);
 
-  // ── Phase 5.1D: Application-level execution coordinator ──────────────────
-  // This state lives at MissionControl level so it survives navigation.
-  // Each executionId maps to AT MOST ONE backend approval request (ever).
-  //
-  // executionPromiseRef is a Map<id, Promise>. Once an entry exists for an id,
-  // NO second dispatch is ever made for that id.
-  // Navigation / remount / StrictMode double-effects cannot call /approve again.
+  // ── Phase 5.1E: Application-level execution coordinator ──────────────────
+  // INVARIANTS:
+  //   E1 One operator authorization creates exactly one executionId.
+  //   E2 Exactly one backend approval request exists per executionId.
+  //   E3 The approval Promise is registered BEFORE awaiting its resolution.
+  //   E4 The approval request is dispatched at authorization time (not from a child timer).
+  //   E5 Unmounting TransmissionSequencePanel cannot cancel/prevent an already-dispatched execution.
+  //   E7 Browser backgrounding cannot postpone first backend dispatch.
+  //   E8 The authoritative ApproveResponse remains available after navigation/remount.
 
   /** Monotonic counter to generate unique execution IDs. */
   const executionCounter = useRef(0);
@@ -356,8 +359,37 @@ export default function MissionControl() {
   /** Current execution ID. Null when idle. */
   const [executionId, setExecutionId] = useState<string | null>(null);
 
-  /** The Promise for the in-flight or completed approval request. Keyed by executionId. */
+  /**
+   * Wall-clock ms at which operator authorized the current execution.
+   * Stored for potential presentation use (e.g., showing time since authorization).
+   * Currently not displayed in UI but maintained for future phase-timeline anchoring.
+   */
+  const [_authorizedAtMs, setAuthorizedAtMs] = useState<number | null>(null);
+
+  /**
+   * Frozen snapshot of the plan/mode chosen at authorization time.
+   * These cannot drift even if later UI state changes recommendation/manualOrder.
+   * (INVARIANT E14: execution snapshot immutability)
+   */
+  const executionSnapshotRef = useRef<{
+    plan: CandidatePlan;
+    mode: 'ai' | 'custom';
+    recommendedPlanId: string | null;
+    scenarioPath: string | null;
+  } | null>(null);
+
+  /**
+   * The Promise for the in-flight or completed approval request. Keyed by executionId.
+   * Once an entry exists, NO second dispatch is ever made for that id.
+   */
   const executionPromiseRef = useRef<Map<string, Promise<ApproveResponse>>>(new Map());
+
+  /**
+   * The resolved approval result keyed by executionId.
+   * Populated immediately when the Promise resolves, regardless of panel mount state.
+   * Used to deliver result back to UI even after navigation/remount.
+   */
+  const executionResultRef = useRef<Map<string, ApproveResponse>>(new Map());
 
   /** Wall-clock ms at which the current execution's visual playback began. */
   const [playbackStartedAtMs, setPlaybackStartedAtMs] = useState<number | null>(null);
@@ -365,12 +397,15 @@ export default function MissionControl() {
   /** Current active 3D transmission pulse — driven by authoritative attempt_events. */
   const [activePulse, setActivePulse] = useState<import('./components/scene/CommunicationLink').ActivePulse | null>(null);
 
+  /** Current choreography phase — drives 3D pulse direction from above navigation. */
+  const [choreographyPhase, setChoreographyPhase] = useState<import('./components/TransmissionSequencePanel').TransmissionChoreographyPhase>('plan_uplink');
+
   // ── Phase 4.2F4: Transmission choreography ────────────────────────────────
   /** When true, TransmissionSequencePanel is active in TransmissionSection. */
   const [choreographyActive, setChoreographyActive] = useState<boolean>(false);
-  /** Plan to execute when backend approval is called during choreography. */
+  /** Frozen plan snapshot for the active execution (set at authorization time). */
   const [pendingExecutionPlan, setPendingExecutionPlan] = useState<CandidatePlan | null>(null);
-  /** Whether to use /approve (ai) or /approve/custom (manual/modified). */
+  /** Whether to use /approve (ai) or /approve/custom (manual/modified). Frozen at authorization. */
   const [pendingExecutionMode, setPendingExecutionMode] = useState<'ai' | 'custom'>('custom');
 
   // ── Phase 4.2F: Experience manifest ───────────────────────────────────────
@@ -451,6 +486,18 @@ export default function MissionControl() {
       setManualAssessmentLoading(false);
     }
   }, [manualOrder, addSessionEvent]);
+
+  // ── Phase 5.1E: Assessment invalidation effect (replaces setTimeout side-effect) ──
+  // Runs when manualOrder changes. Marks assessment stale if it exists.
+  // This is a clean useEffect — no setState-inside-setState, no setTimeout.
+  useEffect(() => {
+    if (manualAssessment !== null) {
+      setManualAssessmentStale(true);
+      setManualAssessmentOrderFingerprint(manualOrder.join(','));
+    }
+  // manualAssessment is intentionally not in deps — we only want to react to manualOrder changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manualOrder]);
 
   // ── V3.4: Load mission data — NO AI ───────────────────────────────────────
   const loadMissionData = useCallback(async (markStale = false) => {
@@ -552,11 +599,15 @@ export default function MissionControl() {
     setAiRecommendationRejected(false);
     setChoreographyActive(false);
     setPendingExecutionPlan(null);
+    setChoreographyPhase('plan_uplink');
     // Reset execution coordinator
     setExecutionId(null);
+    setAuthorizedAtMs(null);
     setPlaybackStartedAtMs(null);
     setActivePulse(null);
     executionPromiseRef.current.clear();
+    executionResultRef.current.clear();
+    executionSnapshotRef.current = null;
     setSessionEvents([]);
     aiRequestInFlight.current = false;
     // V3.5: workspace mode is NOT reset on mission reset
@@ -610,11 +661,15 @@ export default function MissionControl() {
     setAiRecommendationRejected(false);
     setChoreographyActive(false);
     setPendingExecutionPlan(null);
+    setChoreographyPhase('plan_uplink');
     // Reset execution coordinator
     setExecutionId(null);
+    setAuthorizedAtMs(null);
     setPlaybackStartedAtMs(null);
     setActivePulse(null);
     executionPromiseRef.current.clear();
+    executionResultRef.current.clear();
+    executionSnapshotRef.current = null;
     // Clear scenario-specific experience state on switch
     setExperienceManifest(null);
     setExperienceAvailable(false);
@@ -742,27 +797,17 @@ export default function MissionControl() {
   /**
    * Single, StrictMode-safe toggle handler.
    * manualOrder is mutated atomically — no nested setState calls.
+   * Assessment invalidation is handled via a separate useEffect (not setTimeout).
    */
   function handleToggleManualSelect(productId: string) {
     setManualOrder((prev) => {
-      let next: string[];
       if (prev.includes(productId)) {
         // Deselect: remove ALL occurrences (guard against prior corruption)
-        next = prev.filter((id) => id !== productId);
+        return prev.filter((id) => id !== productId);
       } else {
-        // Select: append — but only if not already present (idempotent)
-        if (prev.includes(productId)) return prev;
-        next = [...prev, productId];
+        // Select: append — idempotent guard
+        return [...prev, productId];
       }
-      // Invalidate assessment when selection changes (side-effect via timeout
-      // to avoid setState-inside-setState; MissionControl is mounted at all times)
-      if (manualAssessment !== null) {
-        setTimeout(() => {
-          setManualAssessmentStale(true);
-          setManualAssessmentOrderFingerprint(next.join(','));
-        }, 0);
-      }
-      return next;
     });
   }
 
@@ -821,15 +866,39 @@ export default function MissionControl() {
       : localPlan;
 
     const newId = `exec-${++executionCounter.current}`;
+    const nowMs = Date.now();
+
+    // ── INVARIANT E4: Dispatch approval immediately at authorization time ──
+    // This happens BEFORE any presentation timer fires. The backend is called
+    // as soon as the operator clicks TRANSMIT SELECTED — not when CONTACT_WAIT
+    // presentation stage ends. Presentation choreography observes this execution.
+    const promise = approveCustomPlan(planToExecute, 'operator transmission');
+    executionPromiseRef.current.set(newId, promise);
+    // Resolve result into ref for navigation-resilient retrieval (INVARIANT E8)
+    promise.then(
+      (result) => { executionResultRef.current.set(newId, result); },
+      () => { /* error handled in TransmissionSequencePanel */ }
+    );
+
+    // Freeze execution snapshot (INVARIANT E14)
+    executionSnapshotRef.current = {
+      plan: planToExecute,
+      mode: 'custom',
+      recommendedPlanId: null,
+      scenarioPath: activeScenarioPath,
+    };
+
     setExecutionId(newId);
+    setAuthorizedAtMs(nowMs);
     setPlaybackStartedAtMs(null);
     setPendingExecutionPlan(planToExecute);
     setPendingExecutionMode('custom');
+    setChoreographyPhase('plan_uplink');
     setChoreographyActive(true);
     setApprovalPhase('transmitting');
     addSessionEvent('plan_uplink_started', `manual:${manualOrder.length} products`);
     setActiveSection('transmission');
-  }, [manualAssessment, manualAssessmentStale, manualOrder, rawDataProducts, addSessionEvent]);
+  }, [manualAssessment, manualAssessmentStale, manualOrder, rawDataProducts, addSessionEvent, activeScenarioPath]);
 
   // ── Derived values ─────────────────────────────────────────────────────────
 
@@ -848,20 +917,43 @@ export default function MissionControl() {
   // These are placed after recPlan to avoid forward-reference.
   const [aiRecommendationRejected, setAiRecommendationRejected] = useState<boolean>(false);
 
-  /** Approve: start choreography with AI plan. Creates a new executionId and enters choreography. */
+  /**
+   * Approve: start choreography with AI plan.
+   * INVARIANT E4: approval is dispatched IMMEDIATELY at authorization — not from a presentation timer.
+   */
   const handleApproveAiPlan = useCallback(() => {
     if (!recPlan) return;
     const newId = `exec-${++executionCounter.current}`;
+    const nowMs = Date.now();
+
+    // ── INVARIANT E4: Dispatch approval immediately at authorization time ──
+    const promise = approvePlan(recommendation!.recommended_plan_id, recPlan);
+    executionPromiseRef.current.set(newId, promise);
+    promise.then(
+      (result) => { executionResultRef.current.set(newId, result); },
+      () => { /* error handled in TransmissionSequencePanel */ }
+    );
+
+    // Freeze execution snapshot (INVARIANT E14)
+    executionSnapshotRef.current = {
+      plan: recPlan,
+      mode: 'ai',
+      recommendedPlanId: recommendation!.recommended_plan_id,
+      scenarioPath: activeScenarioPath,
+    };
+
     setExecutionId(newId);
+    setAuthorizedAtMs(nowMs);
     setPlaybackStartedAtMs(null);
     setAiRecommendationRejected(false);
     setPendingExecutionPlan(recPlan);
     setPendingExecutionMode('ai');
+    setChoreographyPhase('plan_uplink');
     setChoreographyActive(true);
     setApprovalPhase('transmitting');
     addSessionEvent('recommendation_approved', `plan=${recPlan.plan_id}`);
     setActiveSection('transmission');
-  }, [recPlan, addSessionEvent]);
+  }, [recPlan, recommendation, addSessionEvent, activeScenarioPath]);
 
   /** Modify: seed manual mode with AI plan packet IDs, switch to manual planning. */
   const handleModifyAiPlan = useCallback(() => {
@@ -882,24 +974,25 @@ export default function MissionControl() {
   }, [addSessionEvent]);
 
   /**
-   * Execute the actual backend approval during choreography.
-   * Called by TransmissionSequencePanel when contact is acquired.
+   * Return the execution Promise for a given executionId.
+   * Called by TransmissionSequencePanel to await the result.
    *
-   * SINGLE-SHOT GUARANTEE:
-   * For a given executionId, this function dispatches AT MOST ONE backend request.
-   * If a Promise already exists in executionPromiseRef for this executionId,
-   * the existing Promise is returned — the API is NOT called again.
-   * This means navigation, remount, StrictMode double-effects, and rapid clicks
-   * all resolve to the same single backend call.
+   * Phase 5.1E: The approval Promise was already dispatched at authorization time
+   * (in handleManualTransmit / handleApproveAiPlan). This function ONLY returns it.
+   * No new dispatch occurs here — the entry always exists when this is called.
+   *
+   * INVARIANT E2: one backend call per executionId.
+   * INVARIANT E4: dispatch happens at authorization, not from a presentation timer.
    */
   const handleExecuteApproval = useCallback(async (activeExecutionId: string): Promise<ApproveResponse> => {
     const map = executionPromiseRef.current;
-    // Return existing promise if already dispatched for this id
     if (map.has(activeExecutionId)) {
       return map.get(activeExecutionId)!;
     }
-    if (!pendingExecutionPlan) throw new Error('No pending execution plan');
-    // Create and store the promise BEFORE awaiting — this is the guard
+    // Fallback: should never reach here with the new architecture.
+    // If somehow the promise is missing (e.g. extreme edge case), create a one-shot
+    // rather than silently doing nothing.
+    if (!pendingExecutionPlan) throw new Error('No pending execution plan (execution coordinator missing promise)');
     const promise = (pendingExecutionMode === 'ai' && recommendation)
       ? approvePlan(recommendation.recommended_plan_id, pendingExecutionPlan)
       : approveCustomPlan(pendingExecutionPlan, 'operator transmission');
@@ -1034,33 +1127,39 @@ export default function MissionControl() {
 
         {/* V3.4: AI lifecycle badge — provider-aware labeling */}
         {aiLifecycle !== 'standby' && ((): React.ReactNode => {
-          // Determine if the actual provider is local/deterministic
-          const ap = (aiActualProvider ?? aiProvider ?? '').toLowerCase();
-          const isLocalProvider = ap.includes('local') || ap.includes('deterministic') || ap.includes('rule');
-          const providerLabel = aiLifecycle === 'analyzing' ? 'ANALYZING'
-            : aiLifecycle === 'ready' ? (aiProvider?.toUpperCase() ?? 'READY')
-            : aiLifecycle === 'error' ? 'FAILED'
-            : 'STALE';
-          // Local fallback: show TRIAGE · LOCAL instead of AI · Local
-          const badgePrefix = isLocalProvider && (aiLifecycle === 'ready' || aiLifecycle === 'stale') ? 'TRIAGE' : 'AI';
-          const badgeLabel = `${badgePrefix} · ${providerLabel}`;
+          // Use shared provider classifier (Phase 5.1E — one authority for provider labeling)
+          const providerClass = classifyProvider(aiActualProvider ?? aiProvider);
+          const badgeLabel = buildProviderBadgeLabel(aiActualProvider ?? aiProvider, aiLifecycle);
+          const isLocal = providerClass.kind === 'local_deterministic';
+          const isUnknown = providerClass.kind === 'unknown';
           const isReady = aiLifecycle === 'ready';
           const bgColor = aiLifecycle === 'analyzing' ? 'rgba(76,141,255,0.07)' :
-                          isReady ? (isLocalProvider ? 'rgba(245,158,11,0.07)' : 'rgba(52,211,153,0.07)') :
-                          aiLifecycle === 'error' ? 'rgba(248,113,113,0.07)' : 'rgba(245,158,11,0.07)';
+                          aiLifecycle === 'error' ? 'rgba(248,113,113,0.07)' :
+                          isLocal ? 'rgba(245,158,11,0.07)' :
+                          isUnknown ? 'rgba(147,160,180,0.07)' :
+                          isReady ? 'rgba(52,211,153,0.07)' : 'rgba(245,158,11,0.07)';
           const fgColor = aiLifecycle === 'analyzing' ? '#6EA8FF' :
-                          isReady ? (isLocalProvider ? '#f59e0b' : '#34d399') :
-                          aiLifecycle === 'error' ? '#f87171' : '#f59e0b';
+                          aiLifecycle === 'error' ? '#f87171' :
+                          isLocal ? '#f59e0b' :
+                          isUnknown ? 'rgba(147,160,180,0.7)' :
+                          isReady ? '#34d399' : '#f59e0b';
           const borderColor = aiLifecycle === 'analyzing' ? 'rgba(76,141,255,0.22)' :
-                              isReady ? (isLocalProvider ? 'rgba(245,158,11,0.22)' : 'rgba(52,211,153,0.22)') :
-                              aiLifecycle === 'error' ? 'rgba(248,113,113,0.22)' : 'rgba(245,158,11,0.22)';
+                              aiLifecycle === 'error' ? 'rgba(248,113,113,0.22)' :
+                              isLocal ? 'rgba(245,158,11,0.22)' :
+                              isUnknown ? 'rgba(147,160,180,0.22)' :
+                              isReady ? 'rgba(52,211,153,0.22)' : 'rgba(245,158,11,0.22)';
+          const titleText = isLocal
+            ? 'Deterministic local fallback — not an AI model'
+            : isUnknown
+            ? 'Provider identity unknown — advisory label only'
+            : undefined;
           return (
             <span style={{
               padding: '2px 8px', background: bgColor, color: fgColor,
               border: `1px solid ${borderColor}`, borderRadius: 4,
               fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
               fontSize: 9, fontWeight: 600, flexShrink: 0,
-            }} title={isLocalProvider ? 'Deterministic local fallback — not an AI model' : undefined}>
+            }} title={titleText}>
               {badgeLabel}
             </span>
           );
@@ -1232,7 +1331,13 @@ export default function MissionControl() {
               showCommLink={viewSettings.showCommLink}
               smoothCamera={viewSettings.smoothCamera}
               activePulse={activePulse}
-              pulseDirection={choreographyActive ? 'spacecraft_to_earth' : 'idle'}
+              pulseDirection={
+                choreographyActive
+                  ? (choreographyPhase === 'plan_uplink'
+                    ? 'earth_to_spacecraft'
+                    : 'spacecraft_to_earth')
+                  : 'idle'
+              }
             />
           </div>
 
@@ -1366,6 +1471,7 @@ export default function MissionControl() {
             onChoreographyComplete={handleChoreographyComplete}
             onChoreographyError={(msg) => { setError(msg); setChoreographyActive(false); setApprovalPhase('ready'); }}
             onAttemptPulse={setActivePulse}
+            onChoreographyPhaseChange={setChoreographyPhase}
           />
         </div>
       )}

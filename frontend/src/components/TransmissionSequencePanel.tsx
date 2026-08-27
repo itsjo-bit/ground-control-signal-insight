@@ -1,26 +1,40 @@
 /**
- * TransmissionSequencePanel — Phase 4.2F4
+ * TransmissionSequencePanel — Phase 5.1E
  *
- * Full transmission choreography sequence:
+ * EXECUTION VS PRESENTATION SEPARATION (Phase 5.1E key change):
+ *   - The backend approval is dispatched IMMEDIATELY at authorization time in MissionControl.
+ *   - This panel OBSERVES the execution — it does NOT own the backend dispatch.
+ *   - onExecuteApproval(executionId) returns the already-existing Promise.
+ *   - The CONTACT_WAIT stage now just awaits an already-dispatched Promise.
+ *   - Unmounting this panel CANNOT cancel or delay the backend execution.
+ *
+ * Transmission choreography sequence:
  *   1. PLAN_UPLINK     — Earth → spacecraft command uplink (visualization only)
- *   2. CONTACT_WAIT    — Acquiring high-rate contact
- *   3. TRANSMITTING    — Actual backend approval executes; attempt_events drive playback
+ *   2. CONTACT_WAIT    — Acquiring high-rate contact (awaits already-dispatched approval Promise)
+ *   3. TRANSMITTING    — attempt_events from SimulationResult drive visual playback
  *   4. SIGNAL_TRANSIT  — Signal propagating from spacecraft to Earth
  *   5. COMPLETE        — Summary
  *
- * IMPORTANT INVARIANTS:
- * - Backend approval only executes once (in the CONTACT_WAIT→TRANSMITTING transition)
- * - attempt_events from SimulationResult drive visual playback (not fake counters)
- * - Simulated elapsed_time_s is NOT modified
- * - Time compression is clearly labelled
- * - Deferred packets create no pulse
- * - prefers-reduced-motion: skip animation, show final state
+ * PLAYBACK FIDELITY (Phase 5.1E):
+ *   - ONE attempt_event → ONE visual attempt (invariant A21)
+ *   - Retries = separate visual attempts (invariant A22)
+ *   - Progress derived from absolute wall-clock time (invariant A23/A24)
+ *   - Deferred packets produce zero pulses (invariant A20)
+ *   - Zero-attempt edge case handled cleanly (invariant A29)
+ *
+ * METRICS (Phase 5.1E):
+ *   - DOWNLINK ATTEMPTS = attempt_events.length (not grouped packet count)
+ *   - ATTEMPTED PRODUCTS = unique packet IDs in attempt_events
+ *   - RETRIES = attempt_events where attempt_number > 1
+ *   - DELIVERED/FAILED/DEFERRED from simulation_result authoritatively
+ *
+ * IMPORTANT: Does NOT modify SimulationResult. Presentation only.
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { ApproveResponse, CandidatePlan, SimulationResult } from '../types/domain';
 import type { ExperiencePlaybackConfig } from '../types/experience';
-import { buildTransmissionPlayback, groupAttemptsByPacket } from '../experience/transmissionPlayback';
+import { buildTransmissionPlayback } from '../experience/transmissionPlayback';
 import { formatBitsAsDataVolume, formatDuration } from '../utils/formatters';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -70,42 +84,54 @@ function SequenceRow({
   );
 }
 
-// ── Packet status icon ────────────────────────────────────────────────────────
-
-function packetIcon(status: 'delivered' | 'failed' | 'deferred') {
-  if (status === 'delivered') return '✓';
-  if (status === 'failed') return '✕';
-  return '⊘';
-}
-function packetColor(status: 'delivered' | 'failed' | 'deferred') {
-  if (status === 'delivered') return '#34d399';
-  if (status === 'failed') return '#f87171';
-  return 'rgba(147,160,180,0.45)';
-}
 
 // ── Transmission Progress Panel ───────────────────────────────────────────────
+//
+// Phase 5.1E corrections:
+//   - totalAttempts = attempt_events.length (NOT groupAttemptsByPacket().length)
+//   - visibleAttemptCount tracks individual attempt events, not packet summaries
+//   - DOWNLINK ATTEMPTS label is accurate
 
 function TransmissionProgressPanel({
   sim,
-  visibleAttemptCount,
+  visibleAttemptIndex,
 }: {
   sim: SimulationResult;
-  visibleAttemptCount: number;
+  /** 0-based index of the last visible attempt event (inclusive). -1 = none visible yet. */
+  visibleAttemptIndex: number;
 }) {
-  // ONLY include packets that had at least one attempt (not deferred-only packets).
-  // Deferred packets are summarized separately and must NOT inflate the progress denominator.
-  const attemptedSummaries = useMemo(
-    () => groupAttemptsByPacket(sim).filter((s) => s.finalStatus !== 'deferred'),
-    [sim]
-  );
+  const attemptEvents = useMemo(() => sim.attempt_events ?? [], [sim]);
   const deferredCount = useMemo(() => sim.deferred_packets.length, [sim]);
 
-  // Count stats from visible attempts
-  const visibleSummaries = attemptedSummaries.slice(0, Math.max(0, visibleAttemptCount));
-  const deliveredSoFar = visibleSummaries.filter((s) => s.finalStatus === 'delivered').length;
-  const retriesSoFar = visibleSummaries.reduce((acc, s) => acc + s.retransmissions, 0);
-  const failedSoFar = visibleSummaries.filter((s) => s.finalStatus === 'failed').length;
-  const totalAttempts = attemptedSummaries.length;
+  // Authoritative counts from simulation_result (INVARIANT E9)
+  const totalAttempts = attemptEvents.length;      // attempt_events.length
+  const currentAttempts = Math.max(0, Math.min(visibleAttemptIndex + 1, totalAttempts));
+
+  // Attempt metrics from visible events
+  const visibleEvents = useMemo(() => attemptEvents.slice(0, currentAttempts), [attemptEvents, currentAttempts]);
+
+  // Retries = attempt_number > 1
+  const retriesSoFar = useMemo(
+    () => visibleEvents.filter((e) => e.attempt_number > 1).length,
+    [visibleEvents]
+  );
+
+  // Unique attempted products (from visible events only)
+  const attemptedProducts = useMemo(
+    () => new Set(visibleEvents.map((e) => e.packet_id)).size,
+    [visibleEvents]
+  );
+
+  // Delivered and failed from authoritative result (only count if their last attempt is visible)
+  const visiblePacketIds = useMemo(() => new Set(visibleEvents.map((e) => e.packet_id)), [visibleEvents]);
+  const deliveredSoFar = useMemo(
+    () => sim.delivered_packets.filter((id) => visiblePacketIds.has(id)).length,
+    [sim.delivered_packets, visiblePacketIds]
+  );
+  const failedSoFar = useMemo(
+    () => sim.failed_packets.filter((id) => visiblePacketIds.has(id)).length,
+    [sim.failed_packets, visiblePacketIds]
+  );
 
   return (
     <div>
@@ -115,7 +141,7 @@ function TransmissionProgressPanel({
           DOWNLINK ATTEMPTS · TIME-COMPRESSED PLAYBACK
         </span>
         <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 10, color: '#6EA8FF', fontWeight: 700 }}>
-          {visibleAttemptCount}/{totalAttempts}
+          {totalAttempts === 0 ? '0/0' : `${currentAttempts}/${totalAttempts}`}
         </span>
       </div>
 
@@ -123,15 +149,16 @@ function TransmissionProgressPanel({
       <div style={{ height: 3, background: 'rgba(46,58,79,0.8)', borderRadius: 2, marginBottom: 10 }}>
         <div style={{
           height: '100%', borderRadius: 2,
-          width: `${totalAttempts > 0 ? (visibleAttemptCount / totalAttempts) * 100 : 0}%`,
+          width: `${totalAttempts > 0 ? (currentAttempts / totalAttempts) * 100 : 0}%`,
           background: '#6EA8FF',
           transition: 'width 0.3s ease',
         }} />
       </div>
 
-      {/* Counts */}
+      {/* Attempt metric grid */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 10, flexWrap: 'wrap' }}>
         {[
+          { label: 'ATTEMPTED PRODUCTS', value: attemptedProducts, color: '#6EA8FF' },
           { label: 'DELIVERED', value: deliveredSoFar, color: '#34d399' },
           { label: 'RETRIES', value: retriesSoFar, color: '#f59e0b' },
           { label: 'FAILED', value: failedSoFar, color: '#f87171' },
@@ -161,34 +188,39 @@ function TransmissionProgressPanel({
         </div>
       )}
 
-      {/* Attempted packet list — only packets with actual attempt events */}
-      <div style={{ maxHeight: 180, overflowY: 'auto' }}>
-        {visibleSummaries.map((s) => (
-          <div key={s.packetId} style={{
-            display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0',
-            borderBottom: '1px solid rgba(46,58,79,0.3)',
-          }}>
-            <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 11, color: packetColor(s.finalStatus), flexShrink: 0, width: 14 }}>
-              {packetIcon(s.finalStatus)}
-            </span>
-            <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 10, color: '#6EA8FF', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {s.packetId}
-            </span>
-            {s.retransmissions > 0 && (
-              <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#f59e0b', flexShrink: 0 }}>
-                ↻ ×{s.retransmissions}
+      {/* Individual attempt event list — one row per attempt event */}
+      <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+        {visibleEvents.map((ev, idx) => {
+          const isRetry = ev.attempt_number > 1;
+          const isFinalDelivered = ev.status === 'success' && sim.delivered_packets.includes(ev.packet_id);
+          const isFinalFailed = ev.status === 'failure';
+          const statusColor = ev.status === 'success' ? '#34d399' : '#f87171';
+          const statusIcon = ev.status === 'success' ? '✓' : '✕';
+          return (
+            <div key={`${ev.packet_id}-${ev.attempt_number}-${idx}`} style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0',
+              borderBottom: '1px solid rgba(46,58,79,0.3)',
+            }}>
+              <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 10, color: statusColor, flexShrink: 0, width: 14 }}>
+                {statusIcon}
               </span>
-            )}
-            <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: DIM, flexShrink: 0, minWidth: 48, textAlign: 'right' }}>
-              {s.finalStatus === 'delivered' ? 'delivered'
-                : s.finalStatus === 'failed' ? 'failed'
-                : 'deferred'}
-            </span>
-          </div>
-        ))}
-        {visibleSummaries.length === 0 && (
+              <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#6EA8FF', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {ev.packet_id}
+              </span>
+              {isRetry && (
+                <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: '#f59e0b', flexShrink: 0 }}>
+                  RETRY #{ev.attempt_number}
+                </span>
+              )}
+              <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: DIM, flexShrink: 0, minWidth: 48, textAlign: 'right' }}>
+                {isFinalDelivered ? 'delivered' : isFinalFailed ? 'failed' : 'attempt'}
+              </span>
+            </div>
+          );
+        })}
+        {visibleEvents.length === 0 && (
           <div style={{ color: DIM, fontSize: 11, padding: '8px 0', fontFamily: '"IBM Plex Sans"' }}>
-            Awaiting transmission attempts…
+            {totalAttempts === 0 ? 'No transmission attempts — all products deferred.' : 'Awaiting transmission attempts…'}
           </div>
         )}
       </div>
@@ -220,8 +252,8 @@ interface Props {
   availableCapacityBits: number;
   /**
    * Stable execution identifier from application-level coordinator.
-   * Passed to onExecuteApproval for single-shot guarantee.
-   * Remounting with the same executionId does NOT re-execute the backend call.
+   * The approval Promise is already registered in executionPromiseRef before
+   * this panel mounts. Calling onExecuteApproval just retrieves that Promise.
    */
   executionId: string;
   /**
@@ -235,8 +267,9 @@ interface Props {
    */
   onSetPlaybackStarted: (ms: number) => void;
   /**
-   * Execute backend approval — single-shot, keyed by executionId.
-   * If this execution was already dispatched, the existing Promise is returned.
+   * Retrieve the backend approval Promise — already dispatched at authorization time.
+   * Returns the same Promise regardless of how many times called with the same executionId.
+   * No new backend call is made by calling this.
    */
   onExecuteApproval: (executionId: string) => Promise<ApproveResponse>;
   /** Called when transmission sequence is fully complete. */
@@ -248,7 +281,21 @@ interface Props {
    * Called with null to clear the active pulse (between attempts, on complete).
    * Only called for actual attempt events — never for deferred packets.
    */
-  onAttemptPulse?: (pulse: { packetId: string; attemptNumber: number; progress: number; outcome: 'pending' | 'success' | 'failure' | 'retry' | 'deferred' } | null) => void;
+  onAttemptPulse?: (pulse: {
+    packetId: string;
+    attemptNumber: number;
+    /** Absolute-time derived progress 0→1 along the comm link curve */
+    progress: number;
+    outcome: 'pending' | 'success' | 'failure' | 'retry' | 'deferred';
+    /** Direction for the 3D link (downlink attempts are always spacecraft→earth) */
+    direction?: 'spacecraft_to_earth';
+  } | null) => void;
+  /**
+   * Phase 5.1E: Called whenever the choreography phase changes.
+   * Allows MissionControl to update pulseDirection on the 3D viewport
+   * (plan_uplink = earth→spacecraft, other phases = spacecraft→earth or idle).
+   */
+  onPhaseChange?: (phase: TransmissionChoreographyPhase) => void;
 }
 
 export function TransmissionSequencePanel({
@@ -264,19 +311,21 @@ export function TransmissionSequencePanel({
   onComplete,
   onError,
   onAttemptPulse,
+  onPhaseChange,
 }: Props) {
   const [phase, setPhase] = useState<TransmissionChoreographyPhase>(initialPhase);
   const [simResult, setSimResult] = useState<SimulationResult | null>(null);
   const [approveResult, setApproveResult] = useState<ApproveResponse | null>(null);
-  // visibleAttemptCount is derived from absolute elapsed time during playback catch-up
-  const [visibleAttemptCount, setVisibleAttemptCount] = useState(0);
-  // Note: executedRef is NO LONGER used as the guard.
-  // The single-shot guarantee is provided by the application-level executionPromiseRef
-  // in MissionControl (keyed by executionId). This panel only drives the visual sequence.
-  // Even if this component remounts, calling onExecuteApproval(executionId) again
-  // returns the same Promise — no second backend call is made.
+
+  /**
+   * visibleAttemptIndex: 0-based index of the currently visible attempt event.
+   * -1 = no attempts visible yet.
+   * This tracks attempt_events (not packet summaries).
+   */
+  const [visibleAttemptIndex, setVisibleAttemptIndex] = useState(-1);
+
   const playbackTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  /** Stable ref to playbackStartedAtMs so the interval can use current value without stale closure. */
+  /** Stable ref to playbackStartedAtMs for use in interval callbacks. */
   const playbackStartedAtMsRef = useRef<number | null>(playbackStartedAtMs);
   const reduced = prefersReducedMotion();
 
@@ -285,17 +334,22 @@ export function TransmissionSequencePanel({
   const propagationDurationMs = playbackConfig?.propagation_duration_ms ?? 3000;
   const transmissionMinDurationMs = playbackConfig?.transmission_min_duration_ms ?? 2000;
 
-  // Build playback from sim result
+  // Build attempt-event-based playback from sim result
   const playback = useMemo(() => {
     if (!simResult) return null;
     return buildTransmissionPlayback(simResult, { transmission_min_duration_ms: transmissionMinDurationMs });
   }, [simResult, transmissionMinDurationMs]);
 
-  // Phase transitions
-  const advanceToContactWait = useCallback(() => setPhase('contact_wait'), []);
-  const advanceToTransmitting = useCallback(() => setPhase('transmitting'), []);
-  const advanceToSignalTransit = useCallback(() => setPhase('signal_transit'), []);
-  const advanceToComplete = useCallback(() => setPhase('complete'), []);
+  // Phase change helper — reports upward to MissionControl
+  const advancePhase = useCallback((newPhase: TransmissionChoreographyPhase) => {
+    setPhase(newPhase);
+    onPhaseChange?.(newPhase);
+  }, [onPhaseChange]);
+
+  const advanceToContactWait = useCallback(() => advancePhase('contact_wait'), [advancePhase]);
+  const advanceToTransmitting = useCallback(() => advancePhase('transmitting'), [advancePhase]);
+  const advanceToSignalTransit = useCallback(() => advancePhase('signal_transit'), [advancePhase]);
+  const advanceToComplete = useCallback(() => advancePhase('complete'), [advancePhase]);
 
   // PLAN_UPLINK → CONTACT_WAIT after uplink duration
   useEffect(() => {
@@ -310,104 +364,185 @@ export function TransmissionSequencePanel({
     playbackStartedAtMsRef.current = playbackStartedAtMs;
   }, [playbackStartedAtMs]);
 
-  // CONTACT_WAIT → execute backend approval → TRANSMITTING
-  // The single-shot guarantee is enforced by MissionControl's executionPromiseRef map.
-  // Even if this effect fires twice (StrictMode) or this component remounts after navigation,
-  // onExecuteApproval(executionId) returns the same Promise — no second API call is made.
+  // CONTACT_WAIT → await already-dispatched approval → TRANSMITTING
+  //
+  // Phase 5.1E: The approval Promise was already dispatched at authorization time
+  // in MissionControl. This effect simply awaits that promise and advances the
+  // visual stage when it resolves.
+  //
+  // If this component unmounts while we're waiting, the Promise continues executing
+  // in MissionControl's executionResultRef — the backend execution is NOT cancelled.
+  //
+  // The contactAcqDurationMs delay is purely visual presentation — the Promise is
+  // NOT waiting for this timer to dispatch; it was dispatched immediately at auth.
   useEffect(() => {
     if (phase !== 'contact_wait') return;
 
+    let cancelled = false;
     const delay = reduced ? 0 : contactAcqDurationMs;
+
     const timer = setTimeout(async () => {
+      if (cancelled) return;
       try {
-        // Single-shot: MissionControl dedups by executionId
+        // Retrieve the already-dispatched Promise (no new backend call)
         const result = await onExecuteApproval(executionId);
+        if (cancelled) return;
         setApproveResult(result);
         setSimResult(result.simulation_result);
         advanceToTransmitting();
       } catch (err) {
-        onError(String(err));
+        if (!cancelled) onError(String(err));
       }
     }, delay);
-    return () => clearTimeout(timer);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, contactAcqDurationMs, reduced]);
   // Note: onExecuteApproval and executionId are intentionally excluded from deps.
-  // The coordinator is stable by design and re-running this effect with a new
-  // executionId would only happen after a full reset (new execution).
+  // The coordinator is stable by design. The Promise is keyed by executionId and
+  // will always return the same result regardless of how many times it is called.
 
-  // TRANSMITTING: absolute-time playback (NOT tick-count based).
-  // Progress is derived from: (Date.now() - playbackStartedAtMs) / totalVisualDurationMs
-  // This means browser background throttling, tab switches, and panel remounts
-  // do NOT stall playback — elapsed time is authoritative.
+  // TRANSMITTING: absolute-time attempt-event playback.
+  //
+  // Phase 5.1E correctness:
+  //   - Iterates attempt_events directly (not grouped packet summaries)
+  //   - visibleAttemptIndex tracks individual events (1 event = 1 visual attempt)
+  //   - Progress for each active attempt is derived from absolute wall-clock time → 0..1
+  //   - Browser background throttling does NOT stall playback (time is authoritative)
+  //   - Zero attempts: handle cleanly without division by zero or infinite timers
   useEffect(() => {
     if (phase !== 'transmitting' || !playback) return;
 
-    // Compute or record playback start time
+    // Record playback start time (ONCE per execution)
     if (!playbackStartedAtMsRef.current) {
       const nowMs = Date.now();
       playbackStartedAtMsRef.current = nowMs;
       onSetPlaybackStarted(nowMs);
     }
 
-    // Only count packets that were actually attempted (not deferred-only)
-    const allSummaries = groupAttemptsByPacket(simResult!);
-    const attemptSummaries = allSummaries.filter((s) => s.finalStatus !== 'deferred');
+    const attemptEvents = simResult?.attempt_events ?? [];
+    const totalAttempts = attemptEvents.length;
+    const totalVisualMs = playback.totalVisualDurationMs;
 
     if (reduced) {
       // prefers-reduced-motion: skip animation, jump to final state immediately
-      setVisibleAttemptCount(attemptSummaries.length);
+      setVisibleAttemptIndex(totalAttempts - 1);
       onAttemptPulse?.(null);
       const timer = setTimeout(advanceToSignalTransit, 300);
       return () => clearTimeout(timer);
     }
 
-    const totalSummaries = attemptSummaries.length;
-    const totalVisualMs = playback.totalVisualDurationMs;
+    // Zero-attempt edge case (all deferred): advance immediately without timers
+    if (totalAttempts === 0) {
+      setVisibleAttemptIndex(-1);
+      onAttemptPulse?.(null);
+      setTimeout(advanceToSignalTransit, 300);
+      return;
+    }
 
-    function computeVisibleCount(): number {
+    /**
+     * Derive which attempt_event should be "current" from absolute elapsed time.
+     * Returns the 0-based index of the current event, or -1 if not started.
+     * This makes catch-up after background/remount deterministic.
+     */
+    function computeCurrentAttemptIndex(): number {
       const startMs = playbackStartedAtMsRef.current;
-      if (!startMs) return 0;
+      if (!startMs) return -1;
       const elapsedMs = Date.now() - startMs;
-      if (totalSummaries === 0) return 0;
-      const perSummaryMs = totalVisualMs / totalSummaries;
-      return Math.min(totalSummaries, Math.floor(elapsedMs / perSummaryMs));
+
+      // Find the playback event whose visualOffset has elapsed
+      // attempt_events[i] corresponds to playback events with kind='attempt_start'
+      const startEvents = playback!.events.filter((e) => e.kind === 'attempt_start');
+
+      // Find the last attempt_start event whose visualOffsetMs <= elapsedMs
+      let currentIdx = -1;
+      for (let i = 0; i < startEvents.length; i++) {
+        if (startEvents[i].visualOffsetMs <= elapsedMs) {
+          currentIdx = i;
+        }
+      }
+      return Math.min(currentIdx, totalAttempts - 1);
+    }
+
+    /**
+     * Compute absolute-time progress [0, 1] for the given attempt_event.
+     * progress=0: pulse at spacecraft, progress=1: pulse reaches Earth.
+     */
+    function computeAttemptProgress(attemptIdx: number): number {
+      const startMs = playbackStartedAtMsRef.current;
+      if (!startMs || attemptIdx < 0) return 0;
+
+      const startEvents = playback!.events.filter((e) => e.kind === 'attempt_start');
+      const ev = startEvents[attemptIdx];
+      if (!ev) return 0;
+
+      const elapsedInAttemptMs = Date.now() - (startMs + ev.visualOffsetMs);
+      const progress = elapsedInAttemptMs / ev.visualDurationMs;
+      return Math.max(0, Math.min(1, progress));
     }
 
     // Immediate catch-up on mount (handles tab-return / panel remount)
-    const initialCount = computeVisibleCount();
-    setVisibleAttemptCount(initialCount);
-    if (initialCount >= totalSummaries) {
-      // Already completed while hidden — advance immediately
-      onAttemptPulse?.(null); // clear any active pulse
+    const initialIdx = computeCurrentAttemptIndex();
+    setVisibleAttemptIndex(initialIdx);
+
+    // If already fully elapsed, advance immediately
+    const startMs = playbackStartedAtMsRef.current;
+    if (startMs && Date.now() - startMs >= totalVisualMs) {
+      onAttemptPulse?.(null);
       setTimeout(advanceToSignalTransit, 0);
       return;
     }
 
-    const intervalMs = Math.max(80, totalVisualMs / Math.max(1, totalSummaries));
-    const interval = setInterval(() => {
-      const count = computeVisibleCount();
-      setVisibleAttemptCount(count);
+    // Emit initial pulse for current attempt
+    if (initialIdx >= 0 && initialIdx < totalAttempts) {
+      const ev = attemptEvents[initialIdx];
+      if (ev) {
+        const progress = computeAttemptProgress(initialIdx);
+        const outcome = progress < 1 ? 'pending'
+          : ev.status === 'success' ? (ev.attempt_number > 1 ? 'retry' : 'success')
+          : 'failure';
+        onAttemptPulse?.({
+          packetId: ev.packet_id,
+          attemptNumber: ev.attempt_number,
+          progress,
+          outcome,
+        });
+      }
+    }
 
-      // Emit 3D pulse for the current attempt (only actual attempts, not deferred)
-      if (count > 0 && count <= totalSummaries) {
-        const currentSummary = attemptSummaries[count - 1];
-        if (currentSummary) {
-          const outcome = currentSummary.finalStatus === 'delivered'
-            ? (currentSummary.retransmissions > 0 ? 'retry' : 'success')
-            : currentSummary.finalStatus === 'failed' ? 'failure' : 'pending';
+    const intervalMs = Math.max(50, totalVisualMs / Math.max(1, totalAttempts * 10));
+    const interval = setInterval(() => {
+      const nowMs = Date.now();
+      const elapsedMs = startMs ? nowMs - startMs : 0;
+
+      const idx = computeCurrentAttemptIndex();
+      setVisibleAttemptIndex(idx);
+
+      // Emit 3D pulse for the active attempt with absolute-time progress
+      if (idx >= 0 && idx < totalAttempts) {
+        const ev = attemptEvents[idx];
+        if (ev) {
+          const progress = computeAttemptProgress(idx);
+          const outcome = progress < 1 ? 'pending'
+            : ev.status === 'success' ? (ev.attempt_number > 1 ? 'retry' : 'success')
+            : 'failure';
           onAttemptPulse?.({
-            packetId: currentSummary.packetId,
-            attemptNumber: currentSummary.attempts.length,
-            progress: 0.5, // midpoint of transit
+            packetId: ev.packet_id,
+            attemptNumber: ev.attempt_number,
+            progress,
             outcome,
           });
         }
       }
 
-      if (count >= totalSummaries) {
+      // Check if total visual duration has elapsed
+      if (elapsedMs >= totalVisualMs) {
         clearInterval(interval);
-        onAttemptPulse?.(null); // clear pulse when done
+        setVisibleAttemptIndex(totalAttempts - 1);
+        onAttemptPulse?.(null);
         setTimeout(advanceToSignalTransit, 600);
       }
     }, intervalMs);
@@ -418,8 +553,8 @@ export function TransmissionSequencePanel({
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, playback, simResult, reduced]);
-  // Note: advanceToSignalTransit, onSetPlaybackStarted excluded from deps on purpose —
-  // they are stable callbacks that should not restart the playback interval.
+  // Note: advanceToSignalTransit, onSetPlaybackStarted, onAttemptPulse are stable
+  // callbacks that should not restart the playback interval on re-render.
 
   // SIGNAL_TRANSIT → COMPLETE after propagation duration
   useEffect(() => {
@@ -446,9 +581,13 @@ export function TransmissionSequencePanel({
   const oneWayLabel = propagationDelayS !== null ? formatDuration(propagationDelayS) : '—';
 
   const phases: Array<{ id: TransmissionChoreographyPhase; label: string; sub?: string }> = [
-    { id: 'plan_uplink', label: 'PRIORITY PLAN UPLINK', sub: 'Earth → Spacecraft' },
+    {
+      id: 'plan_uplink',
+      label: 'PLAN UPLINK · VISUALIZATION',
+      sub: 'Ground → spacecraft (presentation only)',
+    },
     { id: 'contact_wait', label: 'CONTACT ACQUISITION', sub: 'Acquiring high-rate downlink' },
-    { id: 'transmitting', label: 'DOWNLINK TRANSMISSION', sub: 'Spacecraft → Earth' },
+    { id: 'transmitting', label: 'DOWNLINK TRANSMISSION', sub: 'Spacecraft → Ground' },
     { id: 'signal_transit', label: 'SIGNAL IN TRANSIT', sub: `${oneWayLabel} one-way propagation` },
     { id: 'complete', label: 'TRANSMISSION COMPLETE', sub: 'Simulation done' },
   ];
@@ -480,7 +619,10 @@ export function TransmissionSequencePanel({
       {phase === 'plan_uplink' && (
         <div style={{ background: 'rgba(76,141,255,0.06)', border: '1px solid rgba(76,141,255,0.2)', borderRadius: 6, padding: '10px 12px' }}>
           <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: 'rgba(76,141,255,0.7)', letterSpacing: '0.1em', marginBottom: 6 }}>
-            EARTH → SPACECRAFT
+            PLAN UPLINK · VISUALIZATION ONLY
+          </div>
+          <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: 'rgba(76,141,255,0.55)', letterSpacing: '0.08em', marginBottom: 8 }}>
+            DIRECTION: EARTH → SPACECRAFT
           </div>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
             <div>
@@ -495,8 +637,10 @@ export function TransmissionSequencePanel({
             )}
           </div>
           {!reduced && (
-            <div style={{ marginTop: 8, fontFamily: '"IBM Plex Sans"', fontSize: 10, color: DIM }}>
-              TIME-COMPRESSED VISUALIZATION · Command uplink is visual only — the backend simulator models only the downlink.
+            <div style={{ marginTop: 8, fontFamily: '"IBM Plex Sans"', fontSize: 10, color: DIM, lineHeight: 1.5 }}>
+              TIME-COMPRESSED VISUALIZATION · Command uplink is visual only.<br/>
+              The backend simulator models only the downlink.<br/>
+              Authorization and backend execution began immediately when you approved.
             </div>
           )}
         </div>
@@ -519,7 +663,7 @@ export function TransmissionSequencePanel({
             </div>
           </div>
           <div style={{ marginTop: 8, fontFamily: '"IBM Plex Sans"', fontSize: 10, color: DIM }}>
-            Executing backend simulation…
+            Awaiting simulation result…
           </div>
         </div>
       )}
@@ -528,7 +672,7 @@ export function TransmissionSequencePanel({
       {phase === 'transmitting' && simResult && (
         <TransmissionProgressPanel
           sim={simResult}
-          visibleAttemptCount={visibleAttemptCount}
+          visibleAttemptIndex={visibleAttemptIndex}
         />
       )}
       {phase === 'transmitting' && !simResult && (
@@ -562,7 +706,7 @@ export function TransmissionSequencePanel({
           </div>
           {!reduced && (
             <div style={{ marginTop: 8, fontFamily: '"IBM Plex Sans"', fontSize: 10, color: DIM }}>
-              TIME-COMPRESSED · 608-second propagation represented separately from transmission time.
+              TIME-COMPRESSED · Propagation delay represented separately from transmission time.
             </div>
           )}
         </div>
@@ -575,6 +719,10 @@ export function TransmissionSequencePanel({
             TRANSMISSION SEQUENCE COMPLETE
           </div>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: DIM }}>DOWNLINK ATTEMPTS</div>
+              <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 16, fontWeight: 700, color: '#6EA8FF' }}>{(simResult.attempt_events ?? []).length}</div>
+            </div>
             <div>
               <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: DIM }}>DELIVERED</div>
               <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 16, fontWeight: 700, color: '#34d399' }}>{simResult.delivered_packets.length}</div>
@@ -597,6 +745,15 @@ export function TransmissionSequencePanel({
           <div style={{ marginTop: 8, fontFamily: '"IBM Plex Sans"', fontSize: 10, color: DIM, lineHeight: 1.4 }}>
             SIMULATED RECEPTION CONFIRMED · See Log for full simulation details and ground evidence.
           </div>
+        </div>
+      )}
+
+      {/* Plan uplink visualization note — always shown during uplink */}
+      {phase === 'plan_uplink' && (
+        <div style={{ marginTop: 8, padding: '4px 8px', background: 'rgba(76,141,255,0.04)', border: '1px solid rgba(76,141,255,0.12)', borderRadius: 3 }}>
+          <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: 'rgba(76,141,255,0.5)' }}>
+            Backend execution began immediately at authorization — not waiting for this animation.
+          </span>
         </div>
       )}
     </div>

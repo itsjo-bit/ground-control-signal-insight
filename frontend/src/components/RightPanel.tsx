@@ -11,6 +11,7 @@
  * - Focus mode: header shows "FOCUS MODE" indicator with EXIT button
  */
 import { useState, useMemo, useCallback, useEffect } from 'react';
+import { classifyProvider } from '../utils/providerClassification';
 import type { NavSection } from './NavigationSidebar';
 import type {
   AIRecommendation,
@@ -184,6 +185,11 @@ interface CommonProps {
   onChoreographyError: (msg: string) => void;
   /** Called when a new attempt event pulse starts (for 3D visualization). Null clears. */
   onAttemptPulse: (pulse: import('./scene/CommunicationLink').ActivePulse | null) => void;
+  /**
+   * Phase 5.1E: Called when the choreography phase changes so the application level
+   * can update pulseDirection (e.g. plan_uplink → earth_to_spacecraft).
+   */
+  onChoreographyPhaseChange: (phase: import('./TransmissionSequencePanel').TransmissionChoreographyPhase) => void;
   // ── Phase 4.2F3 props ─────────────────────────────────────────────────────────
   /** Called when operator approves AI recommendation — does NOT execute transmission. */
   onApproveAiPlan: () => void;
@@ -1121,20 +1127,25 @@ function AiHumanDecisionPanel({ props }: { props: CommonProps }) {
 
 // ── V3.5 / F3: AI Mission Triage helpers ─────────────────────────────────────
 
-/** Determine provider-aware triage heading */
+/** Determine provider-aware triage heading using shared classifier */
 function triageHeading(providerName: string | null, fallbackReason: string | null): {
   title: string; subtitle: string | null; isLocal: boolean;
 } {
-  const isLocal = !providerName
-    || providerName.toLowerCase().includes('local')
-    || providerName.toLowerCase().includes('rule')
-    || providerName.toLowerCase().includes('deterministic');
+  const classification = classifyProvider(providerName);
   const hasFallback = !!fallbackReason;
-  if (isLocal || hasFallback) {
+
+  if (classification.kind === 'local_deterministic' || hasFallback) {
     return {
       title: 'DETERMINISTIC MISSION TRIAGE',
       subtitle: 'LOCAL FALLBACK',
       isLocal: true,
+    };
+  }
+  if (classification.kind === 'unknown') {
+    return {
+      title: 'ADVISORY MISSION TRIAGE',
+      subtitle: 'PROVIDER UNKNOWN',
+      isLocal: false,
     };
   }
   return {
@@ -1808,6 +1819,7 @@ function TransmissionSection(props: CommonProps) {
         onComplete={props.onChoreographyComplete}
         onError={props.onChoreographyError}
         onAttemptPulse={props.onAttemptPulse}
+        onPhaseChange={props.onChoreographyPhaseChange}
       />
     );
   }
