@@ -45,6 +45,9 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+# Expose prefix/regex constants so PdsScienceProduct._validate_model can
+# reference them without duplication.
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -115,7 +118,7 @@ class PdsProductRequest(BaseModel):
     cannot be used for reproducible historical replay.
     """
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     lidvid: str = Field(
         description=(
@@ -174,13 +177,20 @@ class PdsProductRequest(BaseModel):
                 "A bare LID or unrecognized URN namespace is rejected."
             )
 
-        # Rule: must contain '::' separating LID from version.
-        if "::" not in v:
+        # Rule: must contain '::' separating LID from version — exactly once.
+        # A LID must not itself contain '::'; only one version delimiter is valid.
+        colon_pair_count = v.count("::")
+        if colon_pair_count == 0:
             raise ValueError(
                 "lidvid must contain an explicit '::version' suffix. "
                 "A bare LID (without version) is rejected because it resolves "
                 "to the latest version and is not suitable for reproducible "
                 "historical replay."
+            )
+        if colon_pair_count > 1:
+            raise ValueError(
+                "lidvid must contain exactly one '::' version delimiter. "
+                "Multiple '::' pairs are not valid."
             )
 
         # Rule: conservative character allow-list (letters, digits, : _ - .).
@@ -476,7 +486,57 @@ class PdsScienceProduct(BaseModel):
     @model_validator(mode="after")
     def _validate_model(self) -> "PdsScienceProduct":
         """Enforce cross-field identity consistency and time ordering."""
-        # 1. total_data_size_bytes must equal sum of data_files.
+        # ---- Self-identity invariants (F) --------------------------------
+
+        # 1. Non-empty string invariants.
+        for field_name, value in (
+            ("lid", self.lid),
+            ("logical_identifier", self.logical_identifier),
+            ("version_id", self.version_id),
+            ("lidvid", self.lidvid),
+            ("title", self.title),
+        ):
+            if not value:
+                raise ValueError(f"{field_name} must not be empty.")
+
+        # 2. logical_identifier == lid
+        if self.logical_identifier != self.lid:
+            raise ValueError(
+                "logical_identifier must equal lid. "
+                f"Got lid={self.lid!r}, logical_identifier={self.logical_identifier!r}."
+            )
+
+        # 3. Decompose lidvid on exactly the final '::' and cross-check lid / version_id.
+        colon_pair_count = self.lidvid.count("::")
+        if colon_pair_count != 1:
+            raise ValueError(
+                "lidvid must contain exactly one '::' version delimiter."
+            )
+        lidvid_lid, lidvid_version = self.lidvid.rsplit("::", 1)
+        if lidvid_lid != self.lid:
+            raise ValueError(
+                "The LID portion of lidvid must equal lid. "
+                f"Got lid={self.lid!r}, lidvid LID portion={lidvid_lid!r}."
+            )
+        if lidvid_version != self.version_id:
+            raise ValueError(
+                "The version portion of lidvid must equal version_id. "
+                f"Got version_id={self.version_id!r}, lidvid version={lidvid_version!r}."
+            )
+
+        # 4. lidvid must satisfy the conservative exact-versioned LIDVID shape.
+        if not _LIDVID_RE.match(self.lidvid):
+            raise ValueError(
+                "lidvid does not satisfy the required LIDVID character/format constraints."
+            )
+        if not self.lidvid.startswith(_LIDVID_PREFIX):
+            raise ValueError(
+                f"lidvid must begin with '{_LIDVID_PREFIX}'."
+            )
+
+        # ---- Total size invariant -----------------------------------------
+
+        # 5. total_data_size_bytes must equal sum of data_files.
         expected_total = sum(f.file_size_bytes for f in self.data_files)
         if self.total_data_size_bytes != expected_total:
             raise ValueError(
@@ -484,7 +544,9 @@ class PdsScienceProduct(BaseModel):
                 f"sum of data_files sizes ({expected_total})."
             )
 
-        # 2. observation time ordering.
+        # ---- Time ordering -----------------------------------------------
+
+        # 6. observation time ordering.
         if (
             self.observation_start_utc is not None
             and self.observation_stop_utc is not None

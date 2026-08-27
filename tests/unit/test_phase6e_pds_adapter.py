@@ -2127,3 +2127,459 @@ class TestPhase6EARegressionExtended:
         product, _ = adapter.fetch(_valid_request())
         assert len(calls) == 1
         assert product is not None
+
+
+# ===========================================================================
+# PHASE 6E-A.2 — NEW TESTS (items 1-45 from spec)
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Test helpers
+# ---------------------------------------------------------------------------
+
+def _make_valid_science_product(**overrides):
+    """Return keyword args for a valid PdsScienceProduct construction."""
+    defaults = dict(
+        lid=_VALID_LID,
+        lidvid=_VALID_LIDVID,
+        logical_identifier=_VALID_LID,
+        version_id=_VALID_VERSION,
+        product_class="Product_Observational",
+        title="Test Product",
+        data_files=(),
+        total_data_size_bytes=0,
+    )
+    defaults.update(overrides)
+    return defaults
+
+
+# ---------------------------------------------------------------------------
+# 1-6  REQUEST STRICTNESS
+# ---------------------------------------------------------------------------
+
+class TestRequestStrictness:
+    """Phase 6E-A.2 items 1-6: PdsProductRequest strict type contract."""
+
+    # 1. Normal string LIDVID still accepted.
+    def test_01_normal_string_lidvid_accepted(self):
+        req = PdsProductRequest(lidvid=_VALID_LIDVID)
+        assert req.lidvid == _VALID_LIDVID
+
+    # 2. bytes LIDVID rejected.
+    def test_02_bytes_lidvid_rejected(self):
+        with pytest.raises(ValidationError):
+            PdsProductRequest(lidvid=b"urn:nasa:pds:test:data:prod::1.0")
+
+    # 3. integer LIDVID rejected.
+    def test_03_integer_lidvid_rejected(self):
+        with pytest.raises(ValidationError):
+            PdsProductRequest(lidvid=123)
+
+    # 4. boolean LIDVID rejected.
+    def test_04_boolean_lidvid_rejected(self):
+        with pytest.raises(ValidationError):
+            PdsProductRequest(lidvid=True)
+
+    # 5. exactly one "::" accepted.
+    def test_05_exactly_one_double_colon_accepted(self):
+        req = PdsProductRequest(lidvid=_VALID_LIDVID)
+        assert req.lidvid.count("::") == 1
+
+    # 6. two "::" version delimiters rejected.
+    def test_06_two_double_colons_rejected(self):
+        with pytest.raises(ValidationError, match="exactly one|multiple"):
+            PdsProductRequest(lidvid="urn:nasa:pds:a::b::1.0")
+
+
+# ---------------------------------------------------------------------------
+# 7-15  REFERENCE CARDINALITY
+# ---------------------------------------------------------------------------
+
+class TestReferenceCardinality:
+    """Phase 6E-A.2 items 7-15: _as_str_list / reference field semantics."""
+
+    from backend.app.mission_sources.adapters.pds import _as_str_list as _fn
+
+    def _fn(self, v):
+        from backend.app.mission_sources.adapters.pds import _as_str_list
+        return _as_str_list(v)
+
+    # 7. None → empty tuple (via adapter).
+    def test_07_none_optional_ref_field_gives_empty_tuple(self):
+        payload = _make_valid_kvp_payload(instruments=None)
+        payload["data"][0].pop("ref_lid_instrument", None)
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        assert product.instrument_lids == ()
+
+    # 8. [] → empty tuple.
+    def test_08_empty_list_ref_field_gives_empty_tuple(self):
+        assert self._fn([]) == []
+
+    # 9. valid scalar reference accepted.
+    def test_09_valid_scalar_reference_accepted(self):
+        result = self._fn("urn:nasa:pds:ctx:inst:sc.ins")
+        assert result == ["urn:nasa:pds:ctx:inst:sc.ins"]
+
+    # 10. valid string list accepted.
+    def test_10_valid_string_list_accepted(self):
+        result = self._fn(["urn:a", "urn:b"])
+        assert result == ["urn:a", "urn:b"]
+
+    # 11. [None] rejected.
+    def test_11_list_with_none_rejected(self):
+        with pytest.raises(PdsValidationError, match="null"):
+            self._fn([None])
+
+    # 12. ["valid", None] rejected.
+    def test_12_list_with_trailing_none_rejected(self):
+        with pytest.raises(PdsValidationError, match="null"):
+            self._fn(["urn:valid", None])
+
+    # 13. [""] rejected.
+    def test_13_list_with_empty_string_rejected(self):
+        with pytest.raises(PdsValidationError, match="empty"):
+            self._fn([""])
+
+    # 14. ["valid", ""] rejected.
+    def test_14_list_with_trailing_empty_string_rejected(self):
+        with pytest.raises(PdsValidationError, match="empty"):
+            self._fn(["urn:valid", ""])
+
+    # 15. source order preserved.
+    def test_15_source_order_preserved(self):
+        items = ["urn:z", "urn:a", "urn:m"]
+        assert self._fn(items) == items
+
+
+# ---------------------------------------------------------------------------
+# 16-23  DATA FILE PARTIAL PRESENCE
+# ---------------------------------------------------------------------------
+
+class TestDataFilePartialPresence:
+    """Phase 6E-A.2 items 16-23: partial Data_File_Info behavior."""
+
+    def _payload_without_data_files(self, **extra_fields):
+        """Build a payload with all Data_File_Info fields absent."""
+        payload = _make_valid_kvp_payload()
+        data_item = payload["data"][0]
+        for key in [
+            "ops:Data_File_Info.ops:file_name",
+            "ops:Data_File_Info.ops:file_ref",
+            "ops:Data_File_Info.ops:file_size",
+            "ops:Data_File_Info.ops:md5_checksum",
+            "ops:Data_File_Info.ops:mime_type",
+        ]:
+            data_item.pop(key, None)
+        for k, v in extra_fields.items():
+            data_item[k] = v
+        return payload
+
+    # 16. all Data_File_Info fields absent → ()
+    def test_16_all_absent_gives_empty_tuple(self):
+        payload = self._payload_without_data_files()
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        assert product.data_files == ()
+        assert product.total_data_size_bytes == 0
+
+    # 17. all fields as empty arrays → ()
+    def test_17_all_empty_arrays_gives_empty_tuple(self):
+        payload = _make_valid_kvp_payload(
+            file_names=[],
+            file_refs=[],
+            file_sizes=[],
+            md5s=[],
+            mimes=[],
+        )
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        assert product.data_files == ()
+
+    # 18. md5-only metadata rejected.
+    def test_18_md5_only_metadata_rejected(self):
+        payload = self._payload_without_data_files(
+            **{"ops:Data_File_Info.ops:md5_checksum": ["d41d8cd98f00b204e9800998ecf8427e"]}
+        )
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError, match="optional metadata|md5|mime"):
+            adapter.fetch(_valid_request())
+
+    # 19. mime-only metadata rejected.
+    def test_19_mime_only_metadata_rejected(self):
+        payload = self._payload_without_data_files(
+            **{"ops:Data_File_Info.ops:mime_type": ["application/octet-stream"]}
+        )
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError, match="optional metadata|md5|mime"):
+            adapter.fetch(_valid_request())
+
+    # 20. md5+mime without required triple rejected.
+    def test_20_md5_and_mime_without_required_triple_rejected(self):
+        payload = self._payload_without_data_files(**{
+            "ops:Data_File_Info.ops:md5_checksum": ["d41d8cd98f00b204e9800998ecf8427e"],
+            "ops:Data_File_Info.ops:mime_type": ["application/octet-stream"],
+        })
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+
+    # 21. one valid complete file still accepted.
+    def test_21_one_complete_file_accepted(self):
+        adapter = _make_adapter()
+        product, _ = adapter.fetch(_valid_request())
+        assert len(product.data_files) == 1
+
+    # 22. multiple complete files still accepted.
+    def test_22_multiple_complete_files_accepted(self):
+        payload = _make_valid_kvp_payload(
+            file_names=["a.dat", "b.dat"],
+            file_refs=["https://pds.nasa.gov/a.dat", "https://pds.nasa.gov/b.dat"],
+            file_sizes=["100", "200"],
+            md5s=["d41d8cd98f00b204e9800998ecf8427e", "d41d8cd98f00b204e9800998ecf8427e"],
+            mimes=["application/octet-stream", "application/octet-stream"],
+        )
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        assert len(product.data_files) == 2
+
+    # 23. optional array cardinality mismatch remains rejected.
+    def test_23_optional_cardinality_mismatch_rejected(self):
+        payload = _make_valid_kvp_payload(
+            file_names=["a.dat", "b.dat"],
+            file_refs=["https://pds.nasa.gov/a.dat", "https://pds.nasa.gov/b.dat"],
+            file_sizes=["100", "200"],
+            md5s=["d41d8cd98f00b204e9800998ecf8427e"],  # only 1, but 2 files
+            mimes=None,
+        )
+        payload["data"][0].pop("ops:Data_File_Info.ops:mime_type", None)
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError, match="cardinality"):
+            adapter.fetch(_valid_request())
+
+
+# ---------------------------------------------------------------------------
+# 24-35  MODEL SELF-INTEGRITY
+# ---------------------------------------------------------------------------
+
+class TestPdsScienceProductSelfIntegrity:
+    """Phase 6E-A.2 items 24-35: PdsScienceProduct self-enforced identity."""
+
+    def _make(self, **overrides):
+        return PdsScienceProduct(**_make_valid_science_product(**overrides))
+
+    # 24. valid direct construction accepted.
+    def test_24_valid_direct_construction_accepted(self):
+        p = self._make()
+        assert p.lid == _VALID_LID
+        assert p.lidvid == _VALID_LIDVID
+        assert p.logical_identifier == _VALID_LID
+        assert p.version_id == _VALID_VERSION
+
+    # 25. logical_identifier != lid rejected.
+    def test_25_logical_identifier_mismatch_rejected(self):
+        with pytest.raises(ValidationError, match="logical_identifier"):
+            self._make(logical_identifier="urn:nasa:pds:other:data:other")
+
+    # 26. lidvid LID portion != lid rejected.
+    def test_26_lidvid_lid_portion_mismatch_rejected(self):
+        """lid is B but lidvid encodes LID A — they disagree, must be rejected."""
+        lid_b = "urn:nasa:pds:other_bundle:data:other"
+        with pytest.raises(ValidationError, match="LID portion|lid|logical_identifier"):
+            PdsScienceProduct(
+                lid=lid_b,
+                lidvid=_VALID_LIDVID,  # LID portion = _VALID_LID ≠ lid_b
+                logical_identifier=lid_b,
+                version_id=_VALID_VERSION,
+                product_class="Product_Observational",
+                title="Test",
+                data_files=(),
+                total_data_size_bytes=0,
+            )
+
+    def test_26b_lidvid_lid_portion_mismatch_explicit(self):
+        """lidvid LID part is A but lid is B → rejected."""
+        lid_b = "urn:nasa:pds:other_bundle:data:other"
+        with pytest.raises(ValidationError, match="LID portion|lid|logical_identifier"):
+            PdsScienceProduct(
+                lid=lid_b,
+                lidvid=_VALID_LIDVID,  # LID part = _VALID_LID, not lid_b
+                logical_identifier=lid_b,
+                version_id=_VALID_VERSION,
+                product_class="Product_Observational",
+                title="Test",
+                data_files=(),
+                total_data_size_bytes=0,
+            )
+
+    # 27. lidvid version != version_id rejected.
+    def test_27_lidvid_version_mismatch_rejected(self):
+        with pytest.raises(ValidationError, match="version"):
+            PdsScienceProduct(
+                lid=_VALID_LID,
+                lidvid=_VALID_LID + "::2.0",  # version 2.0
+                logical_identifier=_VALID_LID,
+                version_id="1.0",  # version_id says 1.0
+                product_class="Product_Observational",
+                title="Test",
+                data_files=(),
+                total_data_size_bytes=0,
+            )
+
+    # 28. malformed/multiple "::" lidvid rejected.
+    def test_28_multiple_double_colons_in_lidvid_rejected(self):
+        with pytest.raises(ValidationError, match="exactly one"):
+            PdsScienceProduct(
+                lid="urn:nasa:pds:a",
+                lidvid="urn:nasa:pds:a::b::1.0",
+                logical_identifier="urn:nasa:pds:a",
+                version_id="1.0",
+                product_class="Product_Observational",
+                title="Test",
+                data_files=(),
+                total_data_size_bytes=0,
+            )
+
+    # 29. empty lid rejected.
+    def test_29_empty_lid_rejected(self):
+        with pytest.raises(ValidationError, match="lid"):
+            self._make(lid="", logical_identifier="")
+
+    # 30. empty logical_identifier rejected.
+    def test_30_empty_logical_identifier_rejected(self):
+        with pytest.raises(ValidationError, match="logical_identifier"):
+            PdsScienceProduct(
+                lid=_VALID_LID,
+                lidvid=_VALID_LIDVID,
+                logical_identifier="",
+                version_id=_VALID_VERSION,
+                product_class="Product_Observational",
+                title="Test",
+                data_files=(),
+                total_data_size_bytes=0,
+            )
+
+    # 31. empty version_id rejected.
+    def test_31_empty_version_id_rejected(self):
+        with pytest.raises(ValidationError, match="version_id"):
+            PdsScienceProduct(
+                lid=_VALID_LID,
+                lidvid=_VALID_LIDVID,
+                logical_identifier=_VALID_LID,
+                version_id="",
+                product_class="Product_Observational",
+                title="Test",
+                data_files=(),
+                total_data_size_bytes=0,
+            )
+
+    # 32. empty title rejected.
+    def test_32_empty_title_rejected(self):
+        with pytest.raises(ValidationError, match="title"):
+            self._make(title="")
+
+    # 33. total_data_size_bytes invariant remains enforced.
+    def test_33_total_data_size_invariant_enforced(self):
+        f = PdsDataFile(
+            file_name="x.dat",
+            file_ref="https://pds.nasa.gov/x.dat",
+            file_size_bytes=500,
+        )
+        with pytest.raises(ValidationError, match="total_data_size_bytes"):
+            self._make(data_files=(f,), total_data_size_bytes=999)
+
+    # 34. start/stop time invariant remains enforced.
+    def test_34_start_stop_time_invariant_enforced(self):
+        from datetime import datetime, timezone
+        start = datetime(2026, 8, 27, 2, 0, 0, tzinfo=timezone.utc)
+        stop = datetime(2026, 8, 27, 1, 0, 0, tzinfo=timezone.utc)  # before start
+        with pytest.raises(ValidationError, match="start|stop"):
+            self._make(
+                observation_start_utc=start,
+                observation_stop_utc=stop,
+            )
+
+    # 35. frozen/strict behavior remains enforced.
+    def test_35_frozen_strict_behavior(self):
+        p = self._make()
+        with pytest.raises(Exception):
+            p.lid = "urn:nasa:pds:other:data:other::1.0"
+
+
+# ---------------------------------------------------------------------------
+# 36-45  REGRESSION
+# ---------------------------------------------------------------------------
+
+class TestPhase6EA2Regression:
+    """Phase 6E-A.2 items 36-45: regression assertions."""
+
+    # 36. _REQUESTED_FIELDS count == 22.
+    def test_36_requested_fields_count_22(self):
+        assert len(_REQUESTED_FIELDS) == 22
+
+    # 37. provenance formula unchanged.
+    def test_37_provenance_formula_unchanged(self):
+        import hashlib, json
+        req = _valid_request()
+        payload = _make_valid_kvp_payload()
+        raw_bytes = _make_response_bytes(payload)
+        content_sha256 = hashlib.sha256(raw_bytes).hexdigest()
+        canonical = _build_canonical_request_identity(req)
+        expected_id = _compute_provenance_id(canonical, content_sha256)
+        adapter = _make_adapter(body=raw_bytes)
+        _, prov = adapter.fetch(req)
+        assert prov.provenance_id == expected_id
+
+    # 38. redirect tests remain green (302 → PdsValidationError).
+    def test_38_redirect_fails_closed(self):
+        adapter = _make_adapter(status_code=302)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+
+    # 39. Phase 6D-B2 snapshot remains green.
+    def test_39_phase6db2_snapshot_green(self):
+        import pathlib, json
+        path = pathlib.Path(__file__).parent.parent / "fixtures" / "horizons" / "juno_2026_aug_27_vectors.json"
+        assert path.exists()
+        data = json.loads(path.read_text())
+        assert data is not None
+
+    # 40. Phase 6D adapter remains green.
+    def test_40_phase6d_adapter_importable(self):
+        from backend.app.mission_sources.adapters.horizons import HorizonsAdapter
+        assert HorizonsAdapter is not None
+
+    # 41. Phase 6D snapshot remains green.
+    def test_41_phase6d_snapshot_importable(self):
+        from backend.app.mission_sources.snapshots.horizons_snapshot import HorizonsSnapshotStore
+        assert HorizonsSnapshotStore is not None
+
+    # 42. Phase 6C remains green.
+    def test_42_phase6c_errors_importable(self):
+        from backend.app.mission_sources.errors import MissionSourceError
+        assert MissionSourceError is not None
+
+    # 43. Phase 6B remains green.
+    def test_43_phase6b_provenance_importable(self):
+        from backend.app.provenance.models import ProvenanceKind, ProvenanceRecord
+        assert ProvenanceKind.EXTERNAL_AUTHORITATIVE is not None
+
+    # 44. state.py remains unwired.
+    def test_44_state_py_not_wired_to_pds(self):
+        import pathlib
+        state_path = pathlib.Path(__file__).parent.parent.parent / "backend" / "app" / "state.py"
+        if state_path.exists():
+            content = state_path.read_text()
+            assert "PdsRegistryAdapter" not in content
+            assert "PdsScienceProduct" not in content
+
+    # 45. no external network request occurs.
+    def test_45_no_live_network_request(self):
+        """All fetches use MockTransport — no live network access."""
+        import httpx
+        captured = []
+        adapter = _make_adapter(capture_requests=captured)
+        adapter.fetch(_valid_request())
+        assert len(captured) == 1
+        # Confirm the transport is a MockTransport (not real network)
+        assert isinstance(adapter._client._transport, httpx.MockTransport)

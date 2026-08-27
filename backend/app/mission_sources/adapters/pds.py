@@ -315,25 +315,41 @@ def _as_str_list(value: object) -> list[str]:
 
     Rejected (raises PdsValidationError):
         123, 1.5, True, False, {}
-        [123], [True]  — list containing non-string items
-        mixed lists    — e.g. ["a", 123]
+        [None]                  — list containing None
+        ["a", None]             — list with any None element
+        [""]                    — list containing empty string
+        ["a", ""]               — list with any empty string
+        [123], [True]           — list containing non-string items
+        mixed lists             — e.g. ["a", 123]
+
+    Once a list is present, EVERY element must be a non-empty string.
+    Null and empty-string elements are never silently dropped.
     """
     if value is None:
         return []
     if isinstance(value, str):
         return [value] if value else []
     if isinstance(value, list):
+        if len(value) == 0:
+            return []
         result: list[str] = []
         for i, item in enumerate(value):
             if item is None:
-                continue
+                raise PdsValidationError(
+                    f"PDS KVP reference field contains a null element at "
+                    f"index {i}; null reference LIDs are not accepted."
+                )
             if not isinstance(item, str):
                 raise PdsValidationError(
                     f"PDS KVP reference field contains a non-string element at "
                     f"index {i}; only string reference LIDs are accepted."
                 )
-            if item:
-                result.append(item)
+            if not item:
+                raise PdsValidationError(
+                    f"PDS KVP reference field contains an empty string at "
+                    f"index {i}; empty reference LIDs are not accepted."
+                )
+            result.append(item)
         return result
     # Non-string, non-list, non-None (int, float, bool, dict, etc.)
     raise PdsValidationError(
@@ -449,6 +465,8 @@ def _normalize_data_files(data_item: dict) -> tuple[PdsDataFile, ...]:
     - Parallel array cardinalities do not match
     - file_size is invalid (non-integer, negative, bool, float, etc.)
     - MD5 or MIME is present but non-string
+    - Optional metadata (md5/mime) is present while required identity fields
+      (file_name, file_ref, file_size) are absent (partial presence → fail closed)
     """
     raw_names = data_item.get("ops:Data_File_Info.ops:file_name")
     raw_refs = data_item.get("ops:Data_File_Info.ops:file_ref")
@@ -465,8 +483,20 @@ def _normalize_data_files(data_item: dict) -> tuple[PdsDataFile, ...]:
 
     n = len(names)
 
-    # If no names, check if other required fields also absent → no data files.
+    # If no required fields are present at all, this is a genuinely absent
+    # Data_File_Info representation.  But if optional fields (md5/mime) carry
+    # actual values while the required identity triple is absent, fail closed —
+    # we must not silently discard partial metadata.
     if n == 0 and len(refs) == 0 and len(sizes) == 0:
+        optional_present = any(
+            x for x in (md5s, mimes) if x  # non-empty list means something was supplied
+        )
+        if optional_present:
+            raise PdsValidationError(
+                "PDS Data_File_Info contains optional metadata (md5/mime) but "
+                "required identity fields (file_name, file_ref, file_size) are "
+                "all absent. Failing closed to avoid silent data loss."
+            )
         return ()
 
     # With data: all required fields must be present.
