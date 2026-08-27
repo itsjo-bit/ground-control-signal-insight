@@ -3,6 +3,16 @@
 Implements :class:`BaseMissionSourceProvider` for the ``synthetic_scenario``
 source mode.
 
+Phase 6C.1 corrections
+-----------------------
+- Error messages are sanitized: ScenarioLoader/Pydantic exception text is
+  NEVER interpolated into the public ``MissionSourceValidationError`` message.
+  The original exception is preserved only as ``__cause__`` (``from exc``).
+- OSError subclasses from ``ScenarioLoader.load()`` (``PermissionError``,
+  ``IsADirectoryError``, etc.) are normalized to
+  ``MissionSourceUnavailableError`` rather than leaking raw filesystem
+  exceptions through the provider boundary.
+
 Load path
 ---------
 ::
@@ -322,15 +332,23 @@ class SyntheticScenarioProvider(BaseMissionSourceProvider):
         # ----------------------------------------------------------------
         try:
             scenario: Scenario = ScenarioLoader.load(source_ref)
-        except FileNotFoundError:
+        except FileNotFoundError as exc:
             # Race: file disappeared between exists() and load()
             raise MissionSourceUnavailableError(
                 "Scenario source disappeared between availability check and loading."
-            )
+            ) from exc
+        except OSError as exc:
+            # PermissionError, IsADirectoryError, or other filesystem error
+            # that occurred after the initial existence check.
+            raise MissionSourceUnavailableError(
+                "Scenario source could not be accessed (IO error during loading)."
+            ) from exc
         except ValueError as exc:
-            # Covers: invalid JSON, Pydantic validation failure, simulated=False
+            # Covers: invalid JSON, Pydantic validation failure, simulated=False.
+            # Do NOT interpolate exc text — it may contain raw source paths or
+            # Pydantic input_value fragments.  Preserve as __cause__ only.
             raise MissionSourceValidationError(
-                f"Scenario source failed validation: {exc}"
+                "Scenario source failed validation."
             ) from exc
 
         # ----------------------------------------------------------------
@@ -365,9 +383,14 @@ class SyntheticScenarioProvider(BaseMissionSourceProvider):
                 content_sha256=content_sha256,
                 source_ref=source_ref,
             )
+        except (MissionSourceValidationError, MissionSourceUnavailableError):
+            # Re-raise provider errors produced inside _build_bundle as-is.
+            raise
         except Exception as exc:
+            # Do NOT interpolate exc text — it may contain source-derived
+            # content.  Preserve as __cause__ only.
             raise MissionSourceValidationError(
-                f"Failed to build provenance for scenario: {exc}"
+                "Scenario source could not be assembled into a trusted bundle."
             ) from exc
 
         return bundle

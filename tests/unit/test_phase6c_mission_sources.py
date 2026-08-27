@@ -676,6 +676,174 @@ def test_30_scenario_schema_unchanged() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Phase 6C.1 — Error boundary / redaction tests
+# ---------------------------------------------------------------------------
+
+
+def test_6c1_invalid_json_no_path_in_error(tmp_path: Path) -> None:
+    """Invalid JSON raises MissionSourceValidationError; raw source path must
+    NOT appear in the public exception message (Issue 1)."""
+    sentinel_path = tmp_path / "GCSI_SENTINEL_PATH_DO_NOT_LEAK.json"
+    sentinel_path.write_text("{ not valid json }", encoding="utf-8")
+    provider = SyntheticScenarioProvider()
+
+    with pytest.raises(MissionSourceValidationError) as exc_info:
+        provider.load(str(sentinel_path))
+
+    public_msg = str(exc_info.value)
+    assert "GCSI_SENTINEL_PATH_DO_NOT_LEAK" not in public_msg, (
+        f"Raw source path leaked into public error message: {public_msg!r}"
+    )
+
+
+def test_6c1_schema_invalid_json_no_path_in_error(tmp_path: Path) -> None:
+    """Valid JSON but invalid Scenario schema raises MissionSourceValidationError;
+    raw source path must NOT appear in the public exception message (Issue 1)."""
+    sentinel_path = tmp_path / "GCSI_SCHEMA_SENTINEL_PATH_DO_NOT_LEAK.json"
+    sentinel_path.write_text(
+        json.dumps({"scenario_id": "x", "simulated": True}),
+        encoding="utf-8",
+    )
+    provider = SyntheticScenarioProvider()
+
+    with pytest.raises(MissionSourceValidationError) as exc_info:
+        provider.load(str(sentinel_path))
+
+    public_msg = str(exc_info.value)
+    assert "GCSI_SCHEMA_SENTINEL_PATH_DO_NOT_LEAK" not in public_msg, (
+        f"Raw source path leaked into public error message: {public_msg!r}"
+    )
+
+
+def test_6c1_pydantic_input_value_not_in_error(tmp_path: Path) -> None:
+    """Pydantic input_value sentinel strings from an invalid field must NOT
+    be copied into the public MissionSourceValidationError message (Issue 1)."""
+    sentinel = "GCSI_SECRET_SOURCE_CONTENT_DO_NOT_LEAK"
+    bad_scenario = dict(_MINIMAL_SCENARIO)
+    # Inject the sentinel as an invalid value for a numeric field so that
+    # Pydantic's ValidationError will reference it in input_value context.
+    bad_scenario["distance_km"] = sentinel  # type: ignore[assignment]
+
+    p = tmp_path / "sentinel_scenario.json"
+    p.write_text(json.dumps(bad_scenario), encoding="utf-8")
+    provider = SyntheticScenarioProvider()
+
+    with pytest.raises(MissionSourceValidationError) as exc_info:
+        provider.load(str(p))
+
+    public_msg = str(exc_info.value)
+    assert sentinel not in public_msg, (
+        f"Source-controlled sentinel content leaked into public error: {public_msg!r}"
+    )
+
+
+def test_6c1_simulated_false_no_path_in_error(tmp_path: Path) -> None:
+    """simulated=False rejection must NOT expose the raw source path in the
+    public exception message (Issue 1)."""
+    sentinel_path = tmp_path / "GCSI_SIMULATED_FALSE_PATH_DO_NOT_LEAK.json"
+    non_simulated = dict(_MINIMAL_SCENARIO)
+    non_simulated["simulated"] = False
+    sentinel_path.write_text(json.dumps(non_simulated), encoding="utf-8")
+    provider = SyntheticScenarioProvider()
+
+    with pytest.raises(MissionSourceValidationError) as exc_info:
+        provider.load(str(sentinel_path))
+
+    public_msg = str(exc_info.value)
+    assert "GCSI_SIMULATED_FALSE_PATH_DO_NOT_LEAK" not in public_msg, (
+        f"Raw source path leaked into public error message: {public_msg!r}"
+    )
+
+
+def test_6c1_permission_error_normalized_to_unavailable(
+    minimal_scenario_file: Path,
+) -> None:
+    """ScenarioLoader.load() raising PermissionError must be normalized to
+    MissionSourceUnavailableError (Issue 2)."""
+    import backend.app.mission_sources.synthetic_provider as sp_module
+
+    provider = SyntheticScenarioProvider()
+
+    with patch.object(
+        sp_module.ScenarioLoader,
+        "load",
+        side_effect=PermissionError("access denied"),
+    ):
+        with pytest.raises(MissionSourceUnavailableError):
+            provider.load(str(minimal_scenario_file))
+
+
+def test_6c1_generic_oserror_normalized_to_unavailable(
+    minimal_scenario_file: Path,
+) -> None:
+    """ScenarioLoader.load() raising a generic OSError must be normalized to
+    MissionSourceUnavailableError (Issue 2)."""
+    import backend.app.mission_sources.synthetic_provider as sp_module
+
+    provider = SyntheticScenarioProvider()
+
+    with patch.object(
+        sp_module.ScenarioLoader,
+        "load",
+        side_effect=OSError("filesystem error"),
+    ):
+        with pytest.raises(MissionSourceUnavailableError):
+            provider.load(str(minimal_scenario_file))
+
+
+def test_6c1_sanitized_errors_preserve_cause(tmp_path: Path) -> None:
+    """The sanitized public MissionSourceValidationError must preserve the
+    original exception as __cause__ for debugging (Issue 1 + 3)."""
+    bad_file = tmp_path / "bad_cause.json"
+    bad_file.write_text("{ not valid json }", encoding="utf-8")
+    provider = SyntheticScenarioProvider()
+
+    with pytest.raises(MissionSourceValidationError) as exc_info:
+        provider.load(str(bad_file))
+
+    assert exc_info.value.__cause__ is not None, (
+        "Public MissionSourceValidationError must chain the original exception "
+        "as __cause__ for diagnostic purposes."
+    )
+
+
+def test_6c1_missing_file_still_unavailable(tmp_path: Path) -> None:
+    """Missing file behavior must still raise MissionSourceUnavailableError
+    after Phase 6C.1 changes (regression guard, Issue 2)."""
+    provider = SyntheticScenarioProvider()
+    with pytest.raises(MissionSourceUnavailableError):
+        provider.load(str(tmp_path / "nonexistent.json"))
+
+
+def test_6c1_provenance_failure_sanitized(
+    minimal_scenario_file: Path,
+) -> None:
+    """A failure inside _build_bundle must surface as a sanitized
+    MissionSourceValidationError without copying arbitrary exception text
+    into the public message (Issue 1 — provenance construction path)."""
+    import backend.app.mission_sources.synthetic_provider as sp_module
+
+    sentinel_message = "GCSI_INTERNAL_PROVENANCE_SENTINEL_DO_NOT_LEAK"
+    provider = SyntheticScenarioProvider()
+
+    with patch.object(
+        sp_module,
+        "_build_bindings",
+        side_effect=RuntimeError(sentinel_message),
+    ):
+        with pytest.raises(MissionSourceValidationError) as exc_info:
+            provider.load(str(minimal_scenario_file))
+
+    public_msg = str(exc_info.value)
+    assert sentinel_message not in public_msg, (
+        f"Internal exception sentinel leaked into public error message: {public_msg!r}"
+    )
+    # __cause__ must preserve it for debugging
+    assert exc_info.value.__cause__ is not None
+    assert sentinel_message in str(exc_info.value.__cause__)
+
+
+# ---------------------------------------------------------------------------
 # ASTERIA-7 integration test — real canonical demo scenario
 # ---------------------------------------------------------------------------
 
