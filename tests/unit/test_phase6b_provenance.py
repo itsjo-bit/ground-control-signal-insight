@@ -227,7 +227,7 @@ class TestDerivedRecord:
         )
         assert rec.kind == ProvenanceKind.DERIVED
         assert rec.derivation_method == "propagation_delay_from_distance_km"
-        assert rec.parent_provenance_ids == ["pds-001", "pds-002"]
+        assert rec.parent_provenance_ids == ("pds-001", "pds-002")
 
     def test_derived_record_in_manifest_with_valid_parents(self):
         parent = _record(provenance_id="parent-001", kind=ProvenanceKind.EXTERNAL_AUTHORITATIVE)
@@ -424,8 +424,9 @@ class TestDuplicateProvenanceIds:
 
     def test_empty_manifest_is_valid(self):
         manifest = ProvenanceManifest(records=[], bindings=[])
-        assert manifest.records == []
-        assert manifest.bindings == []
+        assert manifest.records == ()
+        assert manifest.bindings == ()
+        assert len(manifest.records) == 0
 
 
 # ===========================================================================
@@ -836,18 +837,44 @@ class TestProvenanceRecordExtraFieldsRejected:
             )
 
 
-class TestManifestListDefaults:
-    """List fields must use default_factory — no shared mutable defaults."""
+class TestManifestCollectionDefaults:
+    """Collection fields use default_factory — no shared mutable defaults.
+    After Phase 6B.1 these collections are tuples (immutable).
+    """
 
-    def test_two_manifests_have_independent_record_lists(self):
-        m1 = ProvenanceManifest()
-        m2 = ProvenanceManifest()
+    def test_two_manifests_have_independent_record_tuples(self):
+        """Empty tuples are interned by CPython; use non-empty to prove independence."""
+        rec1 = _record(provenance_id="m1-rec")
+        rec2 = _record(provenance_id="m2-rec")
+        m1 = ProvenanceManifest(records=[rec1], bindings=[])
+        m2 = ProvenanceManifest(records=[rec2], bindings=[])
+        # Distinct tuples with distinct contents
         assert m1.records is not m2.records
+        assert m1.records[0].provenance_id == "m1-rec"
+        assert m2.records[0].provenance_id == "m2-rec"
 
-    def test_two_records_have_independent_parent_id_lists(self):
-        r1 = _record(provenance_id="r1")
-        r2 = _record(provenance_id="r2")
+    def test_two_records_have_independent_parent_id_tuples(self):
+        """Populate parent_ids to avoid CPython empty-tuple interning."""
+        r1 = _record(provenance_id="r1", parent_provenance_ids=["r1-parent"])
+        r2 = _record(provenance_id="r2", parent_provenance_ids=["r2-parent"])
         assert r1.parent_provenance_ids is not r2.parent_provenance_ids
+        assert r1.parent_provenance_ids == ("r1-parent",)
+        assert r2.parent_provenance_ids == ("r2-parent",)
+
+    def test_records_collection_is_tuple(self):
+        rec = _record()
+        m = ProvenanceManifest(records=[rec], bindings=[])
+        assert isinstance(m.records, tuple)
+
+    def test_bindings_collection_is_tuple(self):
+        rec = _record()
+        b = _binding()
+        m = ProvenanceManifest(records=[rec], bindings=[b])
+        assert isinstance(m.bindings, tuple)
+
+    def test_parent_provenance_ids_is_tuple(self):
+        rec = _record(parent_provenance_ids=[])
+        assert isinstance(rec.parent_provenance_ids, tuple)
 
 
 class TestProvenanceValidationStatusSemantics:
@@ -868,3 +895,277 @@ class TestProvenanceValidationStatusSemantics:
             rec = _record(validation_status=status)
             dumped = rec.model_dump()
             assert dumped["validation_status"] == status.value
+
+
+# ===========================================================================
+# Phase 6B.1 — Deep Immutability Tests
+# ===========================================================================
+
+class TestDeepImmutability:
+    """Phase 6B.1 cases 1-5: tuple fields cannot be mutated after construction."""
+
+    # Case 1 — parent_provenance_ids cannot be mutated after construction
+    def test_parent_provenance_ids_is_immutable(self):
+        rec = _record(parent_provenance_ids=["p1", "p2"])
+        assert isinstance(rec.parent_provenance_ids, tuple)
+        with pytest.raises(AttributeError):
+            rec.parent_provenance_ids.append("new-parent")  # type: ignore[attr-defined]
+
+    def test_parent_provenance_ids_tuple_cannot_be_replaced(self):
+        """frozen=True prevents normal attribute replacement."""
+        rec = _record(parent_provenance_ids=["p1"])
+        with pytest.raises((TypeError, ValidationError)):
+            rec.parent_provenance_ids = ("p1", "injected")  # type: ignore[misc]
+
+    # Case 2 — manifest.records cannot be mutated after construction
+    def test_manifest_records_is_immutable_tuple(self):
+        rec = _record()
+        b = _binding()
+        manifest = ProvenanceManifest(records=[rec], bindings=[b])
+        assert isinstance(manifest.records, tuple)
+        with pytest.raises(AttributeError):
+            manifest.records.append(_record(provenance_id="injected"))  # type: ignore[attr-defined]
+
+    # Case 3 — manifest.bindings cannot be mutated after construction
+    def test_manifest_bindings_is_immutable_tuple(self):
+        rec = _record()
+        b = _binding()
+        manifest = ProvenanceManifest(records=[rec], bindings=[b])
+        assert isinstance(manifest.bindings, tuple)
+        with pytest.raises(AttributeError):
+            manifest.bindings.append(_binding(field_path="injected"))  # type: ignore[attr-defined]
+
+    # Case 4 — a validated manifest cannot be transformed into invalid/cyclic graph
+    def test_validated_manifest_cannot_become_cyclic_via_mutation(self):
+        """After manifest passes cycle/reference validation, the collections are
+        tuple-immutable, so no post-construction mutation can introduce a cycle."""
+        root = _record(provenance_id="safe-root")
+        child = _record(provenance_id="safe-child", parent_provenance_ids=["safe-root"])
+        manifest = ProvenanceManifest(records=[root, child], bindings=[])
+        # Attempt to mutate record collection — must be impossible
+        with pytest.raises(AttributeError):
+            manifest.records.append(  # type: ignore[attr-defined]
+                _record(provenance_id="safe-root", parent_provenance_ids=["safe-child"])
+            )
+        # Manifest integrity is preserved
+        assert len(manifest.records) == 2
+
+    # Case 5 — list input accepted and normalized to immutable tuple
+    def test_list_input_normalized_to_tuple_for_parent_ids(self):
+        rec = ProvenanceRecord(
+            provenance_id="norm-001",
+            kind=ProvenanceKind.DERIVED,
+            source_system="GCSI",
+            parent_provenance_ids=["p-a", "p-b"],
+        )
+        assert isinstance(rec.parent_provenance_ids, tuple)
+        assert rec.parent_provenance_ids == ("p-a", "p-b")
+
+    def test_list_input_normalized_to_tuple_for_manifest_records(self):
+        rec = _record()
+        b = _binding()
+        manifest = ProvenanceManifest(records=[rec], bindings=[b])
+        assert isinstance(manifest.records, tuple)
+        assert isinstance(manifest.bindings, tuple)
+
+    def test_tuple_input_also_accepted_for_parent_ids(self):
+        rec = ProvenanceRecord(
+            provenance_id="tup-001",
+            kind=ProvenanceKind.SYNTHETIC,
+            source_system="GCSI",
+            parent_provenance_ids=(),
+        )
+        assert isinstance(rec.parent_provenance_ids, tuple)
+        assert rec.parent_provenance_ids == ()
+
+
+# Case 6 — model_dump_json() serializes tuple collections as JSON arrays
+class TestTupleJsonSerialization:
+    """Phase 6B.1 case 6: tuple fields serialize as JSON arrays."""
+
+    def test_parent_provenance_ids_serializes_as_json_array(self):
+        import json
+        rec = _record(parent_provenance_ids=["a", "b"])
+        data = json.loads(rec.model_dump_json())
+        assert isinstance(data["parent_provenance_ids"], list)
+        assert data["parent_provenance_ids"] == ["a", "b"]
+
+    def test_manifest_records_serializes_as_json_array(self):
+        import json
+        rec = _record()
+        b = _binding()
+        manifest = ProvenanceManifest(records=[rec], bindings=[b])
+        data = json.loads(manifest.model_dump_json())
+        assert isinstance(data["records"], list)
+        assert isinstance(data["bindings"], list)
+
+    def test_empty_parent_provenance_ids_serializes_as_empty_array(self):
+        import json
+        rec = _record()
+        data = json.loads(rec.model_dump_json())
+        assert data["parent_provenance_ids"] == []
+
+    def test_empty_manifest_collections_serialize_as_empty_arrays(self):
+        import json
+        manifest = ProvenanceManifest()
+        data = json.loads(manifest.model_dump_json())
+        assert data["records"] == []
+        assert data["bindings"] == []
+
+
+# ===========================================================================
+# Phase 6B.1 — Datetime JSON Validation Tests (cases 7-11)
+# ===========================================================================
+
+class TestDatetimeJsonValidation:
+    """Phase 6B.1 cases 7-11: datetime validation via JSON deserialization."""
+
+    _UTC_ISO = "2026-08-27T12:00:00Z"
+    _OFFSET_ISO = "2026-08-27T19:00:00+07:00"
+    _NAIVE_ISO = "2026-08-27T12:00:00"
+
+    def _base_json(self, **overrides) -> str:
+        import json
+        base = {
+            "provenance_id": "json-rec-001",
+            "kind": "synthetic",
+            "source_system": "GCSI-benchmark",
+        }
+        base.update(overrides)
+        return json.dumps(base)
+
+    # Case 7 — UTC ISO string accepted
+    def test_model_validate_json_accepts_utc_iso_string(self):
+        payload = self._base_json(observed_at=self._UTC_ISO)
+        rec = ProvenanceRecord.model_validate_json(payload)
+        assert rec.observed_at is not None
+        assert rec.observed_at.utcoffset() is not None
+
+    # Case 8 — offset-aware ISO string accepted
+    def test_model_validate_json_accepts_offset_aware_iso_string(self):
+        payload = self._base_json(retrieved_at=self._OFFSET_ISO)
+        rec = ProvenanceRecord.model_validate_json(payload)
+        assert rec.retrieved_at is not None
+        assert rec.retrieved_at.utcoffset() is not None
+
+    # Case 9 — naive ISO string rejected
+    def test_model_validate_json_rejects_naive_iso_string(self):
+        payload = self._base_json(observed_at=self._NAIVE_ISO)
+        with pytest.raises(ValidationError):
+            ProvenanceRecord.model_validate_json(payload)
+
+    # Case 10 — naive ISO rejection is ValidationError, not AttributeError
+    def test_naive_iso_rejection_is_validation_error_not_attribute_error(self):
+        payload = self._base_json(normalized_at=self._NAIVE_ISO)
+        try:
+            ProvenanceRecord.model_validate_json(payload)
+            pytest.fail("Expected ValidationError was not raised")
+        except ValidationError:
+            pass  # correct
+        except AttributeError as exc:
+            pytest.fail(
+                f"Got AttributeError instead of ValidationError: {exc}"
+            )
+
+    # Case 11 — JSON round-trip
+    def test_record_json_round_trip(self):
+        original = ProvenanceRecord(
+            provenance_id="rt-001",
+            kind=ProvenanceKind.EXTERNAL_AUTHORITATIVE,
+            source_system="NASA-PDS",
+            observed_at=datetime(2026, 8, 27, 12, 0, 0, tzinfo=timezone.utc),
+            validation_status=ProvenanceValidationStatus.VALIDATED,
+            parent_provenance_ids=["parent-001"],
+        )
+        json_str = original.model_dump_json()
+        restored = ProvenanceRecord.model_validate_json(json_str)
+        assert restored.provenance_id == original.provenance_id
+        assert restored.kind == original.kind
+        assert restored.observed_at == original.observed_at
+        assert restored.parent_provenance_ids == original.parent_provenance_ids
+        assert isinstance(restored.parent_provenance_ids, tuple)
+
+
+# ===========================================================================
+# Phase 6B.1 — ProvenanceManifest JSON Round-trip (case 12)
+# ===========================================================================
+
+class TestManifestJsonRoundTrip:
+    """Phase 6B.1 case 12: ProvenanceManifest JSON round-trip with lineage."""
+
+    def test_manifest_json_round_trip_with_records_bindings_and_lineage(self):
+        root = ProvenanceRecord(
+            provenance_id="rt-root",
+            kind=ProvenanceKind.EXTERNAL_AUTHORITATIVE,
+            source_system="NASA-PDS",
+            validation_status=ProvenanceValidationStatus.VALIDATED,
+        )
+        derived = ProvenanceRecord(
+            provenance_id="rt-derived",
+            kind=ProvenanceKind.DERIVED,
+            source_system="GCSI-engine",
+            parent_provenance_ids=["rt-root"],
+        )
+        binding = FieldProvenanceBinding(
+            entity_type="data_product",
+            entity_id="DP-RT-001",
+            field_path="age_s",
+            provenance_id="rt-derived",
+        )
+        original = ProvenanceManifest(records=[root, derived], bindings=[binding])
+        json_str = original.model_dump_json()
+        restored = ProvenanceManifest.model_validate_json(json_str)
+
+        assert len(restored.records) == 2
+        assert len(restored.bindings) == 1
+        assert isinstance(restored.records, tuple)
+        assert isinstance(restored.bindings, tuple)
+        restored_derived = next(r for r in restored.records if r.provenance_id == "rt-derived")
+        assert isinstance(restored_derived.parent_provenance_ids, tuple)
+        assert restored_derived.parent_provenance_ids == ("rt-root",)
+        assert restored.bindings[0].field_path == "age_s"
+
+
+# ===========================================================================
+# Phase 6B.1 — SHA-256 non-string input (case 13)
+# ===========================================================================
+
+class TestSha256NonStringRejected:
+    """Phase 6B.1 case 13: non-string content_sha256 fails with ValidationError."""
+
+    def test_integer_sha256_fails_with_validation_error(self):
+        try:
+            ProvenanceRecord(
+                provenance_id="sha-int",
+                kind=ProvenanceKind.SYNTHETIC,
+                source_system="test",
+                content_sha256=12345,  # type: ignore[arg-type]
+            )
+            pytest.fail("Expected ValidationError was not raised")
+        except ValidationError:
+            pass
+        except (TypeError, AttributeError) as exc:
+            pytest.fail(f"Got raw {type(exc).__name__} instead of ValidationError: {exc}")
+
+    def test_list_sha256_fails_with_validation_error(self):
+        try:
+            ProvenanceRecord(
+                provenance_id="sha-list",
+                kind=ProvenanceKind.SYNTHETIC,
+                source_system="test",
+                content_sha256=["not", "a", "string"],  # type: ignore[arg-type]
+            )
+            pytest.fail("Expected ValidationError was not raised")
+        except ValidationError:
+            pass
+        except (TypeError, AttributeError) as exc:
+            pytest.fail(f"Got raw {type(exc).__name__} instead of ValidationError: {exc}")
+
+    def test_none_sha256_is_still_valid(self):
+        rec = ProvenanceRecord(
+            provenance_id="sha-none",
+            kind=ProvenanceKind.SYNTHETIC,
+            source_system="test",
+            content_sha256=None,
+        )
+        assert rec.content_sha256 is None

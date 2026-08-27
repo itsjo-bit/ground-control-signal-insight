@@ -25,19 +25,34 @@ SHA-256 FORMAT
 characters.  This represents a source-content hash supplied by a future
 adapter / snapshot layer; it is NOT computed automatically here.
 
+The SHA-256 validator runs ``mode="after"`` so that Pydantic validates the
+type first; non-string values produce a normal ValidationError instead of a
+raw TypeError from the regex helper.
+
 DATETIME POLICY
 ---------------
-All datetime fields must be timezone-aware (``tzinfo`` is not None).
-Timezone-naive datetimes are rejected at validation time.  Replay
-snapshots require reproducibility; ``datetime.now()`` is never called
-during model construction.
+All datetime fields must be timezone-aware: ``tzinfo is not None`` AND
+``utcoffset() is not None``.  Timezone-naive datetimes are rejected at
+validation time.  Replay snapshots require reproducibility;
+``datetime.now()`` is never called during model construction.
+
+The datetime validators run ``mode="after"`` so that Pydantic parses ISO
+strings into datetime objects first.  This prevents AttributeError when raw
+strings arrive during JSON deserialization.
+
+Valid:   ``"2026-08-27T12:00:00Z"``, ``"2026-08-27T19:00:00+07:00"``
+Invalid: ``"2026-08-27T12:00:00"`` (naive -- rejected with ValidationError)
 
 IMMUTABILITY CONTRACT
 ---------------------
 - ``model_config = ConfigDict(frozen=True, extra="forbid")``
-  prevents mutation and rejects unknown fields, matching GCSI's existing
-  strict model practice.
-- List defaults use ``default_factory``, not mutable literals.
+  prevents attribute mutation and rejects unknown fields.
+- Collection fields use immutable ``tuple`` types so that in-place
+  mutation of the underlying sequences (e.g. ``.append()``) is impossible
+  after the model passes integrity validation.  Pydantic accepts list/JSON-
+  array input and normalises it to tuples automatically.
+- JSON serialisation represents tuple fields as JSON arrays via
+  ``model_dump_json()``, preserving natural API/storage representation.
 """
 
 from __future__ import annotations
@@ -58,7 +73,11 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _validate_sha256(value: str) -> str:
-    """Validate that *value* is exactly 64 lowercase hex characters."""
+    """Validate that *value* is exactly 64 lowercase hex characters.
+
+    Called only after Pydantic has already confirmed the value is a str,
+    so non-string inputs never reach this helper.
+    """
     if not _SHA256_RE.match(value):
         raise ValueError(
             f"content_sha256 must be exactly 64 lowercase hexadecimal characters; "
@@ -68,11 +87,19 @@ def _validate_sha256(value: str) -> str:
 
 
 def _validate_aware_datetime(value: datetime) -> datetime:
-    """Reject timezone-naive datetimes."""
-    if value.tzinfo is None:
+    """Reject timezone-naive datetimes.
+
+    A datetime is considered timezone-aware only when both conditions hold:
+        value.tzinfo is not None
+        value.utcoffset() is not None
+
+    Called only after Pydantic has parsed the input into a datetime object,
+    so raw strings never reach this helper during JSON deserialization.
+    """
+    if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(
-            "Datetime must be timezone-aware (tzinfo must not be None). "
-            "Use datetime(..., tzinfo=timezone.utc) or an aware datetime."
+            "Datetime must be timezone-aware (tzinfo and utcoffset() must not be None). "
+            "Use datetime(..., tzinfo=timezone.utc) or an offset-aware ISO string."
         )
     return value
 
@@ -280,11 +307,12 @@ class ProvenanceRecord(BaseModel):
             "e.g. 'propagation_delay_from_distance_km'."
         ),
     )
-    parent_provenance_ids: list[str] = Field(
-        default_factory=list,
+    parent_provenance_ids: tuple[str, ...] = Field(
+        default_factory=tuple,
         description=(
             "IDs of provenance records this record was derived from. "
-            "Validated against existing records by ProvenanceManifest."
+            "Validated against existing records by ProvenanceManifest. "
+            "Stored as an immutable tuple; list/JSON-array input is accepted."
         ),
     )
     notes: Optional[str] = Field(
@@ -292,26 +320,23 @@ class ProvenanceRecord(BaseModel):
         description="Optional free-text annotation; not semantically interpreted.",
     )
 
-    @field_validator("content_sha256", mode="before")
+    @field_validator("content_sha256", mode="after")
     @classmethod
     def _validate_content_sha256(cls, v: Optional[str]) -> Optional[str]:
+        # Pydantic has already validated the type (str | None) before this runs,
+        # so non-string values will have already raised a ValidationError.
         if v is None:
             return v
         return _validate_sha256(v)
 
-    @field_validator("observed_at", "retrieved_at", "normalized_at", mode="before")
+    @field_validator("observed_at", "retrieved_at", "normalized_at", mode="after")
     @classmethod
     def _validate_aware_datetimes(cls, v: Optional[datetime]) -> Optional[datetime]:
+        # Pydantic has already parsed ISO strings into datetime objects before
+        # this runs, so raw strings never reach _validate_aware_datetime.
         if v is None:
             return v
         return _validate_aware_datetime(v)
-
-    @field_validator("parent_provenance_ids", mode="before")
-    @classmethod
-    def _validate_no_self_parent(cls, v: list[str], info) -> list[str]:
-        # Self-parent check is deferred to model_validator where we have the full
-        # model data including provenance_id.
-        return v
 
     @model_validator(mode="after")
     def _reject_self_parent(self) -> "ProvenanceRecord":
@@ -406,13 +431,19 @@ class ProvenanceManifest(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    records: list[ProvenanceRecord] = Field(
-        default_factory=list,
-        description="All provenance records in this manifest.",
+    records: tuple[ProvenanceRecord, ...] = Field(
+        default_factory=tuple,
+        description=(
+            "All provenance records in this manifest. "
+            "Stored as an immutable tuple; list/JSON-array input is accepted."
+        ),
     )
-    bindings: list[FieldProvenanceBinding] = Field(
-        default_factory=list,
-        description="Field-to-record bindings in this manifest.",
+    bindings: tuple[FieldProvenanceBinding, ...] = Field(
+        default_factory=tuple,
+        description=(
+            "Field-to-record bindings in this manifest. "
+            "Stored as an immutable tuple; list/JSON-array input is accepted."
+        ),
     )
 
     @model_validator(mode="after")
