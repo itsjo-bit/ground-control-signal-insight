@@ -241,9 +241,10 @@ class PdsDataFile(BaseModel):
     - file_ref is NOT followed or downloaded.
     - file_size_bytes is used to compute
       :attr:`PdsScienceProduct.total_data_size_bytes`.
+    - strict=True prevents coercion of non-str to str, non-int to int.
     """
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     file_name: str = Field(description="Data-file name as reported by PDS.")
     file_ref: str = Field(
@@ -377,9 +378,10 @@ class PdsScienceProduct(BaseModel):
     - observation_start_utc and observation_stop_utc are None when the PDS
       metadata does not supply them.  Do not substitute retrieved_at.
     - total_data_size_bytes is derived from data_files, not from label size.
+    - strict=True prevents coercion of non-int to int for total_data_size_bytes.
     """
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     lid: str = Field(description="Logical identifier without version.")
     lidvid: str = Field(description="Full versioned LIDVID.")
@@ -454,9 +456,7 @@ class PdsScienceProduct(BaseModel):
     def _require_product_observational(cls, v: str) -> str:
         if v != _PRODUCT_OBSERVATIONAL:
             raise ValueError(
-                f"product_class must be '{_PRODUCT_OBSERVATIONAL}'; got '{v}'. "
-                "This adapter only normalizes science/observational products. "
-                "Bundles, collections, and documents require separate adapters."
+                "PDS product class is not supported by this observational-product adapter."
             )
         return v
 

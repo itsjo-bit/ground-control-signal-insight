@@ -55,6 +55,8 @@ Security notes
 - Request fields are a fixed immutable list owned by this adapter.
 - Raw response content, request URLs, and raw metadata strings are NOT
   exposed in public exception messages.
+- Redirect following is always disabled at the request level, regardless of
+  the injected client's follow_redirects default.
 """
 
 from __future__ import annotations
@@ -65,6 +67,7 @@ from datetime import datetime, timezone
 from typing import Callable, Optional
 
 import httpx
+import pydantic
 
 from backend.app.mission_sources.errors import (
     MissionSourceUnavailableError,
@@ -229,12 +232,29 @@ def _compute_provenance_id(canonical_identity: str, content_sha256: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# KVP value normalization helpers
+# KVP value normalization helpers — strict narrow contracts
 # ---------------------------------------------------------------------------
+# These helpers enforce an explicit narrow contract over external KVP values.
+# They do NOT stringify arbitrary types.  If the source sends a non-string
+# value where a string is required, a PdsValidationError is raised.
 
 
 def _as_str_or_none(value: object) -> Optional[str]:
-    """Extract a scalar string from a KVP field value (scalar or single-item list)."""
+    """Extract a scalar string from a KVP field value (strict).
+
+    Accepted shapes:
+        "value"             → "value" (non-empty string)
+        ""                  → None
+        None                → None
+        ["value"]           → "value" (single-element list of str)
+        []                  → None
+        [None]              → None
+
+    Rejected (raises PdsValidationError):
+        123, 1.5, True, False, {}, {"x": "y"}
+        ["a", "b"]  (multi-element list — use _as_str_list for that)
+        [123], [True]  (list containing non-string)
+    """
     if value is None:
         return None
     if isinstance(value, str):
@@ -244,15 +264,38 @@ def _as_str_or_none(value: object) -> Optional[str]:
             return None
         if len(value) == 1:
             v = value[0]
+            if v is None:
+                return None
             if isinstance(v, str):
                 return v or None
-            return str(v) if v is not None else None
-    return str(value) if value else None
+            raise PdsValidationError(
+                "PDS KVP field contains a list with a non-string element where "
+                "a scalar string value is required."
+            )
+        # Multi-element list where a scalar is expected.
+        raise PdsValidationError(
+            f"PDS KVP field contains a list with {len(value)} elements where "
+            "a single scalar string value is required."
+        )
+    # Non-string, non-list, non-None scalar (int, float, bool, dict, etc.)
+    raise PdsValidationError(
+        "PDS KVP field has an unexpected non-string type where a string value "
+        "is required."
+    )
 
 
 def _as_str_required(value: object, field_name: str) -> str:
-    """Extract a required non-empty scalar string from a KVP field value."""
-    result = _as_str_or_none(value)
+    """Extract a required non-empty scalar string from a KVP field value.
+
+    Raises PdsValidationError if the value is absent, empty, or of a wrong type.
+    """
+    try:
+        result = _as_str_or_none(value)
+    except PdsValidationError as exc:
+        raise PdsValidationError(
+            f"PDS response field {field_name!r} has invalid type; "
+            "expected a scalar string."
+        ) from exc
     if not result:
         raise PdsValidationError(
             f"PDS response missing required field: {field_name!r}."
@@ -261,14 +304,42 @@ def _as_str_required(value: object, field_name: str) -> str:
 
 
 def _as_str_list(value: object) -> list[str]:
-    """Extract a list of strings from a KVP field (scalar, list, or None)."""
+    """Extract a list of strings from a KVP reference field (strict).
+
+    Accepted shapes:
+        None          → []
+        ""            → []
+        "value"       → ["value"]
+        []            → []
+        ["a", "b"]    → ["a", "b"]
+
+    Rejected (raises PdsValidationError):
+        123, 1.5, True, False, {}
+        [123], [True]  — list containing non-string items
+        mixed lists    — e.g. ["a", 123]
+    """
     if value is None:
         return []
     if isinstance(value, str):
         return [value] if value else []
     if isinstance(value, list):
-        return [str(item) for item in value if item is not None and str(item)]
-    return [str(value)] if value else []
+        result: list[str] = []
+        for i, item in enumerate(value):
+            if item is None:
+                continue
+            if not isinstance(item, str):
+                raise PdsValidationError(
+                    f"PDS KVP reference field contains a non-string element at "
+                    f"index {i}; only string reference LIDs are accepted."
+                )
+            if item:
+                result.append(item)
+        return result
+    # Non-string, non-list, non-None (int, float, bool, dict, etc.)
+    raise PdsValidationError(
+        "PDS KVP reference field has an unexpected non-string type; "
+        "only strings or lists of strings are accepted."
+    )
 
 
 def _parse_pds_datetime(raw: str, field_name: str) -> datetime:
@@ -305,6 +376,61 @@ def _parse_pds_datetime(raw: str, field_name: str) -> datetime:
 # Data-file normalization
 # ---------------------------------------------------------------------------
 
+# Pattern accepting only non-negative decimal integer strings (no scientific
+# notation, no floats, no signs other than implicit positive).
+import re as _re
+_DECIMAL_INT_RE = _re.compile(r"^[0-9]+$")
+
+
+def _parse_file_size(raw: object, index: int) -> int:
+    """Parse a single ops:file_size value into a non-negative int.
+
+    Accepted inputs:
+        non-negative JSON integer (int, not bool)
+        decimal integer string such as "1024"
+
+    Rejected inputs (raises PdsValidationError — does NOT echo raw value):
+        bool
+        float (including 1024.0)
+        scientific notation strings
+        negative values
+        non-decimal strings
+        dicts/lists
+    """
+    # Reject bool (bool is a subclass of int in Python).
+    if isinstance(raw, bool):
+        raise PdsValidationError(
+            f"PDS Data_File_Info.ops:file_size at index {index} is not a valid "
+            "file size integer."
+        )
+    # Accept plain int.
+    if isinstance(raw, int):
+        if raw < 0:
+            raise PdsValidationError(
+                f"PDS Data_File_Info.ops:file_size at index {index} is negative."
+            )
+        return raw
+    # Accept decimal integer string only.
+    if isinstance(raw, str):
+        if not _DECIMAL_INT_RE.match(raw):
+            raise PdsValidationError(
+                f"PDS Data_File_Info.ops:file_size at index {index} is not a "
+                "valid non-negative integer string."
+            )
+        val = int(raw)
+        # int() of a decimal string is always non-negative here given the regex,
+        # but be explicit.
+        if val < 0:
+            raise PdsValidationError(
+                f"PDS Data_File_Info.ops:file_size at index {index} is negative."
+            )
+        return val
+    # float, dict, list, None, etc. — all rejected without echoing the raw value.
+    raise PdsValidationError(
+        f"PDS Data_File_Info.ops:file_size at index {index} is not a valid "
+        "file size value."
+    )
+
 
 def _normalize_data_files(data_item: dict) -> tuple[PdsDataFile, ...]:
     """Extract and normalize ops:Data_File_Info fields into PdsDataFile instances.
@@ -319,9 +445,10 @@ def _normalize_data_files(data_item: dict) -> tuple[PdsDataFile, ...]:
 
     Raises PdsValidationError if:
     - Required fields (file_name, file_ref, file_size) are missing for any file
+    - Any file_name or file_ref is not a string
     - Parallel array cardinalities do not match
-    - file_size is non-integer or negative
-    - MD5 is present but malformed (caught by PdsDataFile validator)
+    - file_size is invalid (non-integer, negative, bool, float, etc.)
+    - MD5 or MIME is present but non-string
     """
     raw_names = data_item.get("ops:Data_File_Info.ops:file_name")
     raw_refs = data_item.get("ops:Data_File_Info.ops:file_ref")
@@ -382,25 +509,44 @@ def _normalize_data_files(data_item: dict) -> tuple[PdsDataFile, ...]:
 
     files: list[PdsDataFile] = []
     for i in range(n):
-        name = str(names[i]) if names[i] is not None else ""
-        ref = str(refs[i]) if refs[i] is not None else ""
-        raw_size = sizes[i]
-
-        # Validate size: must be integer-valued and non-negative.
-        try:
-            size_val = int(str(raw_size))
-        except (ValueError, TypeError):
+        # Strict string check for file_name — do NOT coerce.
+        name_raw = names[i]
+        if not isinstance(name_raw, str):
             raise PdsValidationError(
-                f"PDS Data_File_Info.ops:file_size at index {i} is not an integer: "
-                f"got {raw_size!r}."
+                f"PDS Data_File_Info.ops:file_name at index {i} is not a string."
             )
-        if size_val < 0:
-            raise PdsValidationError(
-                f"PDS Data_File_Info.ops:file_size at index {i} is negative: {size_val}."
-            )
+        name = name_raw
 
-        md5 = str(md5s[i]) if md5s and md5s[i] is not None else None
-        mime = str(mimes[i]) if mimes and mimes[i] is not None else None
+        # Strict string check for file_ref — do NOT coerce.
+        ref_raw = refs[i]
+        if not isinstance(ref_raw, str):
+            raise PdsValidationError(
+                f"PDS Data_File_Info.ops:file_ref at index {i} is not a string."
+            )
+        ref = ref_raw
+
+        # Parse file_size with the strict helper.
+        size_val = _parse_file_size(sizes[i], i)
+
+        # Optional md5: must be string or None — do NOT coerce.
+        md5: Optional[str] = None
+        if md5s and md5s[i] is not None:
+            md5_raw = md5s[i]
+            if not isinstance(md5_raw, str):
+                raise PdsValidationError(
+                    f"PDS Data_File_Info.ops:md5_checksum at index {i} is not a string."
+                )
+            md5 = md5_raw if md5_raw else None
+
+        # Optional mime: must be string or None — do NOT coerce.
+        mime: Optional[str] = None
+        if mimes and mimes[i] is not None:
+            mime_raw = mimes[i]
+            if not isinstance(mime_raw, str):
+                raise PdsValidationError(
+                    f"PDS Data_File_Info.ops:mime_type at index {i} is not a string."
+                )
+            mime = mime_raw if mime_raw else None
 
         try:
             pds_file = PdsDataFile(
@@ -410,7 +556,7 @@ def _normalize_data_files(data_item: dict) -> tuple[PdsDataFile, ...]:
                 md5_checksum=md5 if md5 else None,
                 mime_type=mime if mime else None,
             )
-        except Exception as exc:
+        except pydantic.ValidationError as exc:
             raise PdsValidationError(
                 f"PDS Data_File_Info at index {i} failed validation."
             ) from exc
@@ -449,13 +595,16 @@ def _validate_identity(request: PdsProductRequest, data_item: dict) -> tuple[str
     Checks:
     1. Returned lidvid == request.lidvid
     2. Returned lid == LID portion of request.lidvid
-    3. Identification_Area.logical_identifier == returned lid
-    4. Identification_Area.version_id == version portion of request.lidvid
+    3. Identification_Area.logical_identifier is present and == returned lid
+    4. Identification_Area.version_id is present and == version portion of request.lidvid
     5. product_class and Identification_Area.product_class are both present,
        consistent with each other, and equal to Product_Observational.
 
-    Returns (lid, version_id) on success.
+    Returns (logical_identifier, version_id) from the actual response fields.
     Raises PdsValidationError on any mismatch or missing field.
+
+    IMPORTANT: Both logical_identifier and version_id MUST be present in the
+    source response — they are not derived from request parameters.
     """
     # Decompose request LIDVID into LID + version.
     req_lid, req_version = request.lidvid.rsplit("::", 1)
@@ -475,35 +624,39 @@ def _validate_identity(request: PdsProductRequest, data_item: dict) -> tuple[str
             "PDS response lid does not match the LID portion of the requested LIDVID."
         )
 
-    # Field: Identification_Area.logical_identifier must match returned lid.
-    logical_id = _as_str_or_none(
-        data_item.get("pds:Identification_Area.pds:logical_identifier")
-    )
-    if logical_id is not None and logical_id != returned_lid:
+    # Field: Identification_Area.logical_identifier is REQUIRED to be present.
+    # It is NOT optional — a Product_Observational response MUST supply it.
+    ia_lid_raw = data_item.get("pds:Identification_Area.pds:logical_identifier")
+    # Strict parse — rejects non-string types.
+    ia_lid = _as_str_required(ia_lid_raw, "pds:Identification_Area.pds:logical_identifier")
+    if ia_lid != returned_lid:
         raise PdsValidationError(
             "PDS response Identification_Area.logical_identifier does not match "
             "the returned lid. Identity fields are inconsistent."
         )
 
-    # Field: Identification_Area.version_id must match LIDVID version.
-    version_id = _as_str_or_none(
-        data_item.get("pds:Identification_Area.pds:version_id")
-    )
-    if version_id is not None and version_id != req_version:
+    # Field: Identification_Area.version_id is REQUIRED to be present.
+    # It is NOT optional — a Product_Observational response MUST supply it.
+    ia_ver_raw = data_item.get("pds:Identification_Area.pds:version_id")
+    # Strict parse — rejects non-string types.
+    ia_version = _as_str_required(ia_ver_raw, "pds:Identification_Area.pds:version_id")
+    if ia_version != req_version:
         raise PdsValidationError(
             "PDS response Identification_Area.version_id does not match "
             "the version component of the requested LIDVID."
         )
 
-    # Use Identification_Area.logical_identifier if available, else returned_lid.
-    effective_lid = logical_id if logical_id is not None else returned_lid
-    effective_version = version_id if version_id is not None else req_version
+    # Product class validation — strict scalar string parsing.
+    top_class_raw = data_item.get("product_class")
+    ia_class_raw = data_item.get("pds:Identification_Area.pds:product_class")
 
-    # Product class validation.
-    top_class = _as_str_or_none(data_item.get("product_class"))
-    ia_class = _as_str_or_none(
-        data_item.get("pds:Identification_Area.pds:product_class")
-    )
+    top_class: Optional[str] = None
+    if top_class_raw is not None:
+        top_class = _as_str_required(top_class_raw, "product_class")
+
+    ia_class: Optional[str] = None
+    if ia_class_raw is not None:
+        ia_class = _as_str_required(ia_class_raw, "pds:Identification_Area.pds:product_class")
 
     # At least one must be present.
     if top_class is None and ia_class is None:
@@ -522,15 +675,61 @@ def _validate_identity(request: PdsProductRequest, data_item: dict) -> tuple[str
 
     effective_class = top_class if top_class is not None else ia_class
 
-    # Must be Product_Observational.
+    # Must be Product_Observational — do NOT expose the raw class value.
     if effective_class != _PRODUCT_OBSERVATIONAL:
         raise PdsValidationError(
-            f"PDS product_class is '{effective_class}'; only '{_PRODUCT_OBSERVATIONAL}' "
-            "is accepted by this adapter. Bundles, collections, and documents require "
-            "separate adapters."
+            "PDS product class is not supported by this observational-product adapter."
         )
 
-    return effective_lid, effective_version
+    # Return actual IA-sourced values (not derived from request).
+    return ia_lid, ia_version
+
+
+# ---------------------------------------------------------------------------
+# Title validation
+# ---------------------------------------------------------------------------
+
+
+def _extract_title(data_item: dict) -> str:
+    """Extract and validate the product title from KVP fields.
+
+    Protocol:
+    - If both top-level title and pds:Identification_Area.pds:title are present,
+      they must be equal.
+    - If only one is present, accept it.
+    - If neither is present, raise PdsValidationError.
+
+    Raises PdsValidationError for missing title or conflicting values.
+    """
+    raw_ia_title = data_item.get("pds:Identification_Area.pds:title")
+    raw_top_title = data_item.get("title")
+
+    # Parse each: accept str/None; reject wrong types.
+    ia_title: Optional[str] = None
+    if raw_ia_title is not None:
+        ia_title = _as_str_required(raw_ia_title, "pds:Identification_Area.pds:title")
+
+    top_title: Optional[str] = None
+    if raw_top_title is not None:
+        top_title = _as_str_required(raw_top_title, "title")
+
+    if ia_title is not None and top_title is not None:
+        if ia_title != top_title:
+            raise PdsValidationError(
+                "PDS response title and Identification_Area.title are present "
+                "but do not match. Failing closed."
+            )
+        return ia_title
+
+    if ia_title is not None:
+        return ia_title
+
+    if top_title is not None:
+        return top_title
+
+    raise PdsValidationError(
+        "PDS response does not supply a title field."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -623,14 +822,14 @@ def _validate_pds_raw_response(
         )
 
     # 5. Validate cardinality: exactly one product.
+    # hits must be a strict non-boolean integer if present.
     hits = summary.get("hits")
     if hits is not None:
-        try:
-            hits_int = int(hits)
-        except (ValueError, TypeError):
+        if not isinstance(hits, int) or isinstance(hits, bool):
             raise PdsValidationError(
                 "PDS Search API response summary.hits is not a valid integer."
             )
+        hits_int: int = hits
         if hits_int == 0:
             raise PdsUnavailableError(
                 "PDS Search API reported zero hits for this LIDVID. "
@@ -665,32 +864,28 @@ def _validate_pds_raw_response(
         )
 
     # 6. Identity + product-class validation.
+    # Returns the actual IA-sourced logical_identifier and version_id.
     effective_lid, effective_version = _validate_identity(request, data_item)
 
-    # 7. Required scalar fields.
-    title = _as_str_required(
-        data_item.get("pds:Identification_Area.pds:title") or data_item.get("title"),
-        "title",
-    )
+    # 7. Title validation (strict — checks both fields if present, requires agreement).
+    title = _extract_title(data_item)
 
     # 8. Optional observation times.
     obs_start_utc: Optional[datetime] = None
     obs_stop_utc: Optional[datetime] = None
 
-    raw_start = _as_str_or_none(
-        data_item.get("pds:Time_Coordinates.pds:start_date_time")
-    )
-    if raw_start:
+    raw_start = data_item.get("pds:Time_Coordinates.pds:start_date_time")
+    if raw_start is not None:
+        start_str = _as_str_required(raw_start, "pds:Time_Coordinates.pds:start_date_time")
         obs_start_utc = _parse_pds_datetime(
-            raw_start, "pds:Time_Coordinates.pds:start_date_time"
+            start_str, "pds:Time_Coordinates.pds:start_date_time"
         )
 
-    raw_stop = _as_str_or_none(
-        data_item.get("pds:Time_Coordinates.pds:stop_date_time")
-    )
-    if raw_stop:
+    raw_stop = data_item.get("pds:Time_Coordinates.pds:stop_date_time")
+    if raw_stop is not None:
+        stop_str = _as_str_required(raw_stop, "pds:Time_Coordinates.pds:stop_date_time")
         obs_stop_utc = _parse_pds_datetime(
-            raw_stop, "pds:Time_Coordinates.pds:stop_date_time"
+            stop_str, "pds:Time_Coordinates.pds:stop_date_time"
         )
 
     if obs_start_utc is not None and obs_stop_utc is not None:
@@ -700,11 +895,12 @@ def _validate_pds_raw_response(
             )
 
     # 9. Optional processing level.
-    processing_level = _as_str_or_none(
-        data_item.get("pds:Primary_Result_Summary.pds:processing_level")
-    )
+    raw_proc = data_item.get("pds:Primary_Result_Summary.pds:processing_level")
+    processing_level: Optional[str] = None
+    if raw_proc is not None:
+        processing_level = _as_str_or_none(raw_proc)
 
-    # 10. Reference LID lists.
+    # 10. Reference LID lists — strict: only string or list-of-strings accepted.
     instrument_lids = tuple(_as_str_list(data_item.get("ref_lid_instrument")))
     instrument_host_lids = tuple(_as_str_list(data_item.get("ref_lid_instrument_host")))
     investigation_lids = tuple(_as_str_list(data_item.get("ref_lid_investigation")))
@@ -717,17 +913,23 @@ def _validate_pds_raw_response(
     total_data_size_bytes = sum(f.file_size_bytes for f in data_files)
 
     # 13. Registry harvest info.
-    registry_node = _as_str_or_none(data_item.get("ops:Harvest_Info.ops:node_name"))
+    raw_harvest_node = data_item.get("ops:Harvest_Info.ops:node_name")
+    registry_node: Optional[str] = None
+    if raw_harvest_node is not None:
+        registry_node = _as_str_or_none(raw_harvest_node)
+
     registry_harvested_at: Optional[datetime] = None
-    raw_harvest_time = _as_str_or_none(
-        data_item.get("ops:Harvest_Info.ops:harvest_date_time")
-    )
-    if raw_harvest_time:
-        registry_harvested_at = _parse_pds_datetime(
-            raw_harvest_time, "ops:Harvest_Info.ops:harvest_date_time"
-        )
+    raw_harvest_time = data_item.get("ops:Harvest_Info.ops:harvest_date_time")
+    if raw_harvest_time is not None:
+        harvest_str = _as_str_or_none(raw_harvest_time)
+        if harvest_str:
+            registry_harvested_at = _parse_pds_datetime(
+                harvest_str, "ops:Harvest_Info.ops:harvest_date_time"
+            )
 
     # 14. Build normalized product.
+    # logical_identifier and version_id are sourced from the actual IA response
+    # fields (not derived from the request).
     try:
         product = PdsScienceProduct(
             lid=effective_lid,
@@ -748,7 +950,7 @@ def _validate_pds_raw_response(
             registry_node=registry_node,
             registry_harvested_at=registry_harvested_at,
         )
-    except Exception as exc:
+    except pydantic.ValidationError as exc:
         raise PdsValidationError(
             "PDS normalized product failed internal validation."
         ) from exc
@@ -821,6 +1023,9 @@ class PdsRegistryAdapter:
     - Only exact versioned LIDVIDs are accepted; bare LIDs are rejected.
     - The adapter does NOT follow or download any data-file URLs returned
       in ops:Data_File_Info.ops:file_ref.
+    - Redirect following is always disabled at the request level, regardless
+      of the injected client's follow_redirects configuration.  This prevents
+      the adapter from becoming an SSRF surface via client-policy override.
 
     PDS Search API Completeness Warning
     ------------------------------------
@@ -870,6 +1075,7 @@ class PdsRegistryAdapter:
 
         Performs exactly one HTTP GET to the fixed PDS Search API endpoint.
         Does NOT follow or download any data-file URLs.
+        Redirects are never followed, regardless of injected client config.
 
         Parameters
         ----------
@@ -892,7 +1098,7 @@ class PdsRegistryAdapter:
 
         PdsValidationError
             HTTP 4xx (non-404), malformed JSON, identity mismatch, wrong
-            product class, invalid metadata, oversized response.
+            product class, invalid metadata, oversized response, redirect.
         """
         raw_bytes = self._execute_request(request)
         retrieved_at = self._clock()
@@ -911,6 +1117,11 @@ class PdsRegistryAdapter:
         fixed base plus the validated LIDVID.  Callers cannot supply or
         override the URL.
 
+        Redirect following is always disabled at the request level via
+        ``follow_redirects=False`` in the ``send()`` call, regardless of the
+        injected client's ``follow_redirects`` default.  This is the adapter's
+        own trust-boundary guarantee — it cannot be overridden by client config.
+
         Raises PdsUnavailableError or PdsValidationError on failure.
         """
         # Construct URL: fixed base + LIDVID
@@ -927,7 +1138,14 @@ class PdsRegistryAdapter:
         }
 
         try:
-            response = self._client.get(url, params=params, headers=headers)
+            # Build the Request object and send it explicitly with
+            # follow_redirects=False.  This overrides any follow_redirects=True
+            # that may be set on the injected client, ensuring the adapter's
+            # own redirect policy cannot be defeated by caller configuration.
+            req_obj = self._client.build_request(
+                "GET", url, params=params, headers=headers
+            )
+            response = self._client.send(req_obj, follow_redirects=False)
         except httpx.TimeoutException as exc:
             raise PdsUnavailableError(
                 "Request to NASA PDS Search API timed out."
@@ -968,6 +1186,7 @@ class PdsRegistryAdapter:
             )
 
         # Unexpected 3xx or any other status — fail closed.
+        # Do NOT follow redirect.  Do NOT expose the Location URL.
         raise PdsValidationError(
             f"NASA PDS Search API returned unexpected HTTP status {status}."
         )
