@@ -131,7 +131,9 @@ from backend.app.mission_sources.adapters.horizons import (
     HorizonsValidationError,
     _build_canonical_query_identity,
     _compute_provenance_id,
+    _validate_horizons_raw_response,
     _HORIZONS_ENDPOINT,
+    _MAX_RESPONSE_BYTES,
 )
 from backend.app.mission_sources.adapters.horizons_models import (
     HorizonsGeometry,
@@ -221,9 +223,17 @@ _VALID_DATA_ROW = (
     f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
 )
 
+# Identity headers for Juno (spacecraft) -61 and Earth 399.
+# These are required by the shared identity validator.
+_JUNO_IDENTITY_HEADERS = (
+    "Target body name: Juno (spacecraft) (-61)    {source: JPL#123}\n"
+    "Center body name: Earth (399)               {source: DE441}\n"
+)
+
 _VALID_RESULT_TEXT = (
     "JPL/HORIZONS header line\n"
-    "$$SOE\n"
+    + _JUNO_IDENTITY_HEADERS
+    + "$$SOE\n"
     + _VALID_DATA_ROW
     + "\n$$EOE\n"
     "Coord. ref. frame : ICRF\n"
@@ -236,9 +246,26 @@ _NEGATIVE_RR_DATA_ROW = (
 
 _NEGATIVE_RR_RESULT = (
     "JPL/HORIZONS header\n"
-    "$$SOE\n"
+    + _JUNO_IDENTITY_HEADERS
+    + "$$SOE\n"
     + _NEGATIVE_RR_DATA_ROW
     + "\n$$EOE\n"
+)
+
+# Mars (499) identity headers for tests that use a different target.
+_MARS_IDENTITY_HEADERS = (
+    "Target body name: Mars (499)\n"
+    "Center body name: Earth (399)\n"
+)
+
+# Result text for Mars (499) target — same geometry but correct identity.
+_MARS_VALID_RESULT_TEXT = (
+    "JPL/HORIZONS header line\n"
+    + _MARS_IDENTITY_HEADERS
+    + "$$SOE\n"
+    + _VALID_DATA_ROW
+    + "\n$$EOE\n"
+    "Coord. ref. frame : ICRF\n"
 )
 
 # VEC_TABLE=3-shaped row (11 columns) — must be rejected.
@@ -634,7 +661,8 @@ class TestParserRejection:
     def test_25g_vec_table_3_row_rejected(self):
         """Test 25g: VEC_TABLE=3-shaped 11-column row is rejected."""
         result_text = (
-            "$$SOE\n"
+            _JUNO_IDENTITY_HEADERS
+            + "$$SOE\n"
             + _VEC_TABLE_3_DATA_ROW
             + "\n$$EOE\n"
         )
@@ -653,7 +681,7 @@ class TestParserRejection:
             f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
             "  9.999999999999999E+99,"
         )
-        result_text = "$$SOE\n" + extra_col_row + "\n$$EOE\n"
+        result_text = _JUNO_IDENTITY_HEADERS + "$$SOE\n" + extra_col_row + "\n$$EOE\n"
         content = _make_horizons_response(result_text=result_text)
         adapter = _make_adapter(content=content)
         with pytest.raises(HorizonsValidationError):
@@ -736,10 +764,11 @@ class TestProvenance:
 
     def test_34_different_target_changes_provenance_id(self):
         """Test 34: different target changes provenance_id."""
-        raw = _make_horizons_response()
-        r_juno = _make_adapter(content=raw).fetch(_make_request(target="-61"))
-        # Build a response that works for Mars too (same format)
-        r_mars = _make_adapter(content=raw).fetch(_make_request(target="499"))
+        raw_juno = _make_horizons_response()
+        raw_mars = _make_horizons_response(result_text=_MARS_VALID_RESULT_TEXT)
+        r_juno = _make_adapter(content=raw_juno).fetch(_make_request(target="-61"))
+        # Use a Mars-specific response (correct identity headers for 499).
+        r_mars = _make_adapter(content=raw_mars).fetch(_make_request(target="499"))
         assert r_juno.provenance.provenance_id != r_mars.provenance.provenance_id
 
     def test_34b_different_epoch_changes_provenance_id(self):
@@ -761,8 +790,8 @@ class TestProvenance:
             " 2460934.500000000, A.D. 2026-Aug-28 00:00:00.000000,"
             f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
         )
-        result_text1 = "JPL/HORIZONS header\n$$SOE\n" + row1 + "\n$$EOE\n"
-        result_text2 = "JPL/HORIZONS header\n$$SOE\n" + row2 + "\n$$EOE\n"
+        result_text1 = "JPL/HORIZONS header\n" + _JUNO_IDENTITY_HEADERS + "$$SOE\n" + row1 + "\n$$EOE\n"
+        result_text2 = "JPL/HORIZONS header\n" + _JUNO_IDENTITY_HEADERS + "$$SOE\n" + row2 + "\n$$EOE\n"
 
         raw1 = _make_horizons_response(result_text=result_text1)
         raw2 = _make_horizons_response(result_text=result_text2)
@@ -914,7 +943,8 @@ class TestPayloadFailure:
     def test_44b_duplicate_soe_rejected(self):
         """Test 44b: duplicate $$SOE rejected."""
         dup_soe_text = (
-            "$$SOE\n"
+            _JUNO_IDENTITY_HEADERS
+            + "$$SOE\n"
             + _VALID_DATA_ROW
             + "\n$$EOE\n"
             "$$SOE\n"
@@ -928,7 +958,8 @@ class TestPayloadFailure:
     def test_44c_duplicate_eoe_rejected(self):
         """Test 44c: duplicate $$EOE rejected."""
         dup_eoe_text = (
-            "$$SOE\n"
+            _JUNO_IDENTITY_HEADERS
+            + "$$SOE\n"
             + _VALID_DATA_ROW
             + "\n$$EOE\n$$EOE\n"
         )
@@ -1420,3 +1451,438 @@ class TestFixtureLoading:
         assert abs(result.geometry.one_way_light_time_s - _LT_VALUE) < 0.01
         assert abs(result.geometry.range_km - _RG_VALUE) < 1.0
         assert abs(result.geometry.range_rate_km_s - _RR_VALUE) < 0.001
+
+
+# ---------------------------------------------------------------------------
+# PHASE 6D-B1.2 — RESPONSE IDENTITY BINDING TESTS
+# ---------------------------------------------------------------------------
+
+
+class TestIdentityValidation:
+    """Phase 6D-B1.2 tests 1-20: target and center body ID verification.
+
+    Spec reference: GCSI Phase 6D-B1.2 — Horizons Response Identity Binding.
+    """
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _make_result_text(
+        self,
+        target_header: str,
+        center_header: str,
+        data_row: Optional[str] = None,
+    ) -> str:
+        """Assemble a Horizons result text with given identity headers."""
+        row = data_row if data_row is not None else _VALID_DATA_ROW
+        return (
+            "JPL/HORIZONS header\n"
+            + target_header + "\n"
+            + center_header + "\n"
+            + "$$SOE\n"
+            + row
+            + "\n$$EOE\n"
+        )
+
+    def _fetch_with_result_text(
+        self,
+        result_text: str,
+        target: str = _JUNO_ID,
+    ) -> HorizonsGeometryResult:
+        content = _make_horizons_response(result_text=result_text)
+        adapter = _make_adapter(content=content)
+        return adapter.fetch(_make_request(target=target))
+
+    def _expect_identity_error(
+        self,
+        result_text: str,
+        target: str = _JUNO_ID,
+    ) -> HorizonsValidationError:
+        content = _make_horizons_response(result_text=result_text)
+        adapter = _make_adapter(content=content)
+        with pytest.raises(HorizonsValidationError) as exc_info:
+            adapter.fetch(_make_request(target=target))
+        return exc_info.value
+
+    # ------------------------------------------------------------------
+    # TARGET IDENTITY (tests 1-8)
+    # ------------------------------------------------------------------
+
+    def test_b12_01_juno_style_with_nested_parens(self):
+        """B1.2-1: 'Juno (spacecraft) (-61)' correctly resolves final numeric ID -61."""
+        result_text = self._make_result_text(
+            target_header="Target body name: Juno (spacecraft) (-61)",
+            center_header="Center body name: Earth (399)",
+        )
+        result = self._fetch_with_result_text(result_text, target="-61")
+        assert result.geometry.range_km > 0
+
+    def test_b12_02_simple_target_name(self):
+        """B1.2-2: 'Target body name: Mars (499)' resolves 499."""
+        result_text = self._make_result_text(
+            target_header="Target body name: Mars (499)",
+            center_header="Center body name: Earth (399)",
+        )
+        result = self._fetch_with_result_text(result_text, target="499")
+        assert result.geometry.range_km > 0
+
+    def test_b12_03_display_name_not_used_for_trust(self):
+        """B1.2-3: display name is NOT used for trust — only the final numeric ID.
+
+        'Target body name: Arbitrary Display Name (-61)' is acceptable for
+        request target_spk_id = -61 as long as the final numeric ID matches.
+        """
+        result_text = self._make_result_text(
+            target_header="Target body name: Arbitrary Display Name (-61)",
+            center_header="Center body name: Earth (399)",
+        )
+        result = self._fetch_with_result_text(result_text, target="-61")
+        assert result.geometry.range_km > 0
+
+    def test_b12_04_wrong_returned_target_id_rejected(self):
+        """B1.2-4: wrong returned target ID rejected."""
+        result_text = self._make_result_text(
+            target_header="Target body name: Mars (499)",
+            center_header="Center body name: Earth (399)",
+        )
+        # Request -61 but response claims 499
+        err = self._expect_identity_error(result_text, target="-61")
+        assert isinstance(err, HorizonsValidationError)
+        # Public message must not include raw target names
+        assert "499" not in str(err)
+        assert "Juno" not in str(err)
+
+    def test_b12_05_missing_target_body_name_rejected(self):
+        """B1.2-5: missing Target body name line rejected."""
+        result_text = (
+            "JPL/HORIZONS header\n"
+            "Center body name: Earth (399)\n"
+            "$$SOE\n"
+            + _VALID_DATA_ROW
+            + "\n$$EOE\n"
+        )
+        err = self._expect_identity_error(result_text)
+        assert isinstance(err, HorizonsValidationError)
+
+    def test_b12_06_duplicate_target_body_name_rejected(self):
+        """B1.2-6: duplicate Target body name lines rejected."""
+        result_text = (
+            "JPL/HORIZONS header\n"
+            "Target body name: Juno (spacecraft) (-61)\n"
+            "Center body name: Earth (399)\n"
+            "Target body name: Juno (spacecraft) (-61)\n"
+            "$$SOE\n"
+            + _VALID_DATA_ROW
+            + "\n$$EOE\n"
+        )
+        err = self._expect_identity_error(result_text)
+        assert isinstance(err, HorizonsValidationError)
+
+    def test_b12_07_malformed_target_numeric_id_rejected(self):
+        """B1.2-7: malformed target numeric ID (no numeric paren) rejected."""
+        result_text = (
+            "JPL/HORIZONS header\n"
+            "Target body name: Juno (spacecraft)\n"  # no numeric ID
+            "Center body name: Earth (399)\n"
+            "$$SOE\n"
+            + _VALID_DATA_ROW
+            + "\n$$EOE\n"
+        )
+        err = self._expect_identity_error(result_text)
+        assert isinstance(err, HorizonsValidationError)
+
+    def test_b12_08_target_id_hidden_in_response_text_does_not_satisfy(self):
+        """B1.2-8: target body ID appearing only in ephemeris data does not satisfy.
+
+        A line matching 'Target body name:' appearing only AFTER $$SOE does
+        not count for identity verification — only the header portion is used.
+        """
+        result_text = (
+            "JPL/HORIZONS header\n"
+            "Center body name: Earth (399)\n"
+            "$$SOE\n"
+            + _VALID_DATA_ROW
+            + "\nTarget body name: Juno (spacecraft) (-61)\n"
+            + "$$EOE\n"
+        )
+        # No Target body name before $$SOE — must reject
+        err = self._expect_identity_error(result_text)
+        assert isinstance(err, HorizonsValidationError)
+
+    # ------------------------------------------------------------------
+    # CENTER IDENTITY (tests 9-13)
+    # ------------------------------------------------------------------
+
+    def test_b12_09_earth_center_399_accepted(self):
+        """B1.2-9: Center body name: Earth (399) accepted."""
+        result_text = self._make_result_text(
+            target_header="Target body name: Juno (spacecraft) (-61)",
+            center_header="Center body name: Earth (399)",
+        )
+        result = self._fetch_with_result_text(result_text)
+        assert result.geometry.range_km > 0
+
+    def test_b12_10_wrong_center_body_id_rejected(self):
+        """B1.2-10: wrong center body ID rejected."""
+        result_text = self._make_result_text(
+            target_header="Target body name: Juno (spacecraft) (-61)",
+            center_header="Center body name: Sun (10)",
+        )
+        err = self._expect_identity_error(result_text)
+        assert isinstance(err, HorizonsValidationError)
+        # Public message must not include raw body names
+        assert "Sun" not in str(err)
+        assert "10" not in str(err)
+
+    def test_b12_11_missing_center_body_name_rejected(self):
+        """B1.2-11: missing Center body name line rejected."""
+        result_text = (
+            "JPL/HORIZONS header\n"
+            "Target body name: Juno (spacecraft) (-61)\n"
+            "$$SOE\n"
+            + _VALID_DATA_ROW
+            + "\n$$EOE\n"
+        )
+        err = self._expect_identity_error(result_text)
+        assert isinstance(err, HorizonsValidationError)
+
+    def test_b12_12_duplicate_center_body_name_rejected(self):
+        """B1.2-12: duplicate Center body name lines rejected."""
+        result_text = (
+            "JPL/HORIZONS header\n"
+            "Target body name: Juno (spacecraft) (-61)\n"
+            "Center body name: Earth (399)\n"
+            "Center body name: Earth (399)\n"
+            "$$SOE\n"
+            + _VALID_DATA_ROW
+            + "\n$$EOE\n"
+        )
+        err = self._expect_identity_error(result_text)
+        assert isinstance(err, HorizonsValidationError)
+
+    def test_b12_13_malformed_center_numeric_id_rejected(self):
+        """B1.2-13: malformed center numeric ID (no numeric paren) rejected."""
+        result_text = (
+            "JPL/HORIZONS header\n"
+            "Target body name: Juno (spacecraft) (-61)\n"
+            "Center body name: Earth\n"  # no numeric ID
+            "$$SOE\n"
+            + _VALID_DATA_ROW
+            + "\n$$EOE\n"
+        )
+        err = self._expect_identity_error(result_text)
+        assert isinstance(err, HorizonsValidationError)
+
+    # ------------------------------------------------------------------
+    # HEADER SCOPE (tests 14-15)
+    # ------------------------------------------------------------------
+
+    def test_b12_14_identity_line_after_soe_does_not_count(self):
+        """B1.2-14: identity line appearing only after $$SOE does not count."""
+        result_text = (
+            "JPL/HORIZONS header\n"
+            "$$SOE\n"
+            + _VALID_DATA_ROW
+            + "\nTarget body name: Juno (spacecraft) (-61)\n"
+            + "Center body name: Earth (399)\n"
+            + "$$EOE\n"
+        )
+        # No identity lines before $$SOE — must be rejected
+        err = self._expect_identity_error(result_text)
+        assert isinstance(err, HorizonsValidationError)
+
+    def test_b12_15_identity_line_after_eoe_does_not_count(self):
+        """B1.2-15: identity line appearing only after $$EOE does not count."""
+        result_text = (
+            "JPL/HORIZONS header\n"
+            "$$SOE\n"
+            + _VALID_DATA_ROW
+            + "\n$$EOE\n"
+            + "Target body name: Juno (spacecraft) (-61)\n"
+            + "Center body name: Earth (399)\n"
+        )
+        # No identity lines before $$SOE — must be rejected
+        err = self._expect_identity_error(result_text)
+        assert isinstance(err, HorizonsValidationError)
+
+    # ------------------------------------------------------------------
+    # SHARED TRUST BOUNDARY (tests 16-20)
+    # ------------------------------------------------------------------
+
+    def test_b12_16_live_fetch_rejects_wrong_target_response(self):
+        """B1.2-16: live fetch rejects response whose target ID doesn't match request."""
+        # Response claims Juno (-61), but request is for Mars (499)
+        result_text = self._make_result_text(
+            target_header="Target body name: Juno (spacecraft) (-61)",
+            center_header="Center body name: Earth (399)",
+        )
+        content = _make_horizons_response(result_text=result_text)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(status_code=200, content=content)
+
+        transport = httpx.MockTransport(handler)
+        client = httpx.Client(transport=transport)
+        adapter = HorizonsAdapter(client=client, clock=_fixed_clock)
+        with pytest.raises(HorizonsValidationError):
+            adapter.fetch(_make_request(target="499"))
+
+    def test_b12_17_shared_raw_validator_rejects_wrong_target(self):
+        """B1.2-17: shared raw validator rejects wrong-target response directly."""
+        # Build a Juno response
+        result_text = self._make_result_text(
+            target_header="Target body name: Juno (spacecraft) (-61)",
+            center_header="Center body name: Earth (399)",
+        )
+        raw_bytes = _make_horizons_response(result_text=result_text)
+        # Ask the validator to validate it for Mars (499)
+        request = HorizonsGeometryRequest(target_spk_id="499", epoch_utc=_EPOCH_UTC)
+        with pytest.raises(HorizonsValidationError):
+            _validate_horizons_raw_response(
+                request=request,
+                raw_bytes=raw_bytes,
+                retrieved_at=_RETRIEVED_AT,
+            )
+
+    def test_b12_18_snapshot_writer_rejects_wrong_target_capture(self, tmp_path):
+        """B1.2-18: snapshot writer rejects capture whose raw bytes identify a different target.
+
+        The shared raw-response validator is re-run during write(); if the
+        raw bytes contain headers for a different target, the write is rejected.
+        """
+        from backend.app.mission_sources.adapters.horizons_models import HorizonsGeometryCapture
+        from backend.app.mission_sources.snapshots.horizons_snapshot import (
+            HorizonsSnapshotStore,
+            HorizonsSnapshotValidationError,
+        )
+
+        # Build a genuine Juno capture
+        result_text = self._make_result_text(
+            target_header="Target body name: Juno (spacecraft) (-61)",
+            center_header="Center body name: Earth (399)",
+        )
+        raw_bytes = _make_horizons_response(result_text=result_text)
+        genuine_result = _validate_horizons_raw_response(
+            request=_make_request(target="-61"),
+            raw_bytes=raw_bytes,
+            retrieved_at=_RETRIEVED_AT,
+        )
+        genuine_capture = HorizonsGeometryCapture(
+            result=genuine_result,
+            raw_response=raw_bytes,
+        )
+
+        # Tamper: replace request with Mars (499) — raw bytes still say Juno
+        mars_request = HorizonsGeometryRequest(target_spk_id="499", epoch_utc=_EPOCH_UTC)
+        from backend.app.mission_sources.adapters.horizons_models import HorizonsGeometryResult
+        tampered_result = HorizonsGeometryResult(
+            request=mars_request,
+            geometry=genuine_result.geometry,
+            provenance=genuine_result.provenance,
+        )
+        tampered_capture = HorizonsGeometryCapture(
+            result=tampered_result,
+            raw_response=raw_bytes,
+        )
+        with pytest.raises((HorizonsSnapshotValidationError,)):
+            HorizonsSnapshotStore.write(tampered_capture, tmp_path / "bad.json")
+
+    def test_b12_19_snapshot_loader_rejects_wrong_target_raw_bytes(self, tmp_path):
+        """B1.2-19: snapshot loader rejects snapshot whose raw bytes identify a different target.
+
+        Build a valid Juno snapshot, then manually replace the request in the
+        stored JSON to claim Mars (499) while leaving the raw Juno response bytes
+        intact.  The re-validation step must reject the tampered snapshot because
+        the raw bytes identify a different target than the stored request claims.
+        """
+        import base64
+        from backend.app.mission_sources.snapshots.horizons_snapshot import (
+            HorizonsSnapshotStore,
+            HorizonsSnapshotValidationError,
+        )
+
+        # Write a valid Juno snapshot
+        result_text = self._make_result_text(
+            target_header="Target body name: Juno (spacecraft) (-61)",
+            center_header="Center body name: Earth (399)",
+        )
+        raw_bytes = _make_horizons_response(result_text=result_text)
+        content = _make_horizons_response(result_text=result_text)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(status_code=200, content=content)
+
+        transport = httpx.MockTransport(handler)
+        client = httpx.Client(transport=transport)
+        adapter = HorizonsAdapter(client=client, clock=_fixed_clock)
+        juno_capture = adapter.fetch_capture(_make_request(target="-61"))
+
+        snap_path = tmp_path / "juno_snap.json"
+        HorizonsSnapshotStore.write(juno_capture, snap_path)
+
+        # Tamper: change request.target_spk_id to "499" without changing raw bytes
+        import json as _json
+        d = _json.loads(snap_path.read_bytes())
+        d["request"]["target_spk_id"] = "499"
+        tampered_path = tmp_path / "tampered.json"
+        tampered_path.write_bytes(
+            (_json.dumps(d, sort_keys=True, indent=2) + "\n").encode("utf-8")
+        )
+        with pytest.raises(HorizonsSnapshotValidationError):
+            HorizonsSnapshotStore.load(tampered_path)
+
+    def test_b12_20_valid_fixture_passes_geometry_checks(self):
+        """B1.2-20: valid representative fixture passes all geometry/epoch/identity checks."""
+        import pathlib
+
+        fixture_path = (
+            pathlib.Path(__file__).parent.parent
+            / "fixtures"
+            / "horizons"
+            / "juno_2026_aug_27_vectors.json"
+        )
+        raw = fixture_path.read_bytes()
+        adapter = _make_adapter(content=raw)
+        result = adapter.fetch(_make_request(target="-61"))
+        assert result.geometry.range_km > 0
+        assert result.geometry.one_way_light_time_s > 0
+        assert result.provenance.kind == ProvenanceKind.EXTERNAL_AUTHORITATIVE
+
+    # ------------------------------------------------------------------
+    # ERROR SANITIZATION
+    # ------------------------------------------------------------------
+
+    def test_b12_target_error_message_sanitized(self):
+        """Public HorizonsValidationError for wrong target is sanitized."""
+        result_text = self._make_result_text(
+            target_header="Target body name: Mars (499)",
+            center_header="Center body name: Earth (399)",
+        )
+        err = self._expect_identity_error(result_text, target="-61")
+        msg = str(err)
+        # Must NOT include raw body names or header line content
+        assert "Mars" not in msg
+        assert "499" not in msg
+        # Must NOT include target SPK ID numerically
+        assert "-61" not in msg
+
+    def test_b12_center_error_message_sanitized(self):
+        """Public HorizonsValidationError for wrong center is sanitized."""
+        result_text = self._make_result_text(
+            target_header="Target body name: Juno (spacecraft) (-61)",
+            center_header="Center body name: Sun (10)",
+        )
+        err = self._expect_identity_error(result_text)
+        msg = str(err)
+        # Must NOT include raw body names or numeric IDs
+        assert "Sun" not in msg
+
+    def test_b12_trailing_source_citation_parsed_correctly(self):
+        """Identity headers with trailing '{source: ...}' are parsed correctly."""
+        result_text = self._make_result_text(
+            target_header="Target body name: Juno (spacecraft) (-61)    {source: JPL#123}",
+            center_header="Center body name: Earth (399)               {source: DE441}",
+        )
+        result = self._fetch_with_result_text(result_text, target="-61")
+        assert result.geometry.range_km > 0

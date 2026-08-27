@@ -59,7 +59,7 @@ import os
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 from pydantic import ValidationError as PydanticValidationError
 
@@ -336,27 +336,32 @@ class HorizonsSnapshotStore:
             )
 
         # 9. Atomic write: temp file in same directory, then os.replace().
+        #    mkstemp is inside the try so that an OSError from temp-file creation
+        #    itself is also normalized to HorizonsSnapshotUnavailableError.
         dir_path = path.parent
-        fd, tmp_path_str = tempfile.mkstemp(dir=dir_path, suffix=".tmp")
+        tmp_path_str: Optional[str] = None
         try:
+            fd, tmp_path_str = tempfile.mkstemp(dir=dir_path, suffix=".tmp")
             with os.fdopen(fd, "wb") as f:
                 f.write(content_bytes)
             os.replace(tmp_path_str, path)
         except OSError as exc:
-            # Clean up temp file; raise sanitized typed error.
-            try:
-                os.unlink(tmp_path_str)
-            except OSError:
-                pass
+            # Clean up temp file if one was created; raise sanitized typed error.
+            if tmp_path_str is not None:
+                try:
+                    os.unlink(tmp_path_str)
+                except OSError:
+                    pass
             raise HorizonsSnapshotUnavailableError(
                 "Snapshot could not be written due to a filesystem error."
             ) from exc
         except BaseException:
             # Any other unexpected failure: clean up temp file and re-raise.
-            try:
-                os.unlink(tmp_path_str)
-            except OSError:
-                pass
+            if tmp_path_str is not None:
+                try:
+                    os.unlink(tmp_path_str)
+                except OSError:
+                    pass
             raise
 
     @staticmethod

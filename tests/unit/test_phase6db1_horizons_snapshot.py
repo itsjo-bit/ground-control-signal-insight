@@ -115,9 +115,16 @@ _VALID_DATA_ROW = (
     f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
 )
 
+# Identity headers required by the shared identity validator.
+_JUNO_IDENTITY_HEADERS = (
+    "Target body name: Juno (spacecraft) (-61)    {source: JPL#123}\n"
+    "Center body name: Earth (399)               {source: DE441}\n"
+)
+
 _VALID_RESULT_TEXT = (
     "JPL/HORIZONS header line\n"
-    "$$SOE\n"
+    + _JUNO_IDENTITY_HEADERS
+    + "$$SOE\n"
     + _VALID_DATA_ROW
     + "\n$$EOE\n"
     "Coord. ref. frame : ICRF\n"
@@ -1016,7 +1023,7 @@ class TestEpochFidelity:
             " 2460933.500000000, A.D. 2026-Aug-27 00:00:00.0000,"
             f"  {_LT_VALUE:.15E},  {_RG_VALUE:.15E},  {_RR_VALUE:.15E},"
         )
-        result_text = "JPL/HORIZONS\n$$SOE\n" + row + "\n$$EOE\n"
+        result_text = "JPL/HORIZONS\n" + _JUNO_IDENTITY_HEADERS + "$$SOE\n" + row + "\n$$EOE\n"
         content = _make_horizons_response_bytes(result_text=result_text)
         result = _make_adapter(content=content).fetch(_make_request())
         assert result.geometry.range_km > 0
@@ -1407,3 +1414,76 @@ class TestWriterSelfValidation:
         p = tmp_path / "missing.json"
         with pytest.raises(HorizonsSnapshotUnavailableError):
             HorizonsSnapshotStore.load(p)
+
+
+# ---------------------------------------------------------------------------
+# PHASE 6D-B1.2 — SNAPSHOT IO / MKSTEMP ERROR NORMALIZATION (tests 21-24)
+# ---------------------------------------------------------------------------
+
+
+class TestMkstempErrorNormalization:
+    """Phase 6D-B1.2 tests 21-24: tempfile.mkstemp OSError normalization.
+
+    Spec: Any OSError from tempfile.mkstemp, os.fdopen/write, or os.replace
+    that represents snapshot filesystem unavailability must surface as
+    HorizonsSnapshotUnavailableError with a sanitized public message and
+    preserved __cause__.
+    """
+
+    def test_b12_21_mkstemp_oserror_normalized_to_unavailable(self, tmp_path):
+        """B1.2-21: tempfile.mkstemp PermissionError/OSError is normalized to
+        HorizonsSnapshotUnavailableError."""
+        capture = _make_capture()
+        with patch(
+            "backend.app.mission_sources.snapshots.horizons_snapshot.tempfile.mkstemp",
+            side_effect=PermissionError("permission denied"),
+        ):
+            with pytest.raises(HorizonsSnapshotUnavailableError):
+                HorizonsSnapshotStore.write(capture, tmp_path / "snap.json")
+
+    def test_b12_22_mkstemp_failure_preserves_cause(self, tmp_path):
+        """B1.2-22: mkstemp failure preserves __cause__."""
+        capture = _make_capture()
+        original_exc = OSError("simulated mkstemp failure")
+        with patch(
+            "backend.app.mission_sources.snapshots.horizons_snapshot.tempfile.mkstemp",
+            side_effect=original_exc,
+        ):
+            with pytest.raises(HorizonsSnapshotUnavailableError) as exc_info:
+                HorizonsSnapshotStore.write(capture, tmp_path / "snap.json")
+        assert exc_info.value.__cause__ is original_exc
+
+    def test_b12_23_mkstemp_failure_public_error_no_path(self, tmp_path):
+        """B1.2-23: mkstemp failure public error does not expose raw path."""
+        capture = _make_capture()
+        sentinel = "SECRET_TMPDIR_PATH_SENTINEL_9999"
+        dest_path = tmp_path / sentinel / "snap.json"
+        with patch(
+            "backend.app.mission_sources.snapshots.horizons_snapshot.tempfile.mkstemp",
+            side_effect=OSError("disk full"),
+        ):
+            with pytest.raises(HorizonsSnapshotUnavailableError) as exc_info:
+                HorizonsSnapshotStore.write(capture, dest_path)
+        # Public message must not expose raw path segments
+        public_msg = str(exc_info.value)
+        assert sentinel not in public_msg
+        assert str(tmp_path) not in public_msg
+
+    def test_b12_24_mkstemp_failure_dest_unchanged(self, tmp_path):
+        """B1.2-24: an existing valid destination remains unchanged if mkstemp fails."""
+        capture = _make_capture()
+        snap_path = tmp_path / "snap.json"
+        # Write a valid snapshot first
+        HorizonsSnapshotStore.write(capture, snap_path)
+        original_content = snap_path.read_bytes()
+
+        # Now simulate mkstemp failure on a second write attempt
+        with patch(
+            "backend.app.mission_sources.snapshots.horizons_snapshot.tempfile.mkstemp",
+            side_effect=OSError("no space left on device"),
+        ):
+            with pytest.raises(HorizonsSnapshotUnavailableError):
+                HorizonsSnapshotStore.write(capture, snap_path)
+
+        # Original file must still be intact
+        assert snap_path.read_bytes() == original_content

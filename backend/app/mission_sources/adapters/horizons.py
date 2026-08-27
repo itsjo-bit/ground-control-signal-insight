@@ -113,6 +113,9 @@ class HorizonsValidationError(HorizonsAdapterError, MissionSourceValidationError
     - Malformed $$SOE/$$EOE table
     - Invalid or non-finite geometry values
     - Returned ephemeris epoch does not match requested epoch
+    - Returned target body ID does not match requested target
+    - Returned center body ID does not match expected Earth geocenter (399)
+    - Missing, duplicate, or malformed identity header lines
     """
 
 
@@ -154,6 +157,22 @@ _EXPECTED_SEMANTIC_COLUMNS: int = 5
 # VEC_TABLE=3 has 11 columns (JDTDB, Date, X, Y, Z, VX, VY, VZ, LT, RG, RR).
 # We use this count to detect and reject table-3-shaped rows.
 _VEC_TABLE_3_COLUMN_COUNT: int = 11
+
+# Expected center body ID for CENTER='500@399' (Earth geocenter).
+# The numeric ID after the '@' in the CENTER code.
+_EXPECTED_CENTER_BODY_ID: int = 399
+
+# Pattern to extract the FINAL parenthesized signed-integer body ID from a
+# Horizons identity header value.
+# Examples:
+#   "Juno (spacecraft) (-61)"              -> -61
+#   "Juno (spacecraft) (-61) {source: x}"  -> -61
+#   "Mars (499)"                           -> 499
+#   "Earth (399)"                          -> 399
+# Strategy: find ALL (...) tokens that contain only a signed integer, then
+# take the LAST one.  This handles names that contain non-numeric parentheses
+# (e.g. "(spacecraft)") and optional trailing content such as "{source: ...}".
+_BODY_ID_IN_PARENS_RE = re.compile(r"\((-?\d+)\)")
 
 # Horizons A.D. calendar-date pattern produced under:
 #   TIME_TYPE=UT, TLIST_TYPE=CAL, CAL_TYPE=GREGORIAN, TIME_DIGITS=FRACSEC
@@ -459,6 +478,131 @@ def _parse_finite_float(cell: str, field_name: str) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Response identity validation (target + center body IDs)
+# ---------------------------------------------------------------------------
+
+
+def _extract_header_body_id(
+    result_text_before_soe: str,
+    header_prefix: str,
+) -> int:
+    """Extract the final numeric body ID from a Horizons identity header line.
+
+    Searches ``result_text_before_soe`` (the portion of the Horizons result
+    text BEFORE ``$$SOE``) for lines starting with ``header_prefix``.
+
+    Requirements:
+    - Exactly one such line must be present.
+    - The line must end with a parenthesized signed integer, e.g. ``(-61)``
+      or ``(399)``, optionally followed by whitespace.
+    - Names that themselves contain parentheses are handled correctly because
+      only the FINAL ``(<integer>)`` token is matched.
+
+    Parameters
+    ----------
+    result_text_before_soe:
+        The header portion of the Horizons result text (before ``$$SOE``).
+
+    header_prefix:
+        The line-start label to search for, e.g. ``"Target body name:"``
+        or ``"Center body name:"``.
+
+    Returns
+    -------
+    int
+        The extracted numeric body ID (may be negative for spacecraft).
+
+    Raises
+    ------
+    HorizonsValidationError
+        If the header line is missing, appears more than once, or the
+        numeric body ID cannot be extracted.
+    """
+    matching_lines: list[str] = []
+    for line in result_text_before_soe.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(header_prefix):
+            matching_lines.append(stripped)
+
+    if len(matching_lines) == 0:
+        raise HorizonsValidationError(
+            f"Horizons response is missing the '{header_prefix}' identity header."
+        )
+    if len(matching_lines) > 1:
+        raise HorizonsValidationError(
+            f"Horizons response contains duplicate '{header_prefix}' identity headers; "
+            "expected exactly one."
+        )
+
+    line_value = matching_lines[0][len(header_prefix):].strip()
+
+    # Find ALL parenthesized signed-integer tokens; take the LAST one.
+    all_matches = _BODY_ID_IN_PARENS_RE.findall(line_value)
+    if not all_matches:
+        raise HorizonsValidationError(
+            f"Horizons '{header_prefix}' header does not contain a "
+            "parenthesized numeric body identifier."
+        )
+    try:
+        return int(all_matches[-1])
+    except ValueError:
+        raise HorizonsValidationError(
+            f"Horizons '{header_prefix}' header contains a malformed numeric body identifier."
+        )
+
+
+def _verify_response_identity(
+    result_text: str,
+    request: HorizonsGeometryRequest,
+) -> None:
+    """Verify the returned Horizons target and center body IDs.
+
+    Searches only the header portion of ``result_text`` (before ``$$SOE``)
+    so that identity lines appearing only in the ephemeris data block are
+    not mistakenly trusted.
+
+    Verifies:
+    - ``Target body name:`` → final numeric ID == ``int(request.target_spk_id)``
+    - ``Center body name:`` → final numeric ID == ``_EXPECTED_CENTER_BODY_ID`` (399)
+
+    Raises HorizonsValidationError on any mismatch, missing header, or
+    duplicate header.
+    """
+    # Use only the pre-$$SOE portion for identity extraction.
+    soe_idx = result_text.find("$$SOE")
+    if soe_idx == -1:
+        # $$SOE absence will be caught by the table parser; use full text here
+        # so identity checks produce their own clear error if that path is hit.
+        header_text = result_text
+    else:
+        header_text = result_text[:soe_idx]
+
+    # --- Target body ID ---
+    returned_target_id = _extract_header_body_id(header_text, "Target body name:")
+    try:
+        requested_target_id = int(request.target_spk_id)
+    except ValueError:
+        # The request model enforces numeric-only SPK IDs, so this is unreachable
+        # in normal operation, but guard it anyway.
+        raise HorizonsValidationError(
+            "Horizons response target identity could not be compared: "
+            "request target_spk_id is not a plain integer."
+        )
+    if returned_target_id != requested_target_id:
+        raise HorizonsValidationError(
+            "Horizons response target identity does not match the requested target."
+        )
+
+    # --- Center body ID ---
+    returned_center_id = _extract_header_body_id(header_text, "Center body name:")
+    if returned_center_id != _EXPECTED_CENTER_BODY_ID:
+        raise HorizonsValidationError(
+            "Horizons response center identity does not match the expected "
+            "Earth geocenter (399)."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Pure shared raw-response validator
 # ---------------------------------------------------------------------------
 
@@ -569,6 +713,10 @@ def _validate_horizons_raw_response(
         raise HorizonsValidationError(
             "JPL Horizons response is missing the 'result' text field."
         )
+
+    # 6a. Verify target and center body identity from the response header.
+    #     Must pass before any ephemeris data is accepted.
+    _verify_response_identity(result_text, request)
 
     # 7. Parse vector table — validates JDTDB, calendar date epoch, LT/RG/RR.
     one_way_light_time_s, range_km, range_rate_km_s = _parse_vector_table(
