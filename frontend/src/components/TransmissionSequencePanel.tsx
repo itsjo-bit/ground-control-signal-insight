@@ -92,21 +92,27 @@ function TransmissionProgressPanel({
   sim: SimulationResult;
   visibleAttemptCount: number;
 }) {
-  const summaries = useMemo(() => groupAttemptsByPacket(sim), [sim]);
+  // ONLY include packets that had at least one attempt (not deferred-only packets).
+  // Deferred packets are summarized separately and must NOT inflate the progress denominator.
+  const attemptedSummaries = useMemo(
+    () => groupAttemptsByPacket(sim).filter((s) => s.finalStatus !== 'deferred'),
+    [sim]
+  );
+  const deferredCount = useMemo(() => sim.deferred_packets.length, [sim]);
 
   // Count stats from visible attempts
-  const visibleSummaries = summaries.slice(0, Math.max(0, visibleAttemptCount));
+  const visibleSummaries = attemptedSummaries.slice(0, Math.max(0, visibleAttemptCount));
   const deliveredSoFar = visibleSummaries.filter((s) => s.finalStatus === 'delivered').length;
   const retriesSoFar = visibleSummaries.reduce((acc, s) => acc + s.retransmissions, 0);
   const failedSoFar = visibleSummaries.filter((s) => s.finalStatus === 'failed').length;
-  const totalAttempts = summaries.length;
+  const totalAttempts = attemptedSummaries.length;
 
   return (
     <div>
       {/* Progress header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
         <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: DIM, letterSpacing: '0.1em' }}>
-          TRANSMISSION IN PROGRESS · TIME-COMPRESSED PLAYBACK
+          DOWNLINK ATTEMPTS · TIME-COMPRESSED PLAYBACK
         </span>
         <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 10, color: '#6EA8FF', fontWeight: 700 }}>
           {visibleAttemptCount}/{totalAttempts}
@@ -137,7 +143,25 @@ function TransmissionProgressPanel({
         ))}
       </div>
 
-      {/* Packet list — show visible summaries */}
+      {/* Deferred summary — shown immediately, NOT animated */}
+      {deferredCount > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '5px 8px', marginBottom: 6,
+          background: 'rgba(245,158,11,0.05)',
+          border: '1px solid rgba(245,158,11,0.18)',
+          borderRadius: 4,
+        }}>
+          <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#f59e0b', letterSpacing: '0.07em' }}>
+            DEFERRED THIS CONTACT
+          </span>
+          <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 12, fontWeight: 700, color: '#f59e0b' }}>
+            {deferredCount.toLocaleString()}
+          </span>
+        </div>
+      )}
+
+      {/* Attempted packet list — only packets with actual attempt events */}
       <div style={{ maxHeight: 180, overflowY: 'auto' }}>
         {visibleSummaries.map((s) => (
           <div key={s.packetId} style={{
@@ -194,8 +218,27 @@ interface Props {
   propagationDelayS: number | null;
   /** Available capacity for display. */
   availableCapacityBits: number;
-  /** Called during CONTACT_WAIT to execute backend approval. */
-  onExecuteApproval: () => Promise<ApproveResponse>;
+  /**
+   * Stable execution identifier from application-level coordinator.
+   * Passed to onExecuteApproval for single-shot guarantee.
+   * Remounting with the same executionId does NOT re-execute the backend call.
+   */
+  executionId: string;
+  /**
+   * Wall-clock ms when playback started (null if not yet started for this executionId).
+   * Used to support absolute-time catch-up when panel remounts.
+   */
+  playbackStartedAtMs: number | null;
+  /**
+   * Called ONCE per execution when the visual playback phase starts (entering TRANSMITTING).
+   * The coordinator stores this value so that remounted panels can catch up.
+   */
+  onSetPlaybackStarted: (ms: number) => void;
+  /**
+   * Execute backend approval — single-shot, keyed by executionId.
+   * If this execution was already dispatched, the existing Promise is returned.
+   */
+  onExecuteApproval: (executionId: string) => Promise<ApproveResponse>;
   /** Called when transmission sequence is fully complete. */
   onComplete: (result: ApproveResponse) => void;
   /** Called on error during approval. */
@@ -208,6 +251,9 @@ export function TransmissionSequencePanel({
   playbackConfig,
   propagationDelayS,
   availableCapacityBits,
+  executionId,
+  playbackStartedAtMs,
+  onSetPlaybackStarted,
   onExecuteApproval,
   onComplete,
   onError,
@@ -215,10 +261,16 @@ export function TransmissionSequencePanel({
   const [phase, setPhase] = useState<TransmissionChoreographyPhase>(initialPhase);
   const [simResult, setSimResult] = useState<SimulationResult | null>(null);
   const [approveResult, setApproveResult] = useState<ApproveResponse | null>(null);
+  // visibleAttemptCount is derived from absolute elapsed time during playback catch-up
   const [visibleAttemptCount, setVisibleAttemptCount] = useState(0);
-  const [elapsedPlaybackMs, setElapsedPlaybackMs] = useState(0);
-  const executedRef = useRef(false);
+  // Note: executedRef is NO LONGER used as the guard.
+  // The single-shot guarantee is provided by the application-level executionPromiseRef
+  // in MissionControl (keyed by executionId). This panel only drives the visual sequence.
+  // Even if this component remounts, calling onExecuteApproval(executionId) again
+  // returns the same Promise — no second backend call is made.
   const playbackTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** Stable ref to playbackStartedAtMs so the interval can use current value without stale closure. */
+  const playbackStartedAtMsRef = useRef<number | null>(playbackStartedAtMs);
   const reduced = prefersReducedMotion();
 
   const uplinkDurationMs = playbackConfig?.uplink_duration_ms ?? 1500;
@@ -246,16 +298,23 @@ export function TransmissionSequencePanel({
     return () => clearTimeout(timer);
   }, [phase, uplinkDurationMs, reduced, advanceToContactWait]);
 
+  // Keep the ref in sync with the prop (for catch-up after remount)
+  useEffect(() => {
+    playbackStartedAtMsRef.current = playbackStartedAtMs;
+  }, [playbackStartedAtMs]);
+
   // CONTACT_WAIT → execute backend approval → TRANSMITTING
+  // The single-shot guarantee is enforced by MissionControl's executionPromiseRef map.
+  // Even if this effect fires twice (StrictMode) or this component remounts after navigation,
+  // onExecuteApproval(executionId) returns the same Promise — no second API call is made.
   useEffect(() => {
     if (phase !== 'contact_wait') return;
-    if (executedRef.current) return;
-    executedRef.current = true;
 
     const delay = reduced ? 0 : contactAcqDurationMs;
     const timer = setTimeout(async () => {
       try {
-        const result = await onExecuteApproval();
+        // Single-shot: MissionControl dedups by executionId
+        const result = await onExecuteApproval(executionId);
         setApproveResult(result);
         setSimResult(result.simulation_result);
         advanceToTransmitting();
@@ -264,28 +323,58 @@ export function TransmissionSequencePanel({
       }
     }, delay);
     return () => clearTimeout(timer);
-  }, [phase, contactAcqDurationMs, reduced, onExecuteApproval, onError, advanceToTransmitting]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, contactAcqDurationMs, reduced]);
+  // Note: onExecuteApproval and executionId are intentionally excluded from deps.
+  // The coordinator is stable by design and re-running this effect with a new
+  // executionId would only happen after a full reset (new execution).
 
-  // TRANSMITTING: step through attempt summaries
+  // TRANSMITTING: absolute-time playback (NOT tick-count based).
+  // Progress is derived from: (Date.now() - playbackStartedAtMs) / totalVisualDurationMs
+  // This means browser background throttling, tab switches, and panel remounts
+  // do NOT stall playback — elapsed time is authoritative.
   useEffect(() => {
     if (phase !== 'transmitting' || !playback) return;
+
+    // Compute or record playback start time
+    if (!playbackStartedAtMsRef.current) {
+      const nowMs = Date.now();
+      playbackStartedAtMsRef.current = nowMs;
+      onSetPlaybackStarted(nowMs);
+    }
+
     if (reduced) {
-      // Skip animation — jump to end
+      // prefers-reduced-motion: skip animation, jump to final state immediately
       setVisibleAttemptCount(groupAttemptsByPacket(simResult!).length);
       const timer = setTimeout(advanceToSignalTransit, 300);
       return () => clearTimeout(timer);
     }
 
     const totalSummaries = groupAttemptsByPacket(simResult!).length;
-    const intervalMs = totalSummaries > 0
-      ? Math.max(80, playback.totalVisualDurationMs / totalSummaries)
-      : 500;
+    const totalVisualMs = playback.totalVisualDurationMs;
 
-    let count = 0;
+    function computeVisibleCount(): number {
+      const startMs = playbackStartedAtMsRef.current;
+      if (!startMs) return 0;
+      const elapsedMs = Date.now() - startMs;
+      if (totalSummaries === 0) return 0;
+      const perSummaryMs = totalVisualMs / totalSummaries;
+      return Math.min(totalSummaries, Math.floor(elapsedMs / perSummaryMs));
+    }
+
+    // Immediate catch-up on mount (handles tab-return / panel remount)
+    const initialCount = computeVisibleCount();
+    setVisibleAttemptCount(initialCount);
+    if (initialCount >= totalSummaries) {
+      // Already completed while hidden — advance immediately
+      setTimeout(advanceToSignalTransit, 0);
+      return;
+    }
+
+    const intervalMs = Math.max(80, totalVisualMs / Math.max(1, totalSummaries));
     const interval = setInterval(() => {
-      count++;
+      const count = computeVisibleCount();
       setVisibleAttemptCount(count);
-      setElapsedPlaybackMs((prev) => prev + intervalMs);
       if (count >= totalSummaries) {
         clearInterval(interval);
         setTimeout(advanceToSignalTransit, 600);
@@ -293,7 +382,10 @@ export function TransmissionSequencePanel({
     }, intervalMs);
     playbackTimerRef.current = interval;
     return () => clearInterval(interval);
-  }, [phase, playback, simResult, reduced, advanceToSignalTransit]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, playback, simResult, reduced]);
+  // Note: advanceToSignalTransit, onSetPlaybackStarted excluded from deps on purpose —
+  // they are stable callbacks that should not restart the playback interval.
 
   // SIGNAL_TRANSIT → COMPLETE after propagation duration
   useEffect(() => {
@@ -461,7 +553,7 @@ export function TransmissionSequencePanel({
               <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: DIM }}>DEFERRED</div>
               <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 16, fontWeight: 700, color: simResult.deferred_packets.length > 0 ? '#f59e0b' : MUTED }}>{simResult.deferred_packets.length}</div>
             </div>
-            {elapsedPlaybackMs > 0 && (
+            {simResult.elapsed_time_s > 0 && (
               <div>
                 <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: DIM }}>SIM ELAPSED</div>
                 <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 14, fontWeight: 700, color: MUTED }}>{simResult.elapsed_time_s.toFixed(1)} s</div>

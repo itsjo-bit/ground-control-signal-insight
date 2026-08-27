@@ -9,7 +9,7 @@
  * - Workspace mode persists across navigation; reset does NOT change mode
  * - workspaceMode stored in localStorage
  */
-import { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   getState,
   getQueue,
@@ -336,8 +336,31 @@ export default function MissionControl() {
   const aiRequestInFlight = useRef(false);
 
   // ── V3.4: Manual mode state ────────────────────────────────────────────────
-  const [manualSelectedIds, setManualSelectedIds] = useState<Set<string>>(new Set());
+  // manualOrder is the SINGLE SOURCE OF TRUTH for manual selection.
+  // manualSelectedIds is a pure derivation — never mutated independently.
+  // Invariant: new Set(manualOrder).size === manualOrder.length (always unique).
   const [manualOrder, setManualOrder] = useState<string[]>([]);
+  const manualSelectedIds = useMemo(() => new Set(manualOrder), [manualOrder]);
+
+  // ── Phase 5.1D: Application-level execution coordinator ──────────────────
+  // This state lives at MissionControl level so it survives navigation.
+  // Each executionId maps to AT MOST ONE backend approval request (ever).
+  //
+  // executionPromiseRef is a Map<id, Promise>. Once an entry exists for an id,
+  // NO second dispatch is ever made for that id.
+  // Navigation / remount / StrictMode double-effects cannot call /approve again.
+
+  /** Monotonic counter to generate unique execution IDs. */
+  const executionCounter = useRef(0);
+
+  /** Current execution ID. Null when idle. */
+  const [executionId, setExecutionId] = useState<string | null>(null);
+
+  /** The Promise for the in-flight or completed approval request. Keyed by executionId. */
+  const executionPromiseRef = useRef<Map<string, Promise<ApproveResponse>>>(new Map());
+
+  /** Wall-clock ms at which the current execution's visual playback began. */
+  const [playbackStartedAtMs, setPlaybackStartedAtMs] = useState<number | null>(null);
 
   // ── Phase 4.2F4: Transmission choreography ────────────────────────────────
   /** When true, TransmissionSequencePanel is active in TransmissionSection. */
@@ -396,6 +419,13 @@ export default function MissionControl() {
   // ── Phase 4.2F: Manual plan assessment ────────────────────────────────────
   const handleManualEvaluate = useCallback(async () => {
     if (manualOrder.length === 0) return;
+    // Pre-flight invariant check — must be unique before sending to backend
+    const seen = new Set<string>();
+    const dupes = manualOrder.filter((id) => seen.has(id) || !seen.add(id));
+    if (dupes.length > 0) {
+      setManualAssessmentError(`MANUAL PLAN STATE INVALID: Duplicate product ID(s): ${[...new Set(dupes)].join(', ')}`);
+      return;
+    }
     const fingerprint = manualOrder.join(',');
     setManualAssessmentLoading(true);
     setManualAssessmentError(null);
@@ -514,12 +544,15 @@ export default function MissionControl() {
     // Remove ai-prioritized plan from the list on reset
     setAllPlans((prev) => prev.filter((p) => p.plan_id !== 'ai-prioritized'));
     setAllEvaluations((prev) => prev.filter((e) => e.plan_id !== 'ai-prioritized'));
-    setManualSelectedIds(new Set());
     setManualOrder([]);
     clearManualAssessmentState();
     setAiRecommendationRejected(false);
     setChoreographyActive(false);
     setPendingExecutionPlan(null);
+    // Reset execution coordinator
+    setExecutionId(null);
+    setPlaybackStartedAtMs(null);
+    executionPromiseRef.current.clear();
     setSessionEvents([]);
     aiRequestInFlight.current = false;
     // V3.5: workspace mode is NOT reset on mission reset
@@ -568,12 +601,15 @@ export default function MissionControl() {
     // Remove ai-prioritized plan from the list on scenario switch
     setAllPlans((prev) => prev.filter((p) => p.plan_id !== 'ai-prioritized'));
     setAllEvaluations((prev) => prev.filter((e) => e.plan_id !== 'ai-prioritized'));
-    setManualSelectedIds(new Set());
     setManualOrder([]);
     clearManualAssessmentState();
     setAiRecommendationRejected(false);
     setChoreographyActive(false);
     setPendingExecutionPlan(null);
+    // Reset execution coordinator
+    setExecutionId(null);
+    setPlaybackStartedAtMs(null);
+    executionPromiseRef.current.clear();
     // Clear scenario-specific experience state on switch
     setExperienceManifest(null);
     setExperienceAvailable(false);
@@ -681,41 +717,66 @@ export default function MissionControl() {
   }
 
   // ── V3.4: Manual selection helpers ───────────────────────────────────────
+
+  /**
+   * Assert the uniqueness invariant. Throws in dev if violated.
+   * Returns false in production so callers can show a user-facing error.
+   */
+  function assertUniqueProductOrder(order: string[], context: string): boolean {
+    const unique = new Set(order);
+    if (unique.size !== order.length) {
+      const seen = new Set<string>();
+      const dupes = order.filter((id) => seen.has(id) || !seen.add(id));
+      const msg = `[GCSI] Manual plan invariant violation in ${context}: duplicate IDs [${[...new Set(dupes)].join(', ')}]`;
+      console.error(msg);
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Single, StrictMode-safe toggle handler.
+   * manualOrder is mutated atomically — no nested setState calls.
+   */
   function handleToggleManualSelect(productId: string) {
-    setManualSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(productId)) {
-        next.delete(productId);
-        setManualOrder((o) => {
-          const newOrder = o.filter((id) => id !== productId);
-          // Invalidate assessment when selection changes
-          if (manualAssessment !== null) setManualAssessmentStale(true);
-          setManualAssessmentOrderFingerprint(newOrder.join(','));
-          return newOrder;
-        });
+    setManualOrder((prev) => {
+      let next: string[];
+      if (prev.includes(productId)) {
+        // Deselect: remove ALL occurrences (guard against prior corruption)
+        next = prev.filter((id) => id !== productId);
       } else {
-        next.add(productId);
-        setManualOrder((o) => {
-          const newOrder = [...o, productId];
-          // Invalidate assessment when selection changes
-          if (manualAssessment !== null) setManualAssessmentStale(true);
-          setManualAssessmentOrderFingerprint(newOrder.join(','));
-          return newOrder;
-        });
+        // Select: append — but only if not already present (idempotent)
+        if (prev.includes(productId)) return prev;
+        next = [...prev, productId];
+      }
+      // Invalidate assessment when selection changes (side-effect via timeout
+      // to avoid setState-inside-setState; MissionControl is mounted at all times)
+      if (manualAssessment !== null) {
+        setTimeout(() => {
+          setManualAssessmentStale(true);
+          setManualAssessmentOrderFingerprint(next.join(','));
+        }, 0);
       }
       return next;
     });
   }
 
   function handleClearManualSelection() {
-    setManualSelectedIds(new Set());
     setManualOrder([]);
     clearManualAssessmentState();
   }
 
   function handleManualReorder(newOrder: string[]) {
+    // Validate before accepting: every ID must be unique and belong to the current selection
+    const currentSet = new Set(manualOrder);
+    const newSet = new Set(newOrder);
+    // Must preserve all selected IDs — no additions, no removals, no dupes
+    if (newOrder.length !== currentSet.size) return; // size mismatch
+    if (!assertUniqueProductOrder(newOrder, 'handleManualReorder')) return;
+    for (const id of newSet) {
+      if (!currentSet.has(id)) return; // unknown ID rejected
+    }
     setManualOrder(newOrder);
-    // Invalidate assessment when order changes
     if (manualAssessment !== null) setManualAssessmentStale(true);
     setManualAssessmentOrderFingerprint(newOrder.join(','));
   }
@@ -723,6 +784,13 @@ export default function MissionControl() {
   // ── Phase 4.2F4: Manual transmit — enters choreography ───────────────────
   const handleManualTransmit = useCallback(() => {
     if (manualOrder.length === 0) return;
+    // Pre-flight invariant check — must be unique before executing
+    const seenTx = new Set<string>();
+    const dupesTx = manualOrder.filter((id) => seenTx.has(id) || !seenTx.add(id));
+    if (dupesTx.length > 0) {
+      setError(`MANUAL PLAN STATE INVALID: Duplicate product ID(s): ${[...new Set(dupesTx)].join(', ')}`);
+      return;
+    }
     // Build execution plan — prefer assessed plan (authoritative facts) if fresh
     const localPlan: CandidatePlan = {
       plan_id: 'operator-manual',
@@ -747,6 +815,9 @@ export default function MissionControl() {
       ? manualAssessment.plan
       : localPlan;
 
+    const newId = `exec-${++executionCounter.current}`;
+    setExecutionId(newId);
+    setPlaybackStartedAtMs(null);
     setPendingExecutionPlan(planToExecute);
     setPendingExecutionMode('custom');
     setChoreographyActive(true);
@@ -772,9 +843,12 @@ export default function MissionControl() {
   // These are placed after recPlan to avoid forward-reference.
   const [aiRecommendationRejected, setAiRecommendationRejected] = useState<boolean>(false);
 
-  /** Approve: start choreography with AI plan. Backend approval executes during choreography. */
+  /** Approve: start choreography with AI plan. Creates a new executionId and enters choreography. */
   const handleApproveAiPlan = useCallback(() => {
     if (!recPlan) return;
+    const newId = `exec-${++executionCounter.current}`;
+    setExecutionId(newId);
+    setPlaybackStartedAtMs(null);
     setAiRecommendationRejected(false);
     setPendingExecutionPlan(recPlan);
     setPendingExecutionMode('ai');
@@ -789,7 +863,6 @@ export default function MissionControl() {
     if (!recPlan) return;
     const orderedIds = recPlan.packets.map((p) => p.packet_id);
     setManualOrder(orderedIds);
-    setManualSelectedIds(new Set(orderedIds));
     clearManualAssessmentState();
     setDecisionMode('manual');
     setAiRecommendationRejected(false);
@@ -806,13 +879,27 @@ export default function MissionControl() {
   /**
    * Execute the actual backend approval during choreography.
    * Called by TransmissionSequencePanel when contact is acquired.
+   *
+   * SINGLE-SHOT GUARANTEE:
+   * For a given executionId, this function dispatches AT MOST ONE backend request.
+   * If a Promise already exists in executionPromiseRef for this executionId,
+   * the existing Promise is returned — the API is NOT called again.
+   * This means navigation, remount, StrictMode double-effects, and rapid clicks
+   * all resolve to the same single backend call.
    */
-  const handleExecuteApproval = useCallback(async () => {
-    if (!pendingExecutionPlan) throw new Error('No pending execution plan');
-    if (pendingExecutionMode === 'ai' && recommendation) {
-      return await approvePlan(recommendation.recommended_plan_id, pendingExecutionPlan);
+  const handleExecuteApproval = useCallback(async (activeExecutionId: string): Promise<ApproveResponse> => {
+    const map = executionPromiseRef.current;
+    // Return existing promise if already dispatched for this id
+    if (map.has(activeExecutionId)) {
+      return map.get(activeExecutionId)!;
     }
-    return await approveCustomPlan(pendingExecutionPlan, 'operator transmission');
+    if (!pendingExecutionPlan) throw new Error('No pending execution plan');
+    // Create and store the promise BEFORE awaiting — this is the guard
+    const promise = (pendingExecutionMode === 'ai' && recommendation)
+      ? approvePlan(recommendation.recommended_plan_id, pendingExecutionPlan)
+      : approveCustomPlan(pendingExecutionPlan, 'operator transmission');
+    map.set(activeExecutionId, promise);
+    return promise;
   }, [pendingExecutionPlan, pendingExecutionMode, recommendation]);
 
   /** Called when TransmissionSequencePanel completes the full sequence. */
@@ -940,27 +1027,39 @@ export default function MissionControl() {
           </span>
         )}
 
-        {/* V3.4: AI lifecycle badge */}
-        {aiLifecycle !== 'standby' && (
-          <span style={{
-            padding: '2px 8px',
-            background: aiLifecycle === 'analyzing' ? 'rgba(76,141,255,0.07)' :
-                        aiLifecycle === 'ready' ? 'rgba(52,211,153,0.07)' :
-                        aiLifecycle === 'error' ? 'rgba(248,113,113,0.07)' : 'rgba(245,158,11,0.07)',
-            color: aiLifecycle === 'analyzing' ? '#6EA8FF' :
-                   aiLifecycle === 'ready' ? '#34d399' :
-                   aiLifecycle === 'error' ? '#f87171' : '#f59e0b',
-            border: `1px solid ${aiLifecycle === 'analyzing' ? 'rgba(76,141,255,0.22)' :
-                    aiLifecycle === 'ready' ? 'rgba(52,211,153,0.22)' :
-                    aiLifecycle === 'error' ? 'rgba(248,113,113,0.22)' : 'rgba(245,158,11,0.22)'}`,
-            borderRadius: 4,
-            fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-            fontSize: 9, fontWeight: 600,
-            flexShrink: 0,
-          }}>
-            AI · {aiLifecycle === 'analyzing' ? 'ANALYZING' : aiLifecycle === 'ready' ? (aiProvider ?? 'READY') : aiLifecycle === 'error' ? 'FAILED' : 'STALE'}
-          </span>
-        )}
+        {/* V3.4: AI lifecycle badge — provider-aware labeling */}
+        {aiLifecycle !== 'standby' && ((): React.ReactNode => {
+          // Determine if the actual provider is local/deterministic
+          const ap = (aiActualProvider ?? aiProvider ?? '').toLowerCase();
+          const isLocalProvider = ap.includes('local') || ap.includes('deterministic') || ap.includes('rule');
+          const providerLabel = aiLifecycle === 'analyzing' ? 'ANALYZING'
+            : aiLifecycle === 'ready' ? (aiProvider?.toUpperCase() ?? 'READY')
+            : aiLifecycle === 'error' ? 'FAILED'
+            : 'STALE';
+          // Local fallback: show TRIAGE · LOCAL instead of AI · Local
+          const badgePrefix = isLocalProvider && (aiLifecycle === 'ready' || aiLifecycle === 'stale') ? 'TRIAGE' : 'AI';
+          const badgeLabel = `${badgePrefix} · ${providerLabel}`;
+          const isReady = aiLifecycle === 'ready';
+          const bgColor = aiLifecycle === 'analyzing' ? 'rgba(76,141,255,0.07)' :
+                          isReady ? (isLocalProvider ? 'rgba(245,158,11,0.07)' : 'rgba(52,211,153,0.07)') :
+                          aiLifecycle === 'error' ? 'rgba(248,113,113,0.07)' : 'rgba(245,158,11,0.07)';
+          const fgColor = aiLifecycle === 'analyzing' ? '#6EA8FF' :
+                          isReady ? (isLocalProvider ? '#f59e0b' : '#34d399') :
+                          aiLifecycle === 'error' ? '#f87171' : '#f59e0b';
+          const borderColor = aiLifecycle === 'analyzing' ? 'rgba(76,141,255,0.22)' :
+                              isReady ? (isLocalProvider ? 'rgba(245,158,11,0.22)' : 'rgba(52,211,153,0.22)') :
+                              aiLifecycle === 'error' ? 'rgba(248,113,113,0.22)' : 'rgba(245,158,11,0.22)';
+          return (
+            <span style={{
+              padding: '2px 8px', background: bgColor, color: fgColor,
+              border: `1px solid ${borderColor}`, borderRadius: 4,
+              fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
+              fontSize: 9, fontWeight: 600, flexShrink: 0,
+            }} title={isLocalProvider ? 'Deterministic local fallback — not an AI model' : undefined}>
+              {badgeLabel}
+            </span>
+          );
+        })()}
 
         {/* Spacer */}
         <div style={{ flex: 1 }} />
@@ -1249,6 +1348,9 @@ export default function MissionControl() {
             onApproveAiPlan={handleApproveAiPlan}
             onModifyAiPlan={handleModifyAiPlan}
             onRejectAiPlan={handleRejectAiPlan}
+            executionId={executionId}
+            playbackStartedAtMs={playbackStartedAtMs}
+            onSetPlaybackStarted={setPlaybackStartedAtMs}
             aiRecommendationRejected={aiRecommendationRejected}
             sessionEvents={sessionEvents}
             choreographyActive={choreographyActive}

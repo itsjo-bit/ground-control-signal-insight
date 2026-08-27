@@ -170,8 +170,14 @@ interface CommonProps {
   choreographyActive: boolean;
   /** Plan queued for execution during choreography. */
   pendingExecutionPlan: CandidatePlan | null;
-  /** Execute the actual backend approval call. */
-  onExecuteApproval: () => Promise<import('../types/domain').ApproveResponse>;
+  /** Stable execution identifier — the single-shot approval guard. */
+  executionId: string | null;
+  /** Wall-clock ms when playback started (null if not yet started). */
+  playbackStartedAtMs: number | null;
+  /** Called to set playbackStartedAtMs in the coordinator (once per execution). */
+  onSetPlaybackStarted: (ms: number) => void;
+  /** Execute the actual backend approval call (single-shot by executionId). */
+  onExecuteApproval: (executionId: string) => Promise<import('../types/domain').ApproveResponse>;
   /** Called when choreography sequence fully completes. */
   onChoreographyComplete: (result: import('../types/domain').ApproveResponse) => void;
   /** Called when choreography encounters an error. */
@@ -1016,16 +1022,19 @@ function AiHumanDecisionPanel({ props }: { props: CommonProps }) {
         AI RECOMMENDATION
       </div>
 
-      {/* Metrics grid */}
+      {/* Metrics grid — truthful labels (see Phase 5.1D WorkStream G) */}
+      {/* selectedCount = recPlan.packets.length = the full prioritized plan queue */}
+      {/* projectedFit = packets NOT deferred according to evaluation */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 12 }}>
         {[
-          { label: 'IMMEDIATE PRIORITIES', value: `${selectedCount} products`, color: '#6EA8FF' },
+          { label: 'PRIORITIZED QUEUE', value: `${selectedCount} products`, color: '#6EA8FF' },
+          { label: 'PROJECTED THIS CONTACT', value: deferredCount < selectedCount ? `${selectedCount - deferredCount} products` : `${selectedCount} products`, color: '#34d399' },
           { label: 'PRIORITY PAYLOAD', value: formatBitsAsDataVolume(planPayloadBits), color: '#e2e8f4' },
           { label: 'CONTACT CAPACITY', value: formatBitsAsDataVolume(props.availableCapacityBits), color: 'rgba(147,160,180,0.7)' },
           { label: 'PLAN RISK', value: riskLevel, color: riskColor },
+          { label: 'PROJECTED DEFERRED', value: `${deferredCount}`, color: deferredCount > 0 ? '#f59e0b' : '#34d399' },
           ...(reqDeliveryRate !== null ? [{ label: 'REQ. DELIVERY', value: `${(reqDeliveryRate * 100).toFixed(0)}%`, color: reqDeliveryRate >= 0.8 ? '#34d399' : '#f59e0b' }] : []),
           ...(anomalyCoverage !== null ? [{ label: 'ANOMALY COVERAGE', value: `${(anomalyCoverage * 100).toFixed(0)}%`, color: anomalyCoverage >= 0.8 ? '#34d399' : anomalyCoverage >= 0.5 ? '#f59e0b' : '#f87171' }] : []),
-          { label: 'DEFERRED', value: `${deferredCount}`, color: deferredCount > 0 ? '#f59e0b' : '#34d399' },
         ].map(({ label, value, color }) => (
           <div key={label} style={{
             background: 'rgba(255,255,255,0.025)',
@@ -1771,8 +1780,8 @@ function TransmissionSection(props: CommonProps) {
     ? null
     : (props.recEval ?? props.activeEval);
 
-  // Show choreography sequence panel when active
-  if (props.choreographyActive) {
+  // Show choreography sequence panel when active (survives navigation — executionId persists)
+  if (props.choreographyActive && props.executionId) {
     return (
       <TransmissionSequencePanel
         initialPhase="plan_uplink"
@@ -1780,12 +1789,19 @@ function TransmissionSection(props: CommonProps) {
         playbackConfig={props.experienceManifest?.playback ?? null}
         propagationDelayS={props.propagationDelayS}
         availableCapacityBits={props.availableCapacityBits}
+        executionId={props.executionId}
+        playbackStartedAtMs={props.playbackStartedAtMs}
+        onSetPlaybackStarted={props.onSetPlaybackStarted}
         onExecuteApproval={props.onExecuteApproval}
         onComplete={props.onChoreographyComplete}
         onError={props.onChoreographyError}
       />
     );
   }
+
+  // AI Assisted mode: show "AWAITING AUTHORIZATION" until operator approves in Decision
+  const isAiMode = props.decisionMode === 'ai';
+  const isTransmissionComplete = props.approvalPhase === 'complete';
 
   return (
     <>
@@ -1799,6 +1815,41 @@ function TransmissionSection(props: CommonProps) {
         </div>
       </ResizableSection>
 
+      {/* AI mode: single authorization point gate */}
+      {isAiMode && !isTransmissionComplete && (
+        <ResizableSection title="Authorization Required" icon="◉" accent="#4C8DFF">
+          <div style={{
+            background: 'rgba(8,12,22,0.9)',
+            border: '1px solid rgba(76,141,255,0.18)',
+            borderRadius: 6, padding: '14px 16px',
+          }}>
+            <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 9, color: 'rgba(147,160,180,0.55)', letterSpacing: '0.1em', marginBottom: 10 }}>
+              AWAITING OPERATOR AUTHORIZATION
+            </div>
+            <div style={{ fontFamily: '"IBM Plex Sans", system-ui', fontSize: 12, color: 'rgba(147,160,180,0.8)', lineHeight: 1.6, marginBottom: 14 }}>
+              Review the final recommendation in <strong style={{ color: '#6EA8FF' }}>AI Copilot → Decision</strong>.
+            </div>
+            <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 11, color: 'rgba(147,160,180,0.55)', marginBottom: 12, lineHeight: 1.5 }}>
+              Use <strong>✓ APPROVE TRANSMISSION</strong> in the Decision tab to authorize a single authoritative execution.
+              Once approved, this Transmission panel will show execution status and playback.
+            </div>
+            <button
+              onClick={() => props.onSelectDecisionMode('ai')}
+              style={{
+                width: '100%', padding: '8px 0', fontSize: 12, fontWeight: 600,
+                fontFamily: '"IBM Plex Sans", system-ui', cursor: 'pointer',
+                background: 'rgba(76,141,255,0.10)', color: '#6EA8FF',
+                border: '1px solid rgba(76,141,255,0.30)', borderRadius: 6,
+              }}
+            >
+              GO TO DECISION
+            </button>
+          </div>
+        </ResizableSection>
+      )}
+
+      {/* Manual mode: keep Approval bar with EVALUATE SELECTION / TRANSMIT SELECTED */}
+      {!isAiMode && (
       <ResizableSection title="Approval" icon="◉" accent="#4C8DFF">
         <div style={{ minWidth: 0 }}>
           <ApprovalBar
@@ -1873,6 +1924,7 @@ function TransmissionSection(props: CommonProps) {
           )}
         </div>
       </ResizableSection>
+      )}
 
       <TransmissionOutcomeBanner
         approvalPhase={props.approvalPhase}
