@@ -12,7 +12,7 @@ mission data. This demonstration uses NASA Juno's 62nd Jupiter perijove (PJ62) f
 its mission anchor.
 
 **What it shows:**
-- A real spacecraft, at a real epoch, at a verified real distance from the Sun
+- A real spacecraft, at a real epoch, at a verified real distance from Earth's geocenter
 - Two real archival science products whose metadata is frozen from NASA's Planetary Data System
 - A modeled communication scenario created by GCSI — not reconstructed from any NASA DSN record
 - Deterministic telecom analysis, plan generation, and AI advisory — all operating on the
@@ -41,7 +41,7 @@ data/verified_snapshots/horizons/juno/
 juno_spk_-61_2024-06-14T035955.483000Z.json
 ```
 
-Acquired from the JPL Horizons ephemeris system via the official SBDB/Horizons API.
+Acquired from the official NASA/JPL Horizons API.
 Frozen at epoch 2024-06-14T03:59:55.483000Z — the PJ62 decision epoch.
 
 ### NASA PDS archive — IRDR product
@@ -84,11 +84,11 @@ estimated, modeled, or rounded.
 | Field | Value | Source |
 |---|---|---|
 | Decision epoch | 2024-06-14T03:59:55.483000Z | JPL Horizons |
-| Juno–Sun distance | 893,345,396.8038701 km | JPL Horizons |
+| Juno–Earth geocenter range | 893,345,396.8038701 km | JPL Horizons |
 | IRDR file size | 6,694,664 bytes (53,557,312 bits) | NASA PDS |
 | GRDR file size | 5,093,997 bytes (40,751,976 bits) | NASA PDS |
-| IRDR LIDVID | `urn:nasa:pds:juno-mwr:data-raw:mwr62ri2024166030000_r04112_v04::3.0` | NASA PDS |
-| GRDR LIDVID | `urn:nasa:pds:juno-mwr:data-raw:mwr62rg2024166030000_r04112_v04::3.0` | NASA PDS |
+| IRDR LIDVID | `urn:nasa:pds:juno_mwr:data_calibrated:mwr62ri2024166030000_r04112_v04::3.0` | NASA PDS |
+| GRDR LIDVID | `urn:nasa:pds:juno_mwr:data_calibrated:mwr62rg2024166030000_r04112_v04::3.0` | NASA PDS |
 
 **What IRDR and GRDR mean:**
 - **IRDR** — Instrument Reduced Data Record: the primary calibrated microwave radiometry
@@ -107,7 +107,7 @@ estimated, modeled, or rounded.
 
 ## Provenance Categories
 
-Every value in the API response is classified into one of three categories:
+The replay assembly internally classifies and binds source-baseline Scenario fields into one of three provenance categories. The `/state` API exposes aggregate category counts:
 
 | Category | Meaning | Examples |
 |---|---|---|
@@ -343,8 +343,9 @@ This is different from synthetic scenario reset, which introduces random jitter.
 
 ### 1:00–1:30 — Show link geometry and capacity shortfall
 
-> "Juno is 893 million kilometers from the Sun at this epoch — a verified JPL
-> value. The physical one-way signal travel time is about 49 minutes 40 seconds.
+> "At the replay decision epoch, JPL Horizons places Juno about 893 million
+> kilometers from Earth's geocenter — a verified JPL value.
+> The physical one-way signal travel time is about 49 minutes 40 seconds.
 >
 > With the modeled 900-second window and 90,000 bps goodput, we have 81 million
 > bits of available capacity. The two queued MWR products total 94 million bits —

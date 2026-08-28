@@ -116,6 +116,10 @@ additional fields documenting the mission source context.
 
 ### GET /state (source sub-object)
 
+The `source` sub-object exposes an **aggregate source-baseline provenance summary** for the
+historical replay bundle. It is not a field-level provenance endpoint for every
+runtime-derived value.
+
 ```json
 {
   "source": {
@@ -131,7 +135,7 @@ additional fields documenting the mission source context.
 }
 ```
 
-**Provenance categories:**
+**Provenance categories (source-baseline only):**
 
 | Kind | Meaning |
 |---|---|

@@ -187,9 +187,15 @@ Synthetic ScenarioLoader                    HistoricalReplayProvider
 - `GCSI_SOURCE_MODE=historical_replay` — activates `HistoricalReplayProvider`
 
 **Provenance manifest:**
-The `ProvenanceManifest` attached to every historical bundle classifies each value as
-`external_authoritative`, `derived`, or `modeled`. This classification is surfaced in the
-`/state` and `/health` API responses.
+The `ProvenanceManifest` attached to every historical bundle classifies each source-baseline
+field as `external_authoritative`, `derived`, or `modeled`.
+
+`/state` exposes an aggregate source provenance summary: `provenance_scope`, record count,
+binding count, and `provenance_kind_counts`. This is a source-baseline summary, not a
+field-level provenance endpoint for every runtime-derived value.
+
+`/health` exposes source mode, provider identity, and `source_provenance_available`
+availability metadata — it does not expose category counts or field bindings.
 
 **What does NOT change between modes:**
 - TelecomEngine formulas (authoritative, deterministic)

@@ -506,7 +506,7 @@ GCSI reconstructs a **decision scenario** from verified archival facts:
 
 | Source | What GCSI uses |
 |---|---|
-| **JPL Horizons** (external authoritative) | Exact-epoch Juno–Sun geometry at 2024-06-14T03:59:55.483Z |
+| **JPL Horizons** (external authoritative) | Exact-epoch Juno–Earth geocenter geometry at 2024-06-14T03:59:55.483Z |
 | **NASA PDS archive** (external authoritative) | MWR PJ62 IRDR and GRDR product metadata (size, LIDVID, observation window) |
 | **GCSI modeled policy** (modeled) | SNR, data rate, link stability, decision window, risk score, product priority attributes |
 
@@ -519,7 +519,7 @@ The archival facts are committed as verified snapshots with SHA-256 integrity lo
 
 ### The decision pressure
 
-- **Available capacity**: 81,000,000 bits (modeled 90 s window × 90,000 bps goodput)
+- **Available capacity**: 81,000,000 bits (modeled 900 s window × 90,000 bps goodput)
 - **IRDR queued**: 53,557,312 bits (6,694,664 bytes — from PDS archive)
 - **GRDR queued**: 40,751,976 bits (5,093,997 bytes — from PDS archive)
 - **Total queued**: 94,309,288 bits — **does not fit in one window**
