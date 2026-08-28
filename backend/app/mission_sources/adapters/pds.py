@@ -1,4 +1,4 @@
-"""GCSI Phase 6E-A — NASA PDS Registry Search API Adapter.
+"""GCSI Phase 6E-D2 — NASA PDS Registry Search API Adapter.
 
 This module implements the ``PdsRegistryAdapter``: a lower-level source adapter
 that fetches and validates metadata for one exact versioned PDS4 product from
@@ -27,12 +27,35 @@ It ONLY:
 
 1. Validates the exact LIDVID request.
 2. Constructs a fixed well-formed PDS Search API GET request.
-3. Fetches it via HTTPS (one request per call).
+3. Fetches it via HTTPS with constrained one-hop redirect support (see below).
 4. Validates HTTP transport semantics.
 5. Validates PDS KVP JSON envelope and identity fields.
 6. Normalizes output into :class:`PdsScienceProduct`.
 7. Produces an ``EXTERNAL_AUTHORITATIVE`` :class:`ProvenanceRecord`.
 8. Returns the normalized product + provenance.
+
+Transport semantics (Phase 6E-D2)
+----------------------------------
+A fetch performs **one canonical GET** to the fixed public PDS endpoint.
+
+If and only if NASA PDS returns a single approved ``307 Temporary Redirect``
+or ``308 Permanent Redirect`` whose ``Location`` points to the fixed trusted
+PDS MCP deployment host (``pds.mcp.nasa.gov``) with the **exact same path and
+query**, the adapter performs **one second GET** to that validated destination.
+
+No other redirect is followed.  The second request is **not** a retry — it is
+the single allowed redirect hop.
+
+Maximum HTTP GETs per fetch call:
+
+- Normal (HTTP 200 on first request): **1**
+- Approved redirect (307/308 → MCP → HTTP 200): **2**
+
+The first ``307``/``308`` body is not treated as product content.  Only the
+final approved HTTP 200 response body is supplied to the response validator.
+Only the final body feeds ``provenance.content_sha256``.
+
+All other redirect conditions fail closed with :class:`PdsValidationError`.
 
 PDS Search API Completeness Warning
 ------------------------------------
@@ -55,8 +78,12 @@ Security notes
 - Request fields are a fixed immutable list owned by this adapter.
 - Raw response content, request URLs, and raw metadata strings are NOT
   exposed in public exception messages.
-- Redirect following is always disabled at the request level, regardless of
-  the injected client's follow_redirects default.
+- Redirect following is always disabled at the ``send()`` call level,
+  regardless of the injected client's ``follow_redirects`` default.
+- Redirect Location values from untrusted responses are never included in
+  public exception messages.
+- Only one redirect hop is ever performed.  A second 3xx from the redirect
+  destination fails closed immediately.
 """
 
 from __future__ import annotations
@@ -137,7 +164,18 @@ class PdsValidationError(PdsAdapterError, MissionSourceValidationError):
 # Fixed NASA PDS Search API base — HTTPS only.
 # Endpoint: GET /products/{identifier}
 # Full URL constructed as: _PDS_PRODUCTS_ENDPOINT + url_encoded_lidvid
+# DO NOT change this to pds.mcp.nasa.gov — this is the canonical public entry.
 _PDS_PRODUCTS_ENDPOINT: str = "https://pds.nasa.gov/api/search/1/products/"
+
+# Approved NASA PDS deployment redirect policy (Phase 6E-D2).
+# Only one trusted redirect hop is permitted, and only to this exact host/scheme.
+# Reject everything else, including subdomains, HTTP, and arbitrary hosts.
+_PDS_REDIRECT_HOST: str = "pds.mcp.nasa.gov"
+_PDS_REDIRECT_SCHEME: str = "https"
+
+# HTTP status codes for which a single validated redirect hop is permitted.
+# 307/308 preserve method semantics; other 3xx codes are rejected.
+_PDS_REDIRECT_STATUSES: frozenset[int] = frozenset({307, 308})
 
 # Accept header for the KVP JSON representation.
 _ACCEPT_KVP_JSON: str = "application/kvp+json"
@@ -1061,15 +1099,20 @@ class PdsRegistryAdapter:
 
     Notes
     -----
-    - One :meth:`fetch` call = one HTTP GET request.  No retries, no
-      concurrent requests.
+    - One :meth:`fetch` call performs **one canonical HTTP GET**.  If and only
+      if NASA PDS returns a single approved 307/308 redirect to the fixed
+      trusted PDS MCP host with the exact same path and query, a **second GET**
+      is issued.  Maximum GETs per fetch = 2.  No retries.
+    - The second request (when issued) is the single allowed redirect hop,
+      not a retry.
     - The production endpoint URL is fixed and not configurable by callers.
     - Only exact versioned LIDVIDs are accepted; bare LIDs are rejected.
     - The adapter does NOT follow or download any data-file URLs returned
       in ops:Data_File_Info.ops:file_ref.
-    - Redirect following is always disabled at the request level, regardless
-      of the injected client's follow_redirects configuration.  This prevents
-      the adapter from becoming an SSRF surface via client-policy override.
+    - ``follow_redirects=False`` is passed explicitly to every ``send()``
+      call, regardless of the injected client's ``follow_redirects``
+      configuration.  This prevents the adapter from becoming an SSRF surface
+      via client-policy override.
 
     PDS Search API Completeness Warning
     ------------------------------------
@@ -1117,12 +1160,16 @@ class PdsRegistryAdapter:
     ) -> tuple[PdsScienceProduct, ProvenanceRecord]:
         """Fetch and validate metadata for one exact PDS LIDVID.
 
-        Performs exactly one HTTP GET to the fixed PDS Search API endpoint.
+        Performs one canonical HTTP GET to the fixed PDS Search API endpoint.
+        If NASA PDS returns a single approved 307/308 redirect to the trusted
+        PDS MCP deployment host with the exact same path and query, one second
+        GET is issued.  Maximum GETs per call = 2.  No retries.
+
         Does NOT follow or download any data-file URLs.
-        Redirects are never followed, regardless of injected client config.
+        No other redirect is followed, regardless of injected client config.
 
         This method delegates to :meth:`fetch_capture` and returns only the
-        product and provenance pair.  One call = one HTTP GET.
+        product and provenance pair.
 
         Parameters
         ----------
@@ -1145,7 +1192,8 @@ class PdsRegistryAdapter:
 
         PdsValidationError
             HTTP 4xx (non-404), malformed JSON, identity mismatch, wrong
-            product class, invalid metadata, oversized response, redirect.
+            product class, invalid metadata, oversized response, untrusted
+            redirect.
         """
         capture = self.fetch_capture(request)
         return capture.product, capture.provenance
@@ -1155,7 +1203,17 @@ class PdsRegistryAdapter:
     ) -> PdsScienceProductCapture:
         """Fetch, validate, and capture metadata for one exact PDS LIDVID.
 
-        Performs exactly one HTTP GET to the fixed PDS Search API endpoint.
+        Performs one canonical HTTP GET to the fixed PDS Search API endpoint.
+        If NASA PDS returns a single approved 307/308 redirect to the trusted
+        PDS MCP deployment host with the exact same path and query, one second
+        GET is issued.  Maximum GETs per call = 2.  No retries.
+
+        Only the final HTTP 200 response body is supplied to the response
+        validator and recorded in ``capture.raw_response``.  The first
+        307/308 body (if any redirect occurred) is discarded and never
+        treated as product content.  Only the final body feeds
+        ``provenance.content_sha256``.
+
         Returns a :class:`PdsScienceProductCapture` that bundles the validated
         product, provenance, and the exact raw response bytes.
 
@@ -1163,7 +1221,7 @@ class PdsRegistryAdapter:
         a content-verified offline snapshot for later replay.
 
         Does NOT follow or download any data-file URLs.
-        Redirects are never followed, regardless of injected client config.
+        No other redirect is followed, regardless of injected client config.
 
         Parameters
         ----------
@@ -1183,7 +1241,8 @@ class PdsRegistryAdapter:
 
         PdsValidationError
             HTTP 4xx (non-404), malformed JSON, identity mismatch, wrong
-            product class, invalid metadata, oversized response, redirect.
+            product class, invalid metadata, oversized response, untrusted
+            redirect.
         """
         raw_bytes = self._execute_request(request)
         retrieved_at = self._clock()
@@ -1200,18 +1259,33 @@ class PdsRegistryAdapter:
     # ------------------------------------------------------------------
 
     def _execute_request(self, request: PdsProductRequest) -> bytes:
-        """Perform exactly one HTTP GET to the fixed PDS Search API endpoint.
+        """Perform at most two HTTP GETs for one fetch call.
 
-        Returns the raw response body bytes.
+        Normal case (HTTP 200 on the first request):
+            Exactly one GET is issued.  The response body is returned.
+
+        Approved redirect case (307/308 on the first request):
+            If and only if the first response is an approved NASA PDS
+            deployment redirect (``307`` or ``308``) whose ``Location``
+            header passes :func:`_validate_pds_redirect_location`, a second
+            GET is issued to the validated destination.  The second response
+            body is returned.
+
+            The second request is **not** a retry — it is the single allowed
+            redirect hop.  Maximum GETs per call = **2**.
+
+        All other redirect conditions fail closed immediately after the first
+        request.  A second ``3xx`` from the redirect destination also fails
+        closed immediately — it is never followed.
 
         The endpoint URL is constructed entirely by this adapter from the
         fixed base plus the validated LIDVID.  Callers cannot supply or
         override the URL.
 
-        Redirect following is always disabled at the request level via
-        ``follow_redirects=False`` in the ``send()`` call, regardless of the
-        injected client's ``follow_redirects`` default.  This is the adapter's
-        own trust-boundary guarantee — it cannot be overridden by client config.
+        ``follow_redirects=False`` is passed explicitly to every ``send()``
+        call, regardless of the injected client's ``follow_redirects`` default.
+        This is the adapter's own trust-boundary guarantee and cannot be
+        overridden by client configuration.
 
         Raises PdsUnavailableError or PdsValidationError on failure.
         """
@@ -1229,14 +1303,14 @@ class PdsRegistryAdapter:
         }
 
         try:
-            # Build the Request object and send it explicitly with
+            # Build the canonical Request object and send it explicitly with
             # follow_redirects=False.  This overrides any follow_redirects=True
             # that may be set on the injected client, ensuring the adapter's
             # own redirect policy cannot be defeated by caller configuration.
-            req_obj = self._client.build_request(
+            initial_req = self._client.build_request(
                 "GET", url, params=params, headers=headers
             )
-            response = self._client.send(req_obj, follow_redirects=False)
+            response = self._client.send(initial_req, follow_redirects=False)
         except httpx.TimeoutException as exc:
             raise PdsUnavailableError(
                 "Request to NASA PDS Search API timed out."
@@ -1246,38 +1320,200 @@ class PdsRegistryAdapter:
                 "Network error while contacting NASA PDS Search API."
             ) from exc
 
-        status = response.status_code
-
-        if status == 200:
-            return response.content
-
-        # HTTP 404: metadata not available from this Search API service.
-        # IMPORTANT: does NOT imply the product is absent from the PDS archive.
-        # The PDS Search API is not guaranteed to be fully populated with every
-        # PDS dataset.  A 404 from this service only indicates metadata
-        # unavailability via this particular Search API request.
-        if status == 404:
-            raise PdsUnavailableError(
-                f"NASA PDS Search API returned HTTP 404 for this LIDVID. "
-                f"The product metadata is not available from this PDS Search API "
-                f"request/service. The Search API is not guaranteed to be fully "
-                f"populated with every PDS dataset."
+        # --- Approved one-hop redirect handling ---
+        if response.status_code in _PDS_REDIRECT_STATUSES:
+            # Validate the Location before issuing any second request.
+            # _validate_pds_redirect_location raises PdsValidationError for
+            # any untrusted or malformed Location; it performs no HTTP request.
+            redirect_url = _validate_pds_redirect_location(
+                initial_req.url,
+                response.headers.get("Location"),
             )
 
-        # HTTP 429 and all 5xx: service availability failures.
-        if status == 429 or (500 <= status < 600):
-            raise PdsUnavailableError(
-                f"NASA PDS Search API returned HTTP {status}."
-            )
+            # Deliberately construct the approved second GET.
+            # Do NOT use response.next_request.
+            # Do NOT recursively call _execute_request.
+            # Re-send with the same adapter-owned Accept header.
+            try:
+                redirect_req = self._client.build_request(
+                    "GET",
+                    redirect_url,
+                    headers={"Accept": _ACCEPT_KVP_JSON},
+                )
+                response = self._client.send(redirect_req, follow_redirects=False)
+            except httpx.TimeoutException as exc:
+                raise PdsUnavailableError(
+                    "Request to NASA PDS Search API timed out."
+                ) from exc
+            except httpx.RequestError as exc:
+                raise PdsUnavailableError(
+                    "Network error while contacting NASA PDS Search API."
+                ) from exc
 
-        # Other 4xx: client validation failures.
-        if 400 <= status < 500:
-            raise PdsValidationError(
-                f"NASA PDS Search API returned HTTP {status}."
-            )
+        # --- Map final response status ---
+        return _map_final_response(response)
 
-        # Unexpected 3xx or any other status — fail closed.
-        # Do NOT follow redirect.  Do NOT expose the Location URL.
+    # ------------------------------------------------------------------
+    # (end of PdsRegistryAdapter)
+    # ------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Redirect location validator  (pure — no HTTP)
+# ---------------------------------------------------------------------------
+
+
+def _validate_pds_redirect_location(
+    original_url: httpx.URL,
+    location: Optional[str],
+) -> httpx.URL:
+    """Validate a PDS redirect Location value before any second request.
+
+    This helper performs NO HTTP request.  It is the sole validation gate
+    that decides whether a redirect hop is authorized.
+
+    All nine invariants from the Phase 6E-D2 specification are checked:
+
+    1. Location header must be present and non-empty.
+    2. Scheme must be exactly ``https``.
+    3. Host must be exactly ``pds.mcp.nasa.gov`` (case-insensitive).
+    4. No embedded credentials (username, password, userinfo).
+    5. Port must be absent or explicitly ``443``.
+    6. No URL fragment.
+    7. Path must equal the original request path exactly.
+    8. Query must equal the original request query exactly.
+    9. (Enforced by caller) — no second redirect hop is followed.
+
+    Parameters
+    ----------
+    original_url:
+        The ``httpx.URL`` of the first canonical request.
+    location:
+        The raw ``Location`` header value from the redirect response.
+        ``None`` if the header was absent.
+
+    Returns
+    -------
+    httpx.URL
+        The validated redirect destination URL.
+
+    Raises
+    ------
+    PdsValidationError
+        If any invariant is violated.  Error messages are sanitized and do
+        not include attacker-controlled Location values.
+    """
+    # Invariant 1: Location must be present and non-empty.
+    if not location:
         raise PdsValidationError(
-            f"NASA PDS Search API returned unexpected HTTP status {status}."
+            "NASA PDS Search API returned a redirect without a Location header."
         )
+
+    # Parse the Location as a URL.  httpx.URL constructor is used so that
+    # the comparison against original_url uses the same URL representation.
+    try:
+        loc_url = httpx.URL(location)
+    except httpx.InvalidURL:
+        raise PdsValidationError(
+            "NASA PDS Search API returned an untrusted redirect."
+        )
+
+    # Invariant 2: Scheme must be exactly "https".
+    if loc_url.scheme != _PDS_REDIRECT_SCHEME:
+        raise PdsValidationError(
+            "NASA PDS Search API returned an untrusted redirect."
+        )
+
+    # Invariant 3: Host must be exactly the approved MCP host (case-insensitive).
+    if loc_url.host.lower() != _PDS_REDIRECT_HOST.lower():
+        raise PdsValidationError(
+            "NASA PDS Search API returned an untrusted redirect."
+        )
+
+    # Invariant 4: No embedded credentials.
+    # httpx.URL exposes username and password as strings; empty string means absent.
+    if loc_url.username or loc_url.password:
+        raise PdsValidationError(
+            "NASA PDS Search API returned an untrusted redirect."
+        )
+
+    # Invariant 5: Port must be absent (default HTTPS) or explicitly 443.
+    # httpx.URL.port returns None when no port is specified, or an int otherwise.
+    if loc_url.port is not None and loc_url.port != 443:
+        raise PdsValidationError(
+            "NASA PDS Search API returned an untrusted redirect."
+        )
+
+    # Invariant 6: No fragment.
+    if loc_url.fragment:
+        raise PdsValidationError(
+            "NASA PDS Search API returned an untrusted redirect."
+        )
+
+    # Invariant 7: Path must equal the original request path exactly.
+    if loc_url.path != original_url.path:
+        raise PdsValidationError(
+            "NASA PDS Search API returned an untrusted redirect."
+        )
+
+    # Invariant 8: Query must equal the original request query exactly.
+    # Compare the raw query strings so that no re-encoding artefacts can
+    # alter the effective meaning of parameters.
+    if loc_url.query != original_url.query:
+        raise PdsValidationError(
+            "NASA PDS Search API returned an untrusted redirect."
+        )
+
+    return loc_url
+
+
+# ---------------------------------------------------------------------------
+# Final response status mapper  (shared by both the normal and redirect paths)
+# ---------------------------------------------------------------------------
+
+
+def _map_final_response(response: httpx.Response) -> bytes:
+    """Map the final HTTP response status to either its body bytes or an error.
+
+    Called with the *final* response (either the direct 200, or the response
+    from the second GET after an approved redirect).  Any 3xx here means a
+    second redirect was attempted — that is never followed; fail closed.
+
+    Raises PdsUnavailableError or PdsValidationError as appropriate.
+    Returns raw body bytes for HTTP 200.
+    """
+    status = response.status_code
+
+    if status == 200:
+        return response.content
+
+    # HTTP 404: metadata not available from this Search API service.
+    # IMPORTANT: does NOT imply the product is absent from the PDS archive.
+    # The PDS Search API is not guaranteed to be fully populated with every
+    # PDS dataset.  A 404 from this service only indicates metadata
+    # unavailability via this particular Search API request.
+    if status == 404:
+        raise PdsUnavailableError(
+            "NASA PDS Search API returned HTTP 404 for this LIDVID. "
+            "The product metadata is not available from this PDS Search API "
+            "request/service. The Search API is not guaranteed to be fully "
+            "populated with every PDS dataset."
+        )
+
+    # HTTP 429 and all 5xx: service availability failures.
+    if status == 429 or (500 <= status < 600):
+        raise PdsUnavailableError(
+            f"NASA PDS Search API returned HTTP {status}."
+        )
+
+    # Other 4xx: client validation failures.
+    if 400 <= status < 500:
+        raise PdsValidationError(
+            f"NASA PDS Search API returned HTTP {status}."
+        )
+
+    # Any 3xx (including a second redirect from the MCP host) — fail closed.
+    # Do NOT follow.  Do NOT expose Location.
+    raise PdsValidationError(
+        f"NASA PDS Search API returned unexpected HTTP status {status}."
+    )

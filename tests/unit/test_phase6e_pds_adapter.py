@@ -1447,8 +1447,15 @@ class TestRedirectPolicy:
         assert len(counter) == 1
 
     def test_redirect_5_all_3xx_codes_rejected(self):
-        """301, 302, 303, 307, 308 all result in PdsValidationError."""
-        for code in [301, 302, 303, 307, 308]:
+        """301, 302, 303, 307, 308 all result in PdsValidationError.
+
+        Phase 6E-D2 note: 307 and 308 are now handled by the constrained
+        redirect validator.  When the Location is untrusted (as here, pointing
+        to example.invalid), they raise PdsValidationError with a sanitized
+        message that does NOT include the status code.  301/302/303 still
+        fall through to the default status-code-based error message.
+        """
+        for code in [301, 302, 303]:
             def make_handler(c):
                 def handler(request):
                     return httpx.Response(
@@ -1461,6 +1468,23 @@ class TestRedirectPolicy:
             client = httpx.Client(transport=transport, follow_redirects=True)
             adapter = PdsRegistryAdapter(client=client, clock=lambda: _FIXED_CLOCK_UTC)
             with pytest.raises(PdsValidationError, match=str(code)):
+                adapter.fetch(_valid_request())
+
+        # 307/308: enter the constrained redirect path; untrusted Location raises
+        # PdsValidationError with sanitized message (no status code in message).
+        for code in [307, 308]:
+            def make_handler(c):
+                def handler(request):
+                    return httpx.Response(
+                        c,
+                        headers={"Location": "https://example.invalid/target"},
+                        content=b"",
+                    )
+                return handler
+            transport = httpx.MockTransport(make_handler(code))
+            client = httpx.Client(transport=transport, follow_redirects=True)
+            adapter = PdsRegistryAdapter(client=client, clock=lambda: _FIXED_CLOCK_UTC)
+            with pytest.raises(PdsValidationError):
                 adapter.fetch(_valid_request())
 
 
@@ -2800,3 +2824,617 @@ class TestCaptureModeIntegrity:
                 provenance=capture.provenance,
                 raw_response=bad_raw,
             )
+
+
+# ===========================================================================
+# PHASE 6E-D2 — CONSTRAINED PDS REDIRECT TRANSPORT (tests D2-1 through D2-40)
+# ===========================================================================
+#
+# All tests are OFFLINE.  No live NASA requests are made.
+# All redirect handling uses httpx.MockTransport.
+#
+# Test numbering follows the Phase 6E-D2 specification Part J.
+
+from backend.app.mission_sources.adapters.pds import (
+    _PDS_REDIRECT_HOST,
+    _PDS_REDIRECT_SCHEME,
+    _PDS_REDIRECT_STATUSES,
+    _validate_pds_redirect_location,
+)
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared by the D2 test suite
+# ---------------------------------------------------------------------------
+
+_MCP_BASE = "https://pds.mcp.nasa.gov/api/search/1/products/"
+
+
+def _make_redirect_transport(
+    first_status: int,
+    location: str | None,
+    second_status: int = 200,
+    second_body: bytes | None = None,
+    capture_requests: list | None = None,
+) -> httpx.MockTransport:
+    """Return a MockTransport that serves a redirect then a final response.
+
+    On the first request it returns ``first_status`` with a ``Location``
+    header (if ``location`` is not None).  On every subsequent request it
+    returns ``second_status`` with ``second_body`` (or a minimal valid KVP
+    payload if ``second_body`` is None).
+    """
+    if second_body is None:
+        second_body = _make_response_bytes(_make_valid_kvp_payload())
+
+    calls: list[int] = [0]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if capture_requests is not None:
+            capture_requests.append(request)
+        calls[0] += 1
+        if calls[0] == 1:
+            hdrs: dict[str, str] = {}
+            if location is not None:
+                hdrs["Location"] = location
+            return httpx.Response(first_status, headers=hdrs, content=b"")
+        return httpx.Response(second_status, content=second_body)
+
+    return httpx.MockTransport(handler)
+
+
+def _make_redirect_adapter(
+    first_status: int,
+    location: str | None,
+    second_status: int = 200,
+    second_body: bytes | None = None,
+    capture_requests: list | None = None,
+    client_follow_redirects: bool = False,
+) -> PdsRegistryAdapter:
+    """Build a PdsRegistryAdapter backed by a redirect MockTransport."""
+    transport = _make_redirect_transport(
+        first_status=first_status,
+        location=location,
+        second_status=second_status,
+        second_body=second_body,
+        capture_requests=capture_requests,
+    )
+    client = httpx.Client(
+        transport=transport,
+        follow_redirects=client_follow_redirects,
+    )
+    return PdsRegistryAdapter(client=client, clock=lambda: _FIXED_CLOCK_UTC)
+
+
+def _make_valid_mcp_location(lidvid: str = _VALID_LIDVID) -> str:
+    """Build a well-formed, fully-approved MCP redirect Location for a LIDVID.
+
+    This is the approved Location that the real NASA PDS 307 response sends:
+    exact MCP host, same path, same fields query as the canonical request.
+    """
+    import urllib.parse
+    from backend.app.mission_sources.adapters.pds import _REQUESTED_FIELDS
+    fields_value = ",".join(_REQUESTED_FIELDS)
+    encoded_fields = urllib.parse.quote(fields_value, safe="")
+    path = f"/api/search/1/products/{lidvid}"
+    # Build query the same way httpx would (comma-joined, percent-encoded)
+    # We need the query to exactly match what httpx produces.
+    client = httpx.Client()
+    req = client.build_request(
+        "GET",
+        "https://pds.nasa.gov" + path,
+        params={"fields": fields_value},
+    )
+    query_str = req.url.query.decode("ascii")
+    return f"https://pds.mcp.nasa.gov{path}?{query_str}"
+
+
+# ---------------------------------------------------------------------------
+# D2 Test Section: Normal transport (test D2-1)
+# ---------------------------------------------------------------------------
+
+
+class TestD2NormalTransport:
+    """D2-1: Canonical HTTP 200 — no redirect."""
+
+    def test_d2_01_canonical_200_one_request(self):
+        """D2-1: HTTP 200 on first request — exactly 1 GET, capture validates."""
+        captured: list[httpx.Request] = []
+        adapter = _make_adapter(capture_requests=captured)
+        capture = adapter.fetch_capture(_valid_request())
+        assert len(captured) == 1, "HTTP 200 path must issue exactly 1 request"
+        assert capture.product is not None
+        assert capture.provenance is not None
+        assert capture.raw_response is not None
+
+
+# ---------------------------------------------------------------------------
+# D2 Test Section: Approved redirect (tests D2-2 through D2-9)
+# ---------------------------------------------------------------------------
+
+
+class TestD2ApprovedRedirect:
+    """D2-2 through D2-9: Approved 307/308 one-hop redirect handling."""
+
+    def test_d2_02_canonical_307_to_mcp_200(self):
+        """D2-2: 307 → approved MCP HTTPS same path/query → 200: exactly 2 requests, capture succeeds."""
+        captured: list[httpx.Request] = []
+        location = _make_valid_mcp_location()
+        adapter = _make_redirect_adapter(
+            first_status=307, location=location, capture_requests=captured
+        )
+        capture = adapter.fetch_capture(_valid_request())
+        assert len(captured) == 2, "307 approved redirect must issue exactly 2 requests"
+        assert capture.product is not None
+
+    def test_d2_03_canonical_308_to_mcp_200(self):
+        """D2-3: 308 → approved MCP HTTPS same path/query → 200: exactly 2 requests, capture succeeds."""
+        captured: list[httpx.Request] = []
+        location = _make_valid_mcp_location()
+        adapter = _make_redirect_adapter(
+            first_status=308, location=location, capture_requests=captured
+        )
+        capture = adapter.fetch_capture(_valid_request())
+        assert len(captured) == 2, "308 approved redirect must issue exactly 2 requests"
+        assert capture.product is not None
+
+    def test_d2_04_second_request_uses_get(self):
+        """D2-4: Second request (after 307) uses GET method."""
+        captured: list[httpx.Request] = []
+        location = _make_valid_mcp_location()
+        adapter = _make_redirect_adapter(
+            first_status=307, location=location, capture_requests=captured
+        )
+        adapter.fetch(_valid_request())
+        assert len(captured) == 2
+        assert captured[1].method == "GET"
+
+    def test_d2_05_second_request_retains_accept_header(self):
+        """D2-5: Second request retains Accept: application/kvp+json."""
+        captured: list[httpx.Request] = []
+        location = _make_valid_mcp_location()
+        adapter = _make_redirect_adapter(
+            first_status=307, location=location, capture_requests=captured
+        )
+        adapter.fetch(_valid_request())
+        assert len(captured) == 2
+        assert captured[1].headers.get("accept") == _ACCEPT_KVP_JSON
+
+    def test_d2_06_second_request_path_equals_first_request_path(self):
+        """D2-6: Second request path equals first request path."""
+        captured: list[httpx.Request] = []
+        location = _make_valid_mcp_location()
+        adapter = _make_redirect_adapter(
+            first_status=307, location=location, capture_requests=captured
+        )
+        adapter.fetch(_valid_request())
+        assert len(captured) == 2
+        assert captured[0].url.path == captured[1].url.path
+
+    def test_d2_07_second_request_query_equals_first_request_query(self):
+        """D2-7: Second request query equals first request query."""
+        captured: list[httpx.Request] = []
+        location = _make_valid_mcp_location()
+        adapter = _make_redirect_adapter(
+            first_status=307, location=location, capture_requests=captured
+        )
+        adapter.fetch(_valid_request())
+        assert len(captured) == 2
+        assert captured[0].url.query == captured[1].url.query
+
+    def test_d2_08_capture_raw_response_is_final_200_body(self):
+        """D2-8: capture.raw_response equals ONLY the final HTTP 200 body."""
+        final_body = _make_response_bytes(_make_valid_kvp_payload())
+        location = _make_valid_mcp_location()
+        adapter = _make_redirect_adapter(
+            first_status=307, location=location, second_body=final_body
+        )
+        capture = adapter.fetch_capture(_valid_request())
+        assert capture.raw_response == final_body
+
+    def test_d2_09_provenance_content_sha256_hashes_final_body_only(self):
+        """D2-9: provenance.content_sha256 hashes ONLY the final HTTP 200 body."""
+        import hashlib as _hashlib
+
+        final_body = _make_response_bytes(_make_valid_kvp_payload())
+        expected_sha = _hashlib.sha256(final_body).hexdigest()
+
+        location = _make_valid_mcp_location()
+        adapter = _make_redirect_adapter(
+            first_status=307, location=location, second_body=final_body
+        )
+        _, provenance = adapter.fetch(_valid_request())
+        assert provenance.content_sha256 == expected_sha
+
+
+# ---------------------------------------------------------------------------
+# D2 Test Section: Rejected redirect host (tests D2-10 through D2-14)
+# ---------------------------------------------------------------------------
+
+
+class TestD2RejectedRedirectHost:
+    """D2-10 through D2-14: Invalid redirect hosts are rejected after first request only."""
+
+    def _assert_rejected_after_one_request(self, location: str) -> None:
+        """Verify that the redirect is rejected and only 1 request was issued."""
+        captured: list[httpx.Request] = []
+        adapter = _make_redirect_adapter(
+            first_status=307, location=location, capture_requests=captured
+        )
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+        assert len(captured) == 1, (
+            f"Rejected redirect must stop after 1 request; got {len(captured)}. "
+            f"Location: {location!r}"
+        )
+
+    def test_d2_10_arbitrary_external_host_rejected(self):
+        """D2-10: Redirect to arbitrary external host rejected."""
+        # Build a location with the correct path/query but wrong host
+        base_loc = _make_valid_mcp_location()
+        bad_loc = base_loc.replace("pds.mcp.nasa.gov", "evil.example.com")
+        self._assert_rejected_after_one_request(bad_loc)
+
+    def test_d2_11_deceptive_hostname_rejected(self):
+        """D2-11: Deceptive hostname pds.mcp.nasa.gov.evil.example rejected."""
+        base_loc = _make_valid_mcp_location()
+        bad_loc = base_loc.replace("pds.mcp.nasa.gov", "pds.mcp.nasa.gov.evil.example")
+        self._assert_rejected_after_one_request(bad_loc)
+
+    def test_d2_12_subdomain_rejected(self):
+        """D2-12: Subdomain of approved host rejected."""
+        base_loc = _make_valid_mcp_location()
+        bad_loc = base_loc.replace("pds.mcp.nasa.gov", "subdomain.pds.mcp.nasa.gov")
+        self._assert_rejected_after_one_request(bad_loc)
+
+    def test_d2_13_localhost_rejected(self):
+        """D2-13: Redirect to localhost rejected."""
+        base_loc = _make_valid_mcp_location()
+        bad_loc = base_loc.replace("pds.mcp.nasa.gov", "localhost")
+        self._assert_rejected_after_one_request(bad_loc)
+
+    def test_d2_14_ip_address_destination_rejected(self):
+        """D2-14: Redirect to IP address rejected."""
+        base_loc = _make_valid_mcp_location()
+        bad_loc = base_loc.replace("pds.mcp.nasa.gov", "192.0.2.1")
+        self._assert_rejected_after_one_request(bad_loc)
+
+
+# ---------------------------------------------------------------------------
+# D2 Test Section: Scheme / credentials / port (tests D2-15 through D2-20)
+# ---------------------------------------------------------------------------
+
+
+class TestD2SchemeCredentialsPort:
+    """D2-15 through D2-20: Scheme, credential, and port validation."""
+
+    def _assert_rejected(self, location: str) -> None:
+        captured: list[httpx.Request] = []
+        adapter = _make_redirect_adapter(
+            first_status=307, location=location, capture_requests=captured
+        )
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+        assert len(captured) == 1
+
+    def test_d2_15_http_redirect_rejected(self):
+        """D2-15: HTTP (not HTTPS) redirect rejected."""
+        base_loc = _make_valid_mcp_location()
+        bad_loc = base_loc.replace("https://pds.mcp.nasa.gov", "http://pds.mcp.nasa.gov")
+        self._assert_rejected(bad_loc)
+
+    def test_d2_16_scheme_relative_redirect_rejected(self):
+        """D2-16: Scheme-relative redirect (//) rejected."""
+        base_loc = _make_valid_mcp_location()
+        bad_loc = base_loc.replace("https://", "//")
+        self._assert_rejected(bad_loc)
+
+    def test_d2_17_relative_redirect_rejected(self):
+        """D2-17: Relative redirect (no scheme, no host) rejected."""
+        self._assert_rejected("/api/search/1/products/urn:nasa:pds:test::1.0?fields=x")
+
+    def test_d2_18_username_userinfo_rejected(self):
+        """D2-18: Username/userinfo in redirect URL rejected."""
+        base_loc = _make_valid_mcp_location()
+        bad_loc = base_loc.replace("https://pds.mcp.nasa.gov", "https://user@pds.mcp.nasa.gov")
+        self._assert_rejected(bad_loc)
+
+    def test_d2_19_password_rejected(self):
+        """D2-19: Password in redirect URL rejected."""
+        base_loc = _make_valid_mcp_location()
+        bad_loc = base_loc.replace("https://pds.mcp.nasa.gov", "https://user:pass@pds.mcp.nasa.gov")
+        self._assert_rejected(bad_loc)
+
+    def test_d2_20_arbitrary_port_rejected(self):
+        """D2-20: Arbitrary non-443 port in redirect URL rejected."""
+        base_loc = _make_valid_mcp_location()
+        bad_loc = base_loc.replace("https://pds.mcp.nasa.gov", "https://pds.mcp.nasa.gov:8080")
+        self._assert_rejected(bad_loc)
+
+
+# ---------------------------------------------------------------------------
+# D2 Test Section: Path / query mutation (tests D2-21 through D2-25)
+# ---------------------------------------------------------------------------
+
+
+class TestD2PathQueryMutation:
+    """D2-21 through D2-25: Path and query preservation validation."""
+
+    def _assert_rejected(self, location: str) -> None:
+        captured: list[httpx.Request] = []
+        adapter = _make_redirect_adapter(
+            first_status=307, location=location, capture_requests=captured
+        )
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+        assert len(captured) == 1
+
+    def _get_fields_query(self) -> str:
+        """Return the canonical percent-encoded fields query string."""
+        from backend.app.mission_sources.adapters.pds import _REQUESTED_FIELDS, _PDS_PRODUCTS_ENDPOINT
+        client = httpx.Client()
+        req = client.build_request(
+            "GET",
+            _PDS_PRODUCTS_ENDPOINT + _VALID_LIDVID,
+            params={"fields": ",".join(_REQUESTED_FIELDS)},
+        )
+        return req.url.query.decode("ascii")
+
+    def test_d2_21_changed_path_rejected(self):
+        """D2-21: Changed path (e.g. /portal/) rejected."""
+        query = self._get_fields_query()
+        bad_loc = f"https://pds.mcp.nasa.gov/portal/products/{_VALID_LIDVID}?{query}"
+        self._assert_rejected(bad_loc)
+
+    def test_d2_22_changed_lidvid_path_rejected(self):
+        """D2-22: Changed LIDVID in path rejected."""
+        query = self._get_fields_query()
+        different_lidvid = "urn:nasa:pds:other_bundle:data:other_product::9.0"
+        bad_loc = f"https://pds.mcp.nasa.gov/api/search/1/products/{different_lidvid}?{query}"
+        self._assert_rejected(bad_loc)
+
+    def test_d2_23_removed_fields_query_rejected(self):
+        """D2-23: Redirect that removes the fields= query parameter rejected."""
+        bad_loc = f"https://pds.mcp.nasa.gov/api/search/1/products/{_VALID_LIDVID}"
+        self._assert_rejected(bad_loc)
+
+    def test_d2_24_changed_fields_query_rejected(self):
+        """D2-24: Redirect with changed fields= value rejected."""
+        bad_loc = f"https://pds.mcp.nasa.gov/api/search/1/products/{_VALID_LIDVID}?fields=lid"
+        self._assert_rejected(bad_loc)
+
+    def test_d2_25_extra_query_parameter_rejected(self):
+        """D2-25: Redirect with extra query parameter injected is rejected."""
+        query = self._get_fields_query()
+        bad_loc = f"https://pds.mcp.nasa.gov/api/search/1/products/{_VALID_LIDVID}?{query}&injected=evil"
+        self._assert_rejected(bad_loc)
+
+
+# ---------------------------------------------------------------------------
+# D2 Test Section: Redirect structure (tests D2-26 through D2-30)
+# ---------------------------------------------------------------------------
+
+
+class TestD2RedirectStructure:
+    """D2-26 through D2-30: Missing/empty Location and rejected status codes."""
+
+    def test_d2_26_missing_location_rejected(self):
+        """D2-26: 307 with no Location header raises PdsValidationError after 1 request."""
+        captured: list[httpx.Request] = []
+        adapter = _make_redirect_adapter(
+            first_status=307, location=None, capture_requests=captured
+        )
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+        assert len(captured) == 1
+
+    def test_d2_27_empty_location_rejected(self):
+        """D2-27: 307 with empty Location header raises PdsValidationError after 1 request."""
+        captured: list[httpx.Request] = []
+        adapter = _make_redirect_adapter(
+            first_status=307, location="", capture_requests=captured
+        )
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+        assert len(captured) == 1
+
+    def test_d2_28_fragment_in_redirect_rejected(self):
+        """D2-28: Redirect with fragment (#) rejected."""
+        base_loc = _make_valid_mcp_location()
+        bad_loc = base_loc + "#section"
+        captured: list[httpx.Request] = []
+        adapter = _make_redirect_adapter(
+            first_status=307, location=bad_loc, capture_requests=captured
+        )
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+        assert len(captured) == 1
+
+    def test_d2_29_http_301_rejected(self):
+        """D2-29: HTTP 301 is not an approved redirect status — fails closed."""
+        location = _make_valid_mcp_location()
+        adapter = _make_redirect_adapter(first_status=301, location=location)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+
+    def test_d2_30_http_302_rejected(self):
+        """D2-30: HTTP 302 is not an approved redirect status — fails closed."""
+        location = _make_valid_mcp_location()
+        adapter = _make_redirect_adapter(first_status=302, location=location)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+
+    def test_d2_31_http_303_rejected(self):
+        """D2-31: HTTP 303 is not an approved redirect status — fails closed."""
+        location = _make_valid_mcp_location()
+        adapter = _make_redirect_adapter(first_status=303, location=location)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+
+
+# ---------------------------------------------------------------------------
+# D2 Test Section: Redirect limit (tests D2-32 through D2-33)
+# ---------------------------------------------------------------------------
+
+
+def _make_double_redirect_transport(
+    first_status: int,
+    first_location: str,
+    second_status: int,
+    second_location: str,
+    capture_requests: list | None = None,
+) -> httpx.MockTransport:
+    """MockTransport that returns a redirect on the first request and
+    another redirect on the second request (to verify we stop at 2 requests).
+    """
+    calls: list[int] = [0]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if capture_requests is not None:
+            capture_requests.append(request)
+        calls[0] += 1
+        if calls[0] == 1:
+            hdrs = {"Location": first_location} if first_location else {}
+            return httpx.Response(first_status, headers=hdrs, content=b"")
+        else:
+            hdrs = {"Location": second_location} if second_location else {}
+            return httpx.Response(second_status, headers=hdrs, content=b"")
+
+    return httpx.MockTransport(handler)
+
+
+class TestD2RedirectLimit:
+    """D2-32 through D2-33: Second redirect from MCP host fails closed after 2 requests."""
+
+    def test_d2_32_307_mcp_to_second_307_fails_closed(self):
+        """D2-32: canonical 307 → approved MCP → second 307: exactly 2 requests, PdsValidationError."""
+        captured: list[httpx.Request] = []
+        first_location = _make_valid_mcp_location()
+        # Second response is another 307 from the MCP host — must not be followed.
+        second_location = first_location  # same location, another redirect
+        transport = _make_double_redirect_transport(
+            first_status=307,
+            first_location=first_location,
+            second_status=307,
+            second_location=second_location,
+            capture_requests=captured,
+        )
+        client = httpx.Client(transport=transport)
+        adapter = PdsRegistryAdapter(client=client, clock=lambda: _FIXED_CLOCK_UTC)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+        assert len(captured) == 2, (
+            f"Must stop after 2 requests (not follow second 307); got {len(captured)}"
+        )
+
+    def test_d2_33_308_mcp_to_second_308_fails_closed(self):
+        """D2-33: canonical 308 → approved MCP → second 308: exactly 2 requests, PdsValidationError."""
+        captured: list[httpx.Request] = []
+        first_location = _make_valid_mcp_location()
+        second_location = first_location
+        transport = _make_double_redirect_transport(
+            first_status=308,
+            first_location=first_location,
+            second_status=308,
+            second_location=second_location,
+            capture_requests=captured,
+        )
+        client = httpx.Client(transport=transport)
+        adapter = PdsRegistryAdapter(client=client, clock=lambda: _FIXED_CLOCK_UTC)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+        assert len(captured) == 2
+
+
+# ---------------------------------------------------------------------------
+# D2 Test Section: Final response status semantics (tests D2-34 through D2-37)
+# ---------------------------------------------------------------------------
+
+
+class TestD2FinalResponseStatus:
+    """D2-34 through D2-37: After approved redirect, final status codes are mapped correctly."""
+
+    def test_d2_34_final_404_is_unavailable(self):
+        """D2-34: After approved 307, final 404 → PdsUnavailableError."""
+        location = _make_valid_mcp_location()
+        adapter = _make_redirect_adapter(
+            first_status=307, location=location, second_status=404
+        )
+        with pytest.raises(PdsUnavailableError):
+            adapter.fetch(_valid_request())
+
+    def test_d2_35_final_429_is_unavailable(self):
+        """D2-35: After approved 307, final 429 → PdsUnavailableError."""
+        location = _make_valid_mcp_location()
+        adapter = _make_redirect_adapter(
+            first_status=307, location=location, second_status=429
+        )
+        with pytest.raises(PdsUnavailableError):
+            adapter.fetch(_valid_request())
+
+    def test_d2_36_final_500_is_unavailable(self):
+        """D2-36: After approved 307, final 500 → PdsUnavailableError."""
+        location = _make_valid_mcp_location()
+        adapter = _make_redirect_adapter(
+            first_status=307, location=location, second_status=500
+        )
+        with pytest.raises(PdsUnavailableError):
+            adapter.fetch(_valid_request())
+
+    def test_d2_37_final_400_is_validation_error(self):
+        """D2-37: After approved 307, final 400 → PdsValidationError."""
+        location = _make_valid_mcp_location()
+        adapter = _make_redirect_adapter(
+            first_status=307, location=location, second_status=400
+        )
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+
+
+# ---------------------------------------------------------------------------
+# D2 Test Section: Existing guarantees (tests D2-38 through D2-40)
+# ---------------------------------------------------------------------------
+
+
+class TestD2ExistingGuarantees:
+    """D2-38 through D2-40: Guarantees that cannot be overridden by client config."""
+
+    def test_d2_38_injected_client_follow_redirects_true_still_blocked(self):
+        """D2-38: Injected client with follow_redirects=True cannot bypass adapter's policy.
+
+        Even if the caller injects a client configured with follow_redirects=True,
+        the adapter must still use follow_redirects=False in every send() call,
+        preventing uncontrolled automatic redirect following.
+        """
+        # Build a transport that first returns 302 (NOT an approved 307/308).
+        # With follow_redirects=True on the client, httpx would normally follow it.
+        # The adapter must still reject it.
+        location = _make_valid_mcp_location()
+        transport = _make_redirect_transport(
+            first_status=302, location=location, second_status=200
+        )
+        # Inject a client explicitly configured to follow redirects.
+        client = httpx.Client(transport=transport, follow_redirects=True)
+        adapter = PdsRegistryAdapter(client=client, clock=lambda: _FIXED_CLOCK_UTC)
+        # The adapter must reject 302 regardless of client setting.
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+
+    def test_d2_39_no_redirect_one_request_remains_one_request(self):
+        """D2-39: No redirect (200 path): one request remains exactly one request."""
+        captured: list[httpx.Request] = []
+        adapter = _make_adapter(capture_requests=captured)
+        adapter.fetch(_valid_request())
+        assert len(captured) == 1
+
+    def test_d2_40_approved_redirect_exactly_two_never_three_requests(self):
+        """D2-40: Approved redirect path: exactly 2 requests issued, never 3."""
+        captured: list[httpx.Request] = []
+        location = _make_valid_mcp_location()
+        adapter = _make_redirect_adapter(
+            first_status=307, location=location, capture_requests=captured
+        )
+        adapter.fetch(_valid_request())
+        assert len(captured) == 2, (
+            f"Approved redirect must issue exactly 2 requests, got {len(captured)}"
+        )
