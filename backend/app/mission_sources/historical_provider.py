@@ -1,4 +1,4 @@
-"""GCSI Phase 6E-C5 — Historical Replay Provider.
+"""GCSI Phase 6E-C5 / C5.1 — Historical Replay Provider.
 
 Implements :class:`BaseMissionSourceProvider` for the ``historical_replay``
 source mode.
@@ -6,6 +6,7 @@ source mode.
 Provider responsibilities
 -------------------------
 - Descriptor IO (via load_historical_replay_descriptor)
+- Descriptor source_ref trust boundary (lexical + symlink-resolved containment)
 - Snapshot-path resolution (repository-relative, symlink-safe)
 - Verified snapshot loading (via HorizonsSnapshotStore / PdsArchiveSnapshotStore)
 - Error normalization (MissionSourceUnavailableError / MissionSourceValidationError)
@@ -22,7 +23,7 @@ ReplayAssembler is pure and performs zero IO.
 
 Repository root
 ---------------
-All snapshot paths in the descriptor are repository-relative.
+All descriptor and snapshot paths are repository-relative.
 The stable repository root is determined from the module's own location::
 
     _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -34,11 +35,30 @@ Verification: historical_provider.py lives at:
     parents[2] = backend/
     parents[3] = <repo root>
 
+Descriptor source_ref trust boundary (Phase 6E-C5.1)
+-----------------------------------------------------
+source_ref undergoes two layers of validation in _resolve_descriptor_path():
+
+1. Lexical validation — performed before any filesystem access:
+   - Must be a non-empty str
+   - No NUL byte, backslash, colon, percent-encoding, query (?),
+     fragment (#), absolute POSIX prefix (/), scheme-relative prefix (//),
+     or ".." traversal components
+   - Must start with the trusted prefix: ``data/replays/``
+   - Basename must end with ``.json`` (case-insensitive)
+
+2. Symlink-resolved containment — after resolving the candidate path:
+   - Resolved absolute path must remain inside ``<repo>/data/replays/``
+   - This catches symlink escapes even when the lexical path looks safe
+
+Security/reference split:
+    The *resolved* path is used for IO only.
+    The *caller-provided* source_ref is stored unchanged in the bundle.
+
 Security invariants
 -------------------
-- Symlink resolution is checked: the resolved target must remain within
-  the repository root.  If it escapes: MissionSourceValidationError.
-- Missing or directory path: MissionSourceUnavailableError.
+- Descriptor source_ref is fully validated before any IO.
+- Snapshot symlink resolution is checked against the repository root.
 - Absolute filesystem paths are never exposed in public exception messages.
 - source_ref is stored as-is (opaque caller-provided string).
 
@@ -85,9 +105,159 @@ _REPO_ROOT: Path = Path(__file__).resolve().parents[3]
 
 _PROVIDER_NAME: str = "GCSI-HistoricalReplayProvider"
 
+# Trusted prefix for descriptor source_refs (lexical, forward-slash only).
+_DESCRIPTOR_PREFIX: str = "data/replays/"
+
+# Resolved trusted root for descriptor containment check.
+_REPLAYS_ROOT: Path = (_REPO_ROOT / "data" / "replays").resolve()
+
 
 # ---------------------------------------------------------------------------
-# Path resolution helper
+# Descriptor path resolver (Phase 6E-C5.1)
+# ---------------------------------------------------------------------------
+
+
+def _resolve_descriptor_path(source_ref: str) -> Path:
+    """Validate and resolve a descriptor source_ref to a trusted absolute Path.
+
+    Two-layer validation:
+
+    1. **Lexical** (before any filesystem access):
+       - Must be a non-empty ``str``
+       - Rejected characters: NUL, backslash, colon, percent (``%``),
+         query (``?``), fragment (``#``)
+       - Rejected forms: absolute POSIX (``/``), scheme-relative (``//``),
+         ``..`` traversal components
+       - Must start with ``data/replays/``
+       - Basename must end with ``.json`` (case-insensitive)
+
+    2. **Resolved containment** (after ``Path.resolve()``):
+       - The resolved absolute path must remain inside
+         ``<repo>/data/replays/`` (catches symlink escapes)
+       - Target must exist and be a regular file
+
+    The caller-provided ``source_ref`` string is **not** modified; only the
+    returned resolved ``Path`` is used for IO.
+
+    Args:
+        source_ref: Caller-supplied opaque reference string.
+
+    Returns:
+        The resolved absolute ``Path`` to the descriptor file.
+
+    Raises:
+        MissionSourceValidationError: Lexical check fails, or symlink
+            resolution escapes the trusted subtree.
+        MissionSourceUnavailableError: Descriptor file is missing or is a
+            directory.
+    """
+    # ---- Lexical layer ----
+
+    if not isinstance(source_ref, str) or not source_ref:
+        raise MissionSourceValidationError(
+            "Replay descriptor source_ref is not an allowed repository-relative replay path."
+        )
+
+    # NUL byte
+    if "\x00" in source_ref:
+        raise MissionSourceValidationError(
+            "Replay descriptor source_ref is not an allowed repository-relative replay path."
+        )
+
+    # Backslash (Windows-style separator or UNC prefix)
+    if "\\" in source_ref:
+        raise MissionSourceValidationError(
+            "Replay descriptor source_ref is not an allowed repository-relative replay path."
+        )
+
+    # Colon (covers Windows drive letters like C: and URL schemes like http:)
+    if ":" in source_ref:
+        raise MissionSourceValidationError(
+            "Replay descriptor source_ref is not an allowed repository-relative replay path."
+        )
+
+    # Percent-encoding
+    if "%" in source_ref:
+        raise MissionSourceValidationError(
+            "Replay descriptor source_ref is not an allowed repository-relative replay path."
+        )
+
+    # Query string
+    if "?" in source_ref:
+        raise MissionSourceValidationError(
+            "Replay descriptor source_ref is not an allowed repository-relative replay path."
+        )
+
+    # Fragment
+    if "#" in source_ref:
+        raise MissionSourceValidationError(
+            "Replay descriptor source_ref is not an allowed repository-relative replay path."
+        )
+
+    # Scheme-relative URL (//)
+    if source_ref.startswith("//"):
+        raise MissionSourceValidationError(
+            "Replay descriptor source_ref is not an allowed repository-relative replay path."
+        )
+
+    # Absolute POSIX path
+    if source_ref.startswith("/"):
+        raise MissionSourceValidationError(
+            "Replay descriptor source_ref is not an allowed repository-relative replay path."
+        )
+
+    # ".." traversal components (split on forward slash only)
+    parts = source_ref.split("/")
+    if ".." in parts or "." in parts:
+        raise MissionSourceValidationError(
+            "Replay descriptor source_ref is not an allowed repository-relative replay path."
+        )
+
+    # Required prefix
+    if not source_ref.startswith(_DESCRIPTOR_PREFIX):
+        raise MissionSourceValidationError(
+            "Replay descriptor source_ref is not an allowed repository-relative replay path."
+        )
+
+    # Required .json extension (case-insensitive)
+    if not source_ref.lower().endswith(".json"):
+        raise MissionSourceValidationError(
+            "Replay descriptor source_ref is not an allowed repository-relative replay path."
+        )
+
+    # ---- Resolved containment layer ----
+
+    candidate = _REPO_ROOT / source_ref
+    try:
+        resolved = candidate.resolve()
+    except OSError as exc:
+        raise MissionSourceUnavailableError(
+            "Replay descriptor is not available."
+        ) from exc
+
+    # Resolved path must stay inside <repo>/data/replays/
+    try:
+        resolved.relative_to(_REPLAYS_ROOT)
+    except ValueError as exc:
+        raise MissionSourceValidationError(
+            "Replay descriptor source resolves outside the trusted replay directory."
+        ) from exc
+
+    # Existence and type checks — no path exposure in messages
+    if not resolved.exists():
+        raise MissionSourceUnavailableError(
+            "Replay descriptor is not available."
+        )
+    if resolved.is_dir():
+        raise MissionSourceUnavailableError(
+            "Replay descriptor path points to a directory, not a file."
+        )
+
+    return resolved
+
+
+# ---------------------------------------------------------------------------
+# Snapshot path resolver
 # ---------------------------------------------------------------------------
 
 
@@ -219,9 +389,16 @@ class HistoricalReplayProvider(BaseMissionSourceProvider):
             re-validation, cross-source semantic checks fail, or assembly fails.
         """
         # ----------------------------------------------------------------
-        # Step 1: Load and validate the descriptor
+        # Step 1: Validate source_ref and resolve descriptor path
         # ----------------------------------------------------------------
-        descriptor_path = _REPO_ROOT / source_ref
+        try:
+            descriptor_path = _resolve_descriptor_path(source_ref)
+        except (MissionSourceUnavailableError, MissionSourceValidationError):
+            raise
+
+        # ----------------------------------------------------------------
+        # Step 2: Load and validate the descriptor content
+        # ----------------------------------------------------------------
         try:
             descriptor = load_historical_replay_descriptor(descriptor_path)
         except MissionSourceUnavailableError:
@@ -234,7 +411,7 @@ class HistoricalReplayProvider(BaseMissionSourceProvider):
             ) from exc
 
         # ----------------------------------------------------------------
-        # Step 2: Resolve snapshot paths (repository-relative, symlink-safe)
+        # Step 3: Resolve snapshot paths (repository-relative, symlink-safe)
         # ----------------------------------------------------------------
         try:
             horizons_path = _resolve_snapshot_path(descriptor.horizons_snapshot_path)
@@ -252,7 +429,7 @@ class HistoricalReplayProvider(BaseMissionSourceProvider):
             raise
 
         # ----------------------------------------------------------------
-        # Step 3: Load Horizons snapshot
+        # Step 4: Load Horizons snapshot
         # ----------------------------------------------------------------
         try:
             horizons_result = HorizonsSnapshotStore.load(horizons_path)
@@ -270,7 +447,7 @@ class HistoricalReplayProvider(BaseMissionSourceProvider):
             ) from exc
 
         # ----------------------------------------------------------------
-        # Step 4: Load IRDR snapshot
+        # Step 5: Load IRDR snapshot
         # ----------------------------------------------------------------
         try:
             irdr_product, irdr_provenance = PdsArchiveSnapshotStore.load(irdr_path)
@@ -288,7 +465,7 @@ class HistoricalReplayProvider(BaseMissionSourceProvider):
             ) from exc
 
         # ----------------------------------------------------------------
-        # Step 5: Load GRDR snapshot
+        # Step 6: Load GRDR snapshot
         # ----------------------------------------------------------------
         try:
             grdr_product, grdr_provenance = PdsArchiveSnapshotStore.load(grdr_path)
@@ -306,7 +483,7 @@ class HistoricalReplayProvider(BaseMissionSourceProvider):
             ) from exc
 
         # ----------------------------------------------------------------
-        # Step 6: Assemble Scenario + ProvenanceManifest (pure, no IO)
+        # Step 7: Assemble Scenario + ProvenanceManifest (pure, no IO)
         # ----------------------------------------------------------------
         try:
             scenario, manifest = ReplayAssembler.assemble(
@@ -325,7 +502,7 @@ class HistoricalReplayProvider(BaseMissionSourceProvider):
             ) from exc
 
         # ----------------------------------------------------------------
-        # Step 7: Assemble MissionSourceBundle — source_ref preserved as-is
+        # Step 8: Assemble MissionSourceBundle — source_ref preserved as-is
         # ----------------------------------------------------------------
         return MissionSourceBundle(
             scenario=scenario,
