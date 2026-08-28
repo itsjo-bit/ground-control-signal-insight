@@ -151,8 +151,6 @@ def _make_valid_label_xml(
           <reference_type>is_instrument</reference_type>
         </Internal_Reference>
       </Observing_System_Component>
-    </Observing_System>
-    <Observing_System>
       <Observing_System_Component>
         <Internal_Reference>
           <lid_reference>urn:nasa:pds:context:instrument_host:spacecraft.jno</lid_reference>
@@ -172,6 +170,8 @@ def _make_valid_label_xml(
       <file_name>{file_name}</file_name>
       <file_size unit="byte">{file_size}</file_size>
     </File>
+    <Table_Delimited>
+    </Table_Delimited>
   </File_Area_Observational>
 </Product_Observational>
 """

@@ -49,8 +49,10 @@ is enforced at the ``send()`` level.
 
 XML security
 ------------
-- ``<!DOCTYPE`` and ``<!ENTITY`` (case-insensitive) are rejected before
-  parsing — prevents XXE, Billion-Laughs, and DTD-based SSRF.
+- Archive label XML must be valid UTF-8 before ElementTree parsing.
+- ``<!DOCTYPE`` and ``<!ENTITY`` (case-insensitive) are rejected on the
+  decoded text before parsing — prevents XXE, Billion-Laughs, DTD-based SSRF,
+  and alternate-encoding bypass (UTF-16/NUL-byte tricks).
 - ``xml.etree.ElementTree`` is used with a bounded in-memory parse.
 - No entity resolution, no XInclude, no schemaLocation fetch, no network.
 """
@@ -63,7 +65,7 @@ import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from typing import Callable, Optional
-from urllib.parse import urlparse
+from urllib.parse import urlsplit
 
 import httpx
 import pydantic
@@ -162,37 +164,6 @@ _PRODUCT_OBSERVATIONAL: str = "Product_Observational"
 # Required processing level for MWR calibrated products.
 _REQUIRED_PROCESSING_LEVEL: str = "Calibrated"
 
-# Required context URNs and reference_type values.
-_REQUIRED_REFS: tuple[tuple[str, str, str], ...] = (
-    # (reference_type, lid, human-name)
-    (
-        "data_to_investigation",
-        "urn:nasa:pds:context:investigation:mission.juno",
-        "Juno investigation",
-    ),
-    (
-        "is_instrument",
-        "urn:nasa:pds:context:instrument:mwr.jno",
-        "MWR instrument",
-    ),
-    (
-        "is_instrument_host",
-        "urn:nasa:pds:context:instrument_host:spacecraft.jno",
-        "Juno spacecraft",
-    ),
-    (
-        "data_to_target",
-        "urn:nasa:pds:context:target:planet.jupiter",
-        "Jupiter target",
-    ),
-)
-
-# Regex to detect <!DOCTYPE and <!ENTITY (case-insensitive).
-_XML_DOCTYPE_ENTITY_RE = re.compile(
-    rb"<!(?:DOCTYPE|ENTITY)\b",
-    re.IGNORECASE,
-)
-
 # Notes text template for provenance.
 _FILE_REF_DERIVATION_NOTE: str = (
     "file_ref derived from label URI directory + label-reported file_name; "
@@ -200,6 +171,10 @@ _FILE_REF_DERIVATION_NOTE: str = (
     "Archive snapshot authenticates XML label bytes only; "
     "CSV science payload bytes are NOT authenticated."
 )
+
+# Strict ASCII decimal integer pattern for file_size values.
+# Rejects: +1, -1, 1.0, 1e3, empty, whitespace, non-ASCII numerals.
+_ASCII_DECIMAL_RE = re.compile(r"^[0-9]+$")
 
 
 # ---------------------------------------------------------------------------
@@ -261,7 +236,7 @@ def _find_one(
     required: bool = True,
     context: str = "",
 ) -> Optional[ET.Element]:
-    """Find exactly one child element with a given tag in the PDS namespace.
+    """Find exactly one direct child element with a given tag in the PDS namespace.
 
     Raises PdsArchiveLabelValidationError if required and not found, or if
     more than one is found.
@@ -279,6 +254,15 @@ def _find_one(
             f"expected exactly 1{context}."
         )
     return found[0]
+
+
+def _find_all_direct(
+    parent: ET.Element,
+    tag: str,
+    ns: str = _PDS_NS,
+) -> list[ET.Element]:
+    """Find all direct children with a given tag in the PDS namespace."""
+    return parent.findall(f"{{{ns}}}{tag}")
 
 
 def _text_required(elem: ET.Element, context: str = "") -> str:
@@ -316,6 +300,47 @@ def _parse_archive_datetime(raw: str, field_name: str) -> datetime:
             "timezone-aware value required."
         )
     return dt.astimezone(timezone.utc)
+
+
+# ---------------------------------------------------------------------------
+# XML security scanner (PART I)
+# ---------------------------------------------------------------------------
+
+
+def _scan_xml_security(raw_bytes: bytes) -> None:
+    """Validate XML encoding safety and reject DOCTYPE/ENTITY declarations.
+
+    Strategy:
+    1. Require valid UTF-8 encoding (fail closed for any other encoding).
+       This prevents alternate-encoding bypass (UTF-16/NUL-byte tricks).
+    2. Scan the decoded text case-insensitively for <!DOCTYPE and <!ENTITY.
+       This is reliable because the text is now in the known safe encoding.
+
+    Raises PdsArchiveLabelValidationError for:
+    - Invalid UTF-8 bytes.
+    - Any <!DOCTYPE or <!ENTITY occurrence (case-insensitive).
+    """
+    # Step 1: Require valid UTF-8.
+    try:
+        xml_text = raw_bytes.decode("utf-8")
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 archive label XML must be valid UTF-8; "
+            "the response body failed UTF-8 decoding."
+        ) from exc
+
+    # Step 2: Scan decoded text for DOCTYPE/ENTITY (case-insensitive).
+    upper_text = xml_text.upper()
+    if "<!DOCTYPE" in upper_text:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 label rejected: DOCTYPE declaration detected. "
+            "External entity expansion is not permitted."
+        )
+    if "<!ENTITY" in upper_text:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 label rejected: ENTITY declaration detected. "
+            "External entity expansion is not permitted."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -383,12 +408,9 @@ def _validate_pds_archive_label_response(
     # 2. Hash the raw bytes before any decoding.
     content_sha256 = hashlib.sha256(raw_bytes).hexdigest()
 
-    # 3. XML security: reject DOCTYPE and ENTITY before parsing.
-    if _XML_DOCTYPE_ENTITY_RE.search(raw_bytes):
-        raise PdsArchiveLabelValidationError(
-            "PDS4 label rejected: DOCTYPE or ENTITY declaration detected. "
-            "External entity expansion is not permitted."
-        )
+    # 3. XML security: validate UTF-8 encoding and reject DOCTYPE/ENTITY.
+    #    PART I: Must be UTF-8 first, then text scan for dangerous tokens.
+    _scan_xml_security(raw_bytes)
 
     # 4. Parse XML.
     try:
@@ -502,81 +524,255 @@ def _validate_pds_archive_label_response(
             f"only {_REQUIRED_PROCESSING_LEVEL!r} is accepted."
         )
 
-    # 8c. Investigation_Area / Observing_System / Target_Identification.
-    # Collect all Internal_Reference elements within Observation_Area.
-    # Required refs are checked by (reference_type, lid) pair.
-    all_internal_refs: list[ET.Element] = list(
-        obs_area.iter(f"{_PDS_NS_BRACED}Internal_Reference")
-    )
-    # Build set of (reference_type, lid) found.
-    found_refs: set[tuple[str, str]] = set()
-    for ir in all_internal_refs:
+    # 8c. PART E — Structure-aware context validation.
+    #
+    # Validate each required context reference from its specific reviewed
+    # PDS4 structure within Observation_Area, not from a global flat set.
+    #
+    # Investigation_Area: exactly one, with exactly one suitable Internal_Reference.
+    investigation_areas = _find_all_direct(obs_area, "Investigation_Area")
+    if len(investigation_areas) == 0:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 label is missing required element <Investigation_Area> "
+            "in Observation_Area."
+        )
+    if len(investigation_areas) > 1:
+        raise PdsArchiveLabelValidationError(
+            f"PDS4 label has {len(investigation_areas)} <Investigation_Area> elements "
+            "in Observation_Area; expected exactly 1."
+        )
+    inv_area = investigation_areas[0]
+    # Find exactly one Internal_Reference with the required investigation ref.
+    inv_refs = _find_all_direct(inv_area, "Internal_Reference")
+    _found_inv = False
+    for ir in inv_refs:
         lid_ref_elem = ir.find(f"{_PDS_NS_BRACED}lid_reference")
         ref_type_elem = ir.find(f"{_PDS_NS_BRACED}reference_type")
         if lid_ref_elem is not None and ref_type_elem is not None:
             lid_ref = (lid_ref_elem.text or "").strip()
             ref_type = (ref_type_elem.text or "").strip()
-            if lid_ref and ref_type:
-                found_refs.add((ref_type, lid_ref))
+            if (
+                lid_ref == "urn:nasa:pds:context:investigation:mission.juno"
+                and ref_type == "data_to_investigation"
+            ):
+                _found_inv = True
+                break
+    if not _found_inv:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 label is missing required context reference: "
+            "Juno investigation (reference_type='data_to_investigation', "
+            "lid='urn:nasa:pds:context:investigation:mission.juno') "
+            "inside Investigation_Area."
+        )
 
-    for req_ref_type, req_ref_lid, req_ref_name in _REQUIRED_REFS:
-        if (req_ref_type, req_ref_lid) not in found_refs:
-            raise PdsArchiveLabelValidationError(
-                f"PDS4 label is missing required context reference: "
-                f"{req_ref_name} "
-                f"(reference_type={req_ref_type!r}, lid={req_ref_lid!r})."
-            )
+    # Observing_System: one or more, must collectively contain exactly one
+    # Instrument component and exactly one Spacecraft component with the
+    # correct LIDs and reference_types.
+    observing_systems = _find_all_direct(obs_area, "Observing_System")
+    if len(observing_systems) == 0:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 label is missing required element <Observing_System> "
+            "in Observation_Area."
+        )
+
+    # Collect all Observing_System_Component elements across all Observing_System elements.
+    _instrument_refs: list[tuple[str, str]] = []   # (lid_ref, ref_type) for Instrument components
+    _spacecraft_refs: list[tuple[str, str]] = []   # (lid_ref, ref_type) for Spacecraft components
+    for os_elem in observing_systems:
+        components = _find_all_direct(os_elem, "Observing_System_Component")
+        for comp in components:
+            # Get type element (direct child of Observing_System_Component, tag "type").
+            # The component's Internal_Reference carries lid and reference_type.
+            comp_type_elems = comp.findall(f"{_PDS_NS_BRACED}type")
+            comp_type = ""
+            if comp_type_elems:
+                comp_type = (comp_type_elems[0].text or "").strip()
+
+            ir_elems = comp.findall(f"{_PDS_NS_BRACED}Internal_Reference")
+            for ir in ir_elems:
+                lid_ref_elem = ir.find(f"{_PDS_NS_BRACED}lid_reference")
+                ref_type_elem = ir.find(f"{_PDS_NS_BRACED}reference_type")
+                if lid_ref_elem is not None and ref_type_elem is not None:
+                    lid_ref = (lid_ref_elem.text or "").strip()
+                    ref_type = (ref_type_elem.text or "").strip()
+                    if (
+                        lid_ref == "urn:nasa:pds:context:instrument:mwr.jno"
+                        and ref_type == "is_instrument"
+                    ):
+                        _instrument_refs.append((lid_ref, ref_type))
+                    if (
+                        lid_ref == "urn:nasa:pds:context:instrument_host:spacecraft.jno"
+                        and ref_type == "is_instrument_host"
+                    ):
+                        _spacecraft_refs.append((lid_ref, ref_type))
+
+    if len(_instrument_refs) == 0:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 label is missing required context reference: "
+            "MWR instrument (reference_type='is_instrument', "
+            "lid='urn:nasa:pds:context:instrument:mwr.jno') "
+            "inside an Observing_System_Component in Observing_System."
+        )
+    if len(_instrument_refs) > 1:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 label has duplicate MWR instrument context references "
+            "(reference_type='is_instrument', "
+            "lid='urn:nasa:pds:context:instrument:mwr.jno') "
+            "inside Observing_System; expected exactly 1."
+        )
+    if len(_spacecraft_refs) == 0:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 label is missing required context reference: "
+            "Juno spacecraft (reference_type='is_instrument_host', "
+            "lid='urn:nasa:pds:context:instrument_host:spacecraft.jno') "
+            "inside an Observing_System_Component in Observing_System."
+        )
+    if len(_spacecraft_refs) > 1:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 label has duplicate Juno spacecraft context references "
+            "(reference_type='is_instrument_host', "
+            "lid='urn:nasa:pds:context:instrument_host:spacecraft.jno') "
+            "inside Observing_System; expected exactly 1."
+        )
+
+    # Target_Identification: exactly one, with exactly one suitable Internal_Reference.
+    target_ids = _find_all_direct(obs_area, "Target_Identification")
+    if len(target_ids) == 0:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 label is missing required element <Target_Identification> "
+            "in Observation_Area."
+        )
+    if len(target_ids) > 1:
+        raise PdsArchiveLabelValidationError(
+            f"PDS4 label has {len(target_ids)} <Target_Identification> elements "
+            "in Observation_Area; expected exactly 1."
+        )
+    tgt_area = target_ids[0]
+    tgt_refs = _find_all_direct(tgt_area, "Internal_Reference")
+    _found_target = False
+    for ir in tgt_refs:
+        lid_ref_elem = ir.find(f"{_PDS_NS_BRACED}lid_reference")
+        ref_type_elem = ir.find(f"{_PDS_NS_BRACED}reference_type")
+        if lid_ref_elem is not None and ref_type_elem is not None:
+            lid_ref = (lid_ref_elem.text or "").strip()
+            ref_type = (ref_type_elem.text or "").strip()
+            if (
+                lid_ref == "urn:nasa:pds:context:target:planet.jupiter"
+                and ref_type == "data_to_target"
+            ):
+                _found_target = True
+                break
+    if not _found_target:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 label is missing required context reference: "
+            "Jupiter target (reference_type='data_to_target', "
+            "lid='urn:nasa:pds:context:target:planet.jupiter') "
+            "inside Target_Identification."
+        )
 
     # 9. File_Area_Observational — exactly one, with exactly one File child.
     file_area = _find_one(root, "File_Area_Observational")
     file_elem = _find_one(file_area, "File")
 
+    # PART F — Require exactly one direct Table_Delimited in File_Area_Observational.
+    # A direct Header may be present; other children are not examined.
+    table_delimited_elems = _find_all_direct(file_area, "Table_Delimited")
+    if len(table_delimited_elems) == 0:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 label File_Area_Observational is missing required "
+            "<Table_Delimited> element. "
+            "Exactly one direct Table_Delimited is required per the MWR calibrated contract."
+        )
+    if len(table_delimited_elems) > 1:
+        raise PdsArchiveLabelValidationError(
+            f"PDS4 label File_Area_Observational has {len(table_delimited_elems)} "
+            "<Table_Delimited> elements; expected exactly 1."
+        )
+
     # 9a. File/file_name — required.
     fname_elem = _find_one(file_elem, "file_name")
     label_file_name = _text_required(fname_elem, "file_name")
 
-    # 9b. File/file_size — required, unit must be byte.
+    # PART C — Safe XML file_name cross-binding.
+    #
+    # Validate: non-empty, no "/" or "\", no "..", no "?" or "#",
+    # extension == ".csv" (case-insensitive), stem matches local product token.
+    #
+    # Do NOT use filesystem resolution.
+    _validate_archive_file_name(label_file_name, request)
+
+    # 9b. File/file_size — required, unit must be byte, strict ASCII decimal.
     fsize_elem = _find_one(file_elem, "file_size")
     fsize_raw = _text_required(fsize_elem, "file_size")
-    # Check unit attribute is "byte".
+    # PART G: Strict ASCII decimal integer grammar.
     fsize_unit = (fsize_elem.get("unit") or "").strip().lower()
     if fsize_unit != "byte":
         raise PdsArchiveLabelValidationError(
             f"PDS4 label file_size unit must be 'byte'; got {fsize_unit!r}."
         )
-    try:
-        file_size_bytes = int(fsize_raw)
-    except (ValueError, TypeError) as exc:
+    if not _ASCII_DECIMAL_RE.match(fsize_raw):
         raise PdsArchiveLabelValidationError(
-            "PDS4 label file_size is not a valid integer."
-        ) from exc
-    if file_size_bytes < 0:
-        raise PdsArchiveLabelValidationError(
-            "PDS4 label file_size must be non-negative."
+            "PDS4 label file_size must be a non-negative ASCII decimal integer "
+            "(e.g. '12345'). Rejected: signs, floats, exponents, whitespace, "
+            "and non-ASCII numerals."
         )
+    file_size_bytes = int(fsize_raw)
 
-    # 9c. md5_checksum — NOT required per C3A observations; reject if present
-    #     (the C3A spec notes there is no md5_checksum in the XML).
-    md5_elem = file_elem.find(f"{_PDS_NS_BRACED}md5_checksum")
-    if md5_elem is not None:
+    # 9c. PART H — Optional md5_checksum: align with approved C3B contract.
+    #   - absent → None
+    #   - exactly one → extract text, pass through PdsDataFile validation
+    #   - duplicate → reject
+    md5_elems = _find_all_direct(file_elem, "md5_checksum")
+    if len(md5_elems) > 1:
         raise PdsArchiveLabelValidationError(
-            "PDS4 label contains an unexpected md5_checksum element. "
-            "MWR calibrated labels do not include md5_checksum."
+            "PDS4 label File contains duplicate <md5_checksum> elements; "
+            "expected at most one."
         )
+    md5_checksum: Optional[str]
+    if len(md5_elems) == 0:
+        md5_checksum = None
+    else:
+        md5_raw = (md5_elems[0].text or "").strip()
+        if not md5_raw:
+            raise PdsArchiveLabelValidationError(
+                "PDS4 label <md5_checksum> element is present but has empty text."
+            )
+        # Validate through PdsDataFile's existing MD5 constraint.
+        try:
+            _tmp = PdsDataFile(
+                file_name="tmp.csv",
+                file_ref="https://pds-atmospheres.nmsu.edu/tmp.csv",
+                file_size_bytes=0,
+                md5_checksum=md5_raw,
+                mime_type=None,
+            )
+            md5_checksum = _tmp.md5_checksum  # normalized (lowercased) by PdsDataFile
+        except pydantic.ValidationError as exc:
+            raise PdsArchiveLabelValidationError(
+                f"PDS4 label md5_checksum value {md5_raw!r} failed validation: "
+                "must be exactly 32 hexadecimal characters."
+            ) from exc
 
-    # 9d. Derive file_ref from label URL directory + label-reported file_name.
-    # This is NOT source-reported — it is deterministically derived.
-    parsed_url = urlparse(request.label_url)
-    label_dir = parsed_url.path.rsplit("/", 1)[0] + "/"
-    file_ref = f"https://{_ARCHIVE_HOST}{label_dir}{label_file_name}"
+    # 9d. PART C — Derive file_ref from label URL directory + validated basename.
+    #
+    # Only after filename validation may we derive file_ref.
+    # Do NOT use generic urljoin() with untrusted input.
+    # Construct from label URL parsed directory + validated basename, then
+    # defensively verify the resulting URL.
+    parsed_url = urlsplit(request.label_url)
+    label_dir_path = parsed_url.path.rsplit("/", 1)[0] + "/"
+    file_ref = f"https://{_ARCHIVE_HOST}{label_dir_path}{label_file_name}"
 
-    # 10. Build normalized data file (one file, no md5, no mime in archive labels).
+    # Defensive: parse derived file_ref and verify it stays in the same directory.
+    _verify_derived_file_ref(file_ref, label_dir_path)
+
+    # 10. Build normalized data file.
     try:
         data_file = PdsDataFile(
             file_name=label_file_name,
             file_ref=file_ref,
             file_size_bytes=file_size_bytes,
-            md5_checksum=None,
+            md5_checksum=md5_checksum,
             mime_type=None,
         )
     except pydantic.ValidationError as exc:
@@ -644,6 +840,127 @@ def _validate_pds_archive_label_response(
 
 
 # ---------------------------------------------------------------------------
+# PART C helpers — file_name validation and file_ref derivation
+# ---------------------------------------------------------------------------
+
+
+def _validate_archive_file_name(file_name: str, request: PdsArchiveLabelRequest) -> None:
+    """Validate XML-reported file_name against the C3B safe-basename contract.
+
+    Requirements:
+    - non-empty
+    - no "/" or "\"
+    - no ".."
+    - no "?" or "#"
+    - extension must be ".csv" (case-insensitive)
+    - stem (case-insensitive) must equal the local product token from the LIDVID
+
+    Raises PdsArchiveLabelValidationError on any violation.
+    """
+    if not file_name:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 label file_name is empty."
+        )
+    if "/" in file_name:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 label file_name must not contain '/' (path traversal rejected)."
+        )
+    if "\\" in file_name:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 label file_name must not contain '\\' (path traversal rejected)."
+        )
+    if ".." in file_name:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 label file_name must not contain '..' (path traversal rejected)."
+        )
+    if "?" in file_name:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 label file_name must not contain '?' (query-like injection rejected)."
+        )
+    if "#" in file_name:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 label file_name must not contain '#' (fragment-like injection rejected)."
+        )
+
+    # Extension must be .csv (case-insensitive).
+    if not file_name.lower().endswith(".csv"):
+        raise PdsArchiveLabelValidationError(
+            f"PDS4 label file_name {file_name!r} must have .csv extension "
+            "(case-insensitive). Only CSV science files are expected."
+        )
+
+    # Stem must match the local product token from the LIDVID.
+    # Do NOT use filesystem resolution.
+    m = _LIDVID_CROSS_RE.match(request.lidvid)
+    if m is None:
+        raise PdsArchiveLabelValidationError(
+            "Request LIDVID failed cross-binding during file_name validation (internal error)."
+        )
+    _pj, role, timestamp, reccode, localver, _pdsver = m.groups()
+    expected_local_token = f"mwr{_pj}r{role}{timestamp}_{reccode}_{localver}"
+
+    # Extract stem: filename without the last extension.
+    stem = file_name.rsplit(".", 1)[0]
+
+    if stem.casefold() != expected_local_token.casefold():
+        raise PdsArchiveLabelValidationError(
+            f"PDS4 label file_name stem {stem!r} does not match the expected "
+            f"local product token {expected_local_token!r} from the LIDVID "
+            "(case-insensitive cross-binding failed)."
+        )
+
+
+def _verify_derived_file_ref(file_ref: str, expected_dir_path: str) -> None:
+    """Defensive check: ensure derived file_ref stays in the expected directory.
+
+    Verifies:
+    - scheme == "https"
+    - hostname == pds-atmospheres.nmsu.edu
+    - directory of file_ref path == expected_dir_path
+    - no query
+    - no fragment
+    - no username/password
+
+    Raises PdsArchiveLabelValidationError if any check fails.
+    """
+    try:
+        p = urlsplit(file_ref)
+    except Exception as exc:
+        raise PdsArchiveLabelValidationError(
+            "Derived file_ref could not be parsed."
+        ) from exc
+
+    if p.scheme != _ARCHIVE_SCHEME:
+        raise PdsArchiveLabelValidationError(
+            f"Derived file_ref has unexpected scheme {p.scheme!r}; expected 'https'."
+        )
+    if p.hostname != _ARCHIVE_HOST:
+        raise PdsArchiveLabelValidationError(
+            f"Derived file_ref points to unexpected host {p.hostname!r}; "
+            f"expected {_ARCHIVE_HOST!r}."
+        )
+    if p.username is not None or p.password is not None:
+        raise PdsArchiveLabelValidationError(
+            "Derived file_ref must not contain userinfo."
+        )
+    if p.query:
+        raise PdsArchiveLabelValidationError(
+            "Derived file_ref must not contain a query string."
+        )
+    if p.fragment:
+        raise PdsArchiveLabelValidationError(
+            "Derived file_ref must not contain a fragment."
+        )
+    # Verify directory of file_ref path matches expected label directory.
+    actual_dir = p.path.rsplit("/", 1)[0] + "/"
+    if actual_dir != expected_dir_path:
+        raise PdsArchiveLabelValidationError(
+            f"Derived file_ref directory {actual_dir!r} does not match "
+            f"label URL directory {expected_dir_path!r}."
+        )
+
+
+# ---------------------------------------------------------------------------
 # PdsArchiveLabelAdapter
 # ---------------------------------------------------------------------------
 
@@ -667,8 +984,8 @@ class PdsArchiveLabelAdapter:
     -----
     - Exactly ONE HTTP GET per fetch.  Redirects are never followed.
     - ``follow_redirects=False`` is enforced at the ``send()`` level.
-    - Maximum response body: 2 MiB.
-    - XML DOCTYPE/ENTITY is rejected before parsing.
+    - Maximum response body: 2 MiB, acquired with genuine streaming.
+    - XML must be valid UTF-8; DOCTYPE/ENTITY is rejected before parsing.
     """
 
     def __init__(
@@ -737,6 +1054,11 @@ class PdsArchiveLabelAdapter:
         Returns a :class:`PdsArchiveLabelCapture` that bundles the validated
         product, provenance, and the exact raw XML label bytes.
 
+        PART D: True bounded HTTP response read via streaming.
+        The response body is consumed chunk-by-chunk up to MAX + 1 bytes.
+        Reading stops immediately once the limit is exceeded — the complete
+        body is never materialized for oversized responses.
+
         Parameters
         ----------
         request:
@@ -775,9 +1097,14 @@ class PdsArchiveLabelAdapter:
             headers={"Accept": _ACCEPT_XML},
         )
 
-        # Perform EXACTLY ONE HTTP GET — redirects are never followed.
+        # PART D: Perform EXACTLY ONE HTTP GET with streaming — redirects never followed.
+        # Use stream=True so we can consume the body chunk-by-chunk with a hard limit.
         try:
-            response = self._client.send(http_request, follow_redirects=False)
+            response = self._client.send(
+                http_request,
+                follow_redirects=False,
+                stream=True,
+            )
         except httpx.TimeoutException as exc:
             raise PdsArchiveLabelUnavailableError(
                 "PDS Atmospheres Node archive label request timed out."
@@ -792,51 +1119,68 @@ class PdsArchiveLabelAdapter:
                 "PDS Atmospheres Node archive label request failed."
             ) from exc
 
-        status = response.status_code
+        # Handle status codes and then read the body, ensuring the response is
+        # always closed in all exit paths.
+        try:
+            status = response.status_code
 
-        # Handle 3xx — never follow redirects.
-        if 300 <= status <= 399:
-            raise PdsArchiveLabelValidationError(
-                "PDS Atmospheres Node archive label request returned a redirect. "
-                "Redirects are not followed by this adapter."
-            )
+            # Handle 3xx — never follow redirects.
+            if 300 <= status <= 399:
+                raise PdsArchiveLabelValidationError(
+                    "PDS Atmospheres Node archive label request returned a redirect. "
+                    "Redirects are not followed by this adapter."
+                )
 
-        # Handle 404 / 429 / 5xx as unavailable.
-        if status == 404:
-            raise PdsArchiveLabelUnavailableError(
-                "PDS Atmospheres Node archive label was not found (HTTP 404)."
-            )
-        if status == 429:
-            raise PdsArchiveLabelUnavailableError(
-                "PDS Atmospheres Node archive label request was rate-limited (HTTP 429)."
-            )
-        if 500 <= status <= 599:
-            raise PdsArchiveLabelUnavailableError(
-                "PDS Atmospheres Node archive label request returned a server error."
-            )
+            # Handle 404 / 429 / 5xx as unavailable.
+            if status == 404:
+                raise PdsArchiveLabelUnavailableError(
+                    "PDS Atmospheres Node archive label was not found (HTTP 404)."
+                )
+            if status == 429:
+                raise PdsArchiveLabelUnavailableError(
+                    "PDS Atmospheres Node archive label request was rate-limited (HTTP 429)."
+                )
+            if 500 <= status <= 599:
+                raise PdsArchiveLabelUnavailableError(
+                    "PDS Atmospheres Node archive label request returned a server error."
+                )
 
-        # Handle other 4xx as validation errors.
-        if 400 <= status <= 499:
-            raise PdsArchiveLabelValidationError(
-                f"PDS Atmospheres Node archive label request returned an "
-                f"unexpected client error."
-            )
+            # Handle other 4xx as validation errors.
+            if 400 <= status <= 499:
+                raise PdsArchiveLabelValidationError(
+                    f"PDS Atmospheres Node archive label request returned an "
+                    f"unexpected client error."
+                )
 
-        # 200 expected for success; any other status is a validation error.
-        if status != 200:
-            raise PdsArchiveLabelValidationError(
-                "PDS Atmospheres Node archive label request returned an "
-                "unexpected HTTP status."
-            )
+            # 200 expected for success; any other status is a validation error.
+            if status != 200:
+                raise PdsArchiveLabelValidationError(
+                    "PDS Atmospheres Node archive label request returned an "
+                    "unexpected HTTP status."
+                )
 
-        # Bounded body read: read at most MAX + 1 bytes.
-        # response.content is already the full body for httpx.
-        raw_bytes = response.content
-        if len(raw_bytes) > MAX_ARCHIVE_LABEL_BYTES:
-            raise PdsArchiveLabelValidationError(
-                f"PDS4 archive label response body exceeds maximum allowed size "
-                f"({MAX_ARCHIVE_LABEL_BYTES} bytes)."
-            )
+            # PART D: Genuinely bounded body read.
+            # Accumulate at most MAX_ARCHIVE_LABEL_BYTES + 1 bytes.
+            # Stop reading and raise immediately once accumulated bytes exceed MAX.
+            # The complete oversized stream is never materialized.
+            chunks: list[bytes] = []
+            accumulated = 0
+            _limit = MAX_ARCHIVE_LABEL_BYTES + 1
+
+            for chunk in response.iter_bytes():
+                accumulated += len(chunk)
+                chunks.append(chunk)
+                if accumulated > MAX_ARCHIVE_LABEL_BYTES:
+                    raise PdsArchiveLabelValidationError(
+                        f"PDS4 archive label response body exceeds maximum allowed size "
+                        f"({MAX_ARCHIVE_LABEL_BYTES} bytes)."
+                    )
+
+            raw_bytes = b"".join(chunks)
+
+        finally:
+            # Ensure response is closed in all exit paths.
+            response.close()
 
         # Validate and normalize.
         product, provenance = _validate_pds_archive_label_response(

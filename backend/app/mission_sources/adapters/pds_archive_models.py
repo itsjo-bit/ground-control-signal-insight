@@ -33,8 +33,9 @@ from __future__ import annotations
 import hashlib
 import re
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import urlsplit
 
+import pydantic
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from backend.app.mission_sources.adapters.pds_models import (
@@ -107,17 +108,17 @@ class PdsArchiveLabelRequest(BaseModel):
 
         - Scheme: ``https``
         - Host: exactly ``pds-atmospheres.nmsu.edu`` (no suffix matching)
-        - Path prefix: ``/PDS/data/jnomwr_1100/DATA/``
-        - Sub-directory: ``IRDR`` or ``GRDR`` (matching the LIDVID role)
-        - Path: ``/PDS/data/jnomwr_1100/DATA/<DIR>/<YYYY>/<YYYYDDD>/<basename>.xml``
+        - No userinfo, no non-443 port, empty query, empty fragment
+        - Path: exactly ``/PDS/data/jnomwr_1100/DATA/<DIR>/<YYYY>/<YYYYDDD>/<basename>.xml``
         - Basename must be the local product token from the LIDVID (case-insensitive)
 
     Constraints
     -----------
+    - LIDVID must first pass PdsProductRequest baseline validation.
     - LIDVID must match the MWR calibrated cross-binding regex.
     - label_url must be from the trusted archive origin.
-    - label_url directory must match the LIDVID-derived IRDR/GRDR, year, and day-dir.
-    - label_url basename must match the LIDVID local product token (case-insensitive).
+    - label_url actual path must exactly equal the LIDVID-derived expected path.
+    - label_url must have empty query and empty fragment.
     - Extra fields are forbidden.
     - The model is frozen after construction.
     """
@@ -133,15 +134,23 @@ class PdsArchiveLabelRequest(BaseModel):
     label_url: str = Field(
         description=(
             "Direct HTTPS URL to the XML label on pds-atmospheres.nmsu.edu. "
-            "Must be under /PDS/data/jnomwr_1100/DATA/ with correct IRDR/GRDR "
-            "year/day sub-directory and matching basename."
+            "Must be the exact LIDVID-derived path with no query, fragment, or traversal."
         )
     )
 
     @field_validator("lidvid", mode="after")
     @classmethod
     def _validate_lidvid(cls, v: str) -> str:
-        """Validate LIDVID against MWR calibrated cross-binding pattern."""
+        """Validate LIDVID: first apply PdsProductRequest baseline, then MWR pattern."""
+        # PART A: Reuse PdsProductRequest baseline validation contract.
+        try:
+            PdsProductRequest(lidvid=v)
+        except pydantic.ValidationError as exc:
+            raise ValueError(
+                "lidvid does not satisfy the PdsProductRequest baseline safety rules."
+            ) from exc
+
+        # Then independently require the MWR calibrated archive pattern.
         if not _LIDVID_CROSS_RE.match(v):
             raise ValueError(
                 "lidvid does not match the expected MWR calibrated LIDVID pattern. "
@@ -152,36 +161,107 @@ class PdsArchiveLabelRequest(BaseModel):
 
     @field_validator("label_url", mode="after")
     @classmethod
-    def _validate_label_url_scheme_host(cls, v: str) -> str:
-        """Validate label_url scheme and host (trusted origin pre-check)."""
+    def _validate_label_url_structure(cls, v: str) -> str:
+        """Validate label_url structure: scheme, host, no userinfo, no query/fragment.
+
+        PART B: Strict URL validation using urlsplit.
+        - scheme must be "https"
+        - hostname must be exactly "pds-atmospheres.nmsu.edu"
+        - username must be None
+        - password must be None
+        - port must be None or 443
+        - query must be empty
+        - fragment must be empty
+        - path must not contain % or backslash
+        - path must end with .xml (case-insensitive)
+        """
+        # Reject % and backslash in raw URL string before parsing.
+        if "%" in v:
+            raise ValueError(
+                "label_url must not contain percent-encoded characters."
+            )
+        if "\\" in v:
+            raise ValueError(
+                "label_url must not contain backslash characters."
+            )
+
         try:
-            parsed = urlparse(v)
+            parsed = urlsplit(v)
         except Exception as exc:
             raise ValueError("label_url could not be parsed as a URL.") from exc
 
+        # Scheme must be https.
         if parsed.scheme != _ARCHIVE_SCHEME:
             raise ValueError(
                 f"label_url must use HTTPS scheme; got {parsed.scheme!r}."
             )
-        if parsed.netloc != _ARCHIVE_HOST:
+
+        # Hostname must be exactly the trusted archive host (no subdomains, no suffix matching).
+        if parsed.hostname != _ARCHIVE_HOST:
             raise ValueError(
                 "label_url must point to the trusted PDS Atmospheres Node host. "
                 "Only pds-atmospheres.nmsu.edu is accepted."
             )
-        if not parsed.path.startswith(_ARCHIVE_PATH_PREFIX):
+
+        # No userinfo.
+        if parsed.username is not None:
+            raise ValueError(
+                "label_url must not contain userinfo (username)."
+            )
+        if parsed.password is not None:
+            raise ValueError(
+                "label_url must not contain userinfo (password)."
+            )
+
+        # Port must be absent or 443.
+        try:
+            port = parsed.port
+        except ValueError as exc:
+            raise ValueError(
+                "label_url contains an invalid port specification."
+            ) from exc
+        if port is not None and port != 443:
+            raise ValueError(
+                f"label_url port must be absent or 443; got {port!r}."
+            )
+
+        # Query must be empty.
+        if parsed.query:
+            raise ValueError(
+                "label_url must not contain a query string."
+            )
+
+        # Fragment must be empty.
+        if parsed.fragment:
+            raise ValueError(
+                "label_url must not contain a fragment."
+            )
+
+        # Path must begin with the trusted archive prefix.
+        path = parsed.path
+        if not path.upper().startswith(_ARCHIVE_PATH_PREFIX.upper()):
             raise ValueError(
                 "label_url path must begin with "
                 f"{_ARCHIVE_PATH_PREFIX!r}."
             )
-        if not parsed.path.lower().endswith(".xml"):
+
+        # Path must end with .xml.
+        if not path.lower().endswith(".xml"):
             raise ValueError(
                 "label_url must point to an XML file (must end with .xml)."
             )
+
         return v
 
     @model_validator(mode="after")
     def _cross_validate(self) -> "PdsArchiveLabelRequest":
-        """Cross-validate label_url against LIDVID-derived expected path."""
+        """Cross-validate label_url against LIDVID-derived EXACT expected path.
+
+        PART B: Exact path equality check.
+        Constructs the one exact expected path from LIDVID components and
+        compares actual path.casefold() == expected path.casefold().
+        No startswith(), no endswith(), no substring matching.
+        """
         m = _LIDVID_CROSS_RE.match(self.lidvid)
         if m is None:
             # Already rejected by field validator; this should not happen.
@@ -201,33 +281,26 @@ class PdsArchiveLabelRequest(BaseModel):
 
         # Build expected local product token from LIDVID components.
         # Format: mwr<PJ>r<role><timestamp>_<reccode>_<localver>
-        _pj_str = _pj
-        local_token = f"mwr{_pj_str}r{role}{timestamp}_{reccode}_{localver}"
+        local_token = f"mwr{_pj}r{role}{timestamp}_{reccode}_{localver}"
 
-        # Validate label_url path structure.
-        parsed = urlparse(self.label_url)
-        path = parsed.path  # e.g. /PDS/data/jnomwr_1100/DATA/IRDR/2024/2024166/...
-
-        # Expected path components: PREFIX / DIR / YYYY / YYYYDDD / basename.xml
-        expected_path_prefix = (
-            f"{_ARCHIVE_PATH_PREFIX}{expected_dir}/{year}/{day_dir}/"
+        # Build the ONE exact expected path.
+        # /PDS/data/jnomwr_1100/DATA/<DIR>/<YYYY>/<YYYYDDD>/<local_token>.xml
+        expected_path = (
+            f"{_ARCHIVE_PATH_PREFIX}{expected_dir}/{year}/{day_dir}/{local_token}.xml"
         )
 
-        # Case-insensitive path prefix check (the URL path casing on the server
-        # may vary, but the directory names are uppercase per spec).
-        if not path.upper().startswith(expected_path_prefix.upper()):
-            raise ValueError(
-                "label_url path does not match the expected LIDVID-derived "
-                f"archive path. Expected path prefix: {expected_path_prefix!r}."
-            )
+        # Parse actual URL path (already validated above).
+        parsed = urlsplit(self.label_url)
+        actual_path = parsed.path
 
-        # Basename must match local product token (case-insensitive) + .xml
-        basename = path.rsplit("/", 1)[-1]
-        expected_basename = f"{local_token}.xml"
-        if basename.lower() != expected_basename.lower():
+        # EXACT equality check (case-insensitive via casefold).
+        # This automatically rejects: ../, extra dirs, duplicate dirs,
+        # wrong basename, encoded alternatives, extra segments.
+        if actual_path.casefold() != expected_path.casefold():
             raise ValueError(
-                "label_url basename does not match the expected LIDVID-derived "
-                f"label filename. Expected: {expected_basename!r} (case-insensitive)."
+                "label_url path does not exactly match the expected LIDVID-derived "
+                f"archive path. Expected: {expected_path!r} (case-insensitive). "
+                f"Got: {actual_path!r}."
             )
 
         return self
