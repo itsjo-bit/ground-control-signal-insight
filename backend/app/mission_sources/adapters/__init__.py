@@ -38,11 +38,22 @@ Public surface (Phase 6E-A / 6E-D0)
 - :class:`~backend.app.mission_sources.adapters.pds.PdsAdapterError`
 - :class:`~backend.app.mission_sources.adapters.pds.PdsUnavailableError`
 - :class:`~backend.app.mission_sources.adapters.pds.PdsValidationError`
+
+Public surface (Phase 6E-C3B)
+------------------------------
+- :class:`~backend.app.mission_sources.adapters.pds_archive.PdsArchiveLabelAdapter`
+- :class:`~backend.app.mission_sources.adapters.pds_archive_models.PdsArchiveLabelRequest`
+- :class:`~backend.app.mission_sources.adapters.pds_archive_models.PdsArchiveLabelCapture`
+- :class:`~backend.app.mission_sources.adapters.pds_archive.PdsArchiveLabelError`
+- :class:`~backend.app.mission_sources.adapters.pds_archive.PdsArchiveLabelUnavailableError`
+- :class:`~backend.app.mission_sources.adapters.pds_archive.PdsArchiveLabelValidationError`
 """
 
 from .horizons import HorizonsAdapter, HorizonsAdapterError, HorizonsUnavailableError, HorizonsValidationError
 from .horizons_models import HorizonsGeometry, HorizonsGeometryRequest, HorizonsGeometryResult
 from .pds import PdsAdapterError, PdsRegistryAdapter, PdsUnavailableError, PdsValidationError
+from .pds_archive import PdsArchiveLabelAdapter, PdsArchiveLabelError, PdsArchiveLabelUnavailableError, PdsArchiveLabelValidationError
+from .pds_archive_models import PdsArchiveLabelCapture, PdsArchiveLabelRequest
 from .pds_models import PdsDataFile, PdsProductRequest, PdsScienceProduct, PdsScienceProductCapture
 
 __all__ = [
@@ -54,7 +65,7 @@ __all__ = [
     "HorizonsGeometryRequest",
     "HorizonsGeometry",
     "HorizonsGeometryResult",
-    # PDS adapter
+    # PDS Search-API adapter
     "PdsRegistryAdapter",
     "PdsAdapterError",
     "PdsUnavailableError",
@@ -64,4 +75,11 @@ __all__ = [
     "PdsDataFile",
     "PdsScienceProduct",
     "PdsScienceProductCapture",
+    # PDS archive-label adapter (Phase 6E-C3B)
+    "PdsArchiveLabelAdapter",
+    "PdsArchiveLabelError",
+    "PdsArchiveLabelUnavailableError",
+    "PdsArchiveLabelValidationError",
+    "PdsArchiveLabelRequest",
+    "PdsArchiveLabelCapture",
 ]

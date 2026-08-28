@@ -271,8 +271,13 @@ class PdsDataFile(BaseModel):
     file_name: str = Field(description="Data-file name as reported by PDS.")
     file_ref: str = Field(
         description=(
-            "Data-file reference URL/path as reported by PDS. "
-            "Not followed or downloaded — stored as external metadata only."
+            "Data-file reference URL/path for this science data file. "
+            "Not followed or downloaded — stored as external metadata only. "
+            "Source depends on the adapter path: "
+            "(1) Search-API path: source-reported from "
+            "ops:Data_File_Info.ops:file_ref in the PDS KVP JSON response. "
+            "(2) Archive-label path: derived from the label URI directory + "
+            "the label-reported file_name element; NOT source-reported from XML."
         )
     )
     file_size_bytes: int = Field(

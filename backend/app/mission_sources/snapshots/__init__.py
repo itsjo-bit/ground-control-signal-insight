@@ -7,10 +7,16 @@ Horizons (Phase 6D-B1)
 HorizonsSnapshotStore
     Write and load verified Horizons geometry snapshot files.
 
-PDS (Phase 6E-D0)
------------------
+PDS Search-API (Phase 6E-D0)
+-----------------------------
 PdsSnapshotStore
     Write and load verified PDS science product snapshot files.
+
+PDS Archive-Label (Phase 6E-C3B)
+----------------------------------
+PdsArchiveSnapshotStore
+    Write and load verified PDS archive-label snapshot files.
+    Note: authenticates XML label bytes only; CSV bytes are NOT authenticated.
 
 Error hierarchy — Horizons
 --------------------------
@@ -18,11 +24,17 @@ HorizonsSnapshotError
 HorizonsSnapshotUnavailableError
 HorizonsSnapshotValidationError
 
-Error hierarchy — PDS
----------------------
+Error hierarchy — PDS Search-API
+----------------------------------
 PdsSnapshotError
 PdsSnapshotUnavailableError
 PdsSnapshotValidationError
+
+Error hierarchy — PDS Archive-Label
+--------------------------------------
+PdsArchiveSnapshotError
+PdsArchiveSnapshotUnavailableError
+PdsArchiveSnapshotValidationError
 """
 
 from .horizons_snapshot import (
@@ -35,6 +47,17 @@ from .horizons_snapshot_models import (
     SNAPSHOT_SCHEMA as HORIZONS_SNAPSHOT_SCHEMA,
     SNAPSHOT_VERSION as HORIZONS_SNAPSHOT_VERSION,
     HorizonsSnapshotEnvelope,
+)
+from .pds_archive_snapshot import (
+    PdsArchiveSnapshotError,
+    PdsArchiveSnapshotStore,
+    PdsArchiveSnapshotUnavailableError,
+    PdsArchiveSnapshotValidationError,
+)
+from .pds_archive_snapshot_models import (
+    SNAPSHOT_SCHEMA as PDS_ARCHIVE_SNAPSHOT_SCHEMA,
+    SNAPSHOT_VERSION as PDS_ARCHIVE_SNAPSHOT_VERSION,
+    PdsArchiveSnapshotEnvelope,
 )
 from .pds_snapshot import (
     PdsSnapshotError,
@@ -62,7 +85,7 @@ __all__ = [
     "HorizonsSnapshotValidationError",
     "HORIZONS_SNAPSHOT_SCHEMA",
     "HORIZONS_SNAPSHOT_VERSION",
-    # PDS
+    # PDS Search-API
     "PdsSnapshotStore",
     "PdsSnapshotEnvelope",
     "PdsSnapshotError",
@@ -70,6 +93,14 @@ __all__ = [
     "PdsSnapshotValidationError",
     "PDS_SNAPSHOT_SCHEMA",
     "PDS_SNAPSHOT_VERSION",
+    # PDS Archive-Label (Phase 6E-C3B)
+    "PdsArchiveSnapshotStore",
+    "PdsArchiveSnapshotEnvelope",
+    "PdsArchiveSnapshotError",
+    "PdsArchiveSnapshotUnavailableError",
+    "PdsArchiveSnapshotValidationError",
+    "PDS_ARCHIVE_SNAPSHOT_SCHEMA",
+    "PDS_ARCHIVE_SNAPSHOT_VERSION",
     # Backward-compatible Phase 6D aliases
     "SNAPSHOT_SCHEMA",
     "SNAPSHOT_VERSION",
