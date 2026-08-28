@@ -2583,3 +2583,220 @@ class TestPhase6EA2Regression:
         assert len(captured) == 1
         # Confirm the transport is a MockTransport (not real network)
         assert isinstance(adapter._client._transport, httpx.MockTransport)
+
+
+# ===========================================================================
+# PHASE 6E-D0 — CAPTURE TESTS (D0-01 through D0-16)
+# ===========================================================================
+
+
+class TestFetchCaptureAdapter:
+    """Tests D0-01..D0-10: fetch_capture() adapter behavior."""
+
+    def _valid_body_bytes(self) -> bytes:
+        return _make_response_bytes(_make_valid_kvp_payload())
+
+    # D0-01. fetch_capture() returns PdsScienceProductCapture
+    def test_d0_01_fetch_capture_returns_capture(self):
+        from backend.app.mission_sources.adapters.pds_models import PdsScienceProductCapture
+        adapter = _make_adapter()
+        req = _valid_request()
+        capture = adapter.fetch_capture(req)
+        assert isinstance(capture, PdsScienceProductCapture)
+
+    # D0-02. capture contains exact original request
+    def test_d0_02_capture_contains_original_request(self):
+        adapter = _make_adapter()
+        req = _valid_request()
+        capture = adapter.fetch_capture(req)
+        assert capture.request == req
+
+    # D0-03. capture product equals normal validated product
+    def test_d0_03_capture_product_equals_fetch_product(self):
+        body = self._valid_body_bytes()
+        adapter_a = _make_adapter(body=body)
+        adapter_b = _make_adapter(body=body)
+        req = _valid_request()
+        capture = adapter_a.fetch_capture(req)
+        product, _ = adapter_b.fetch(req)
+        assert capture.product == product
+
+    # D0-04. capture provenance is EXTERNAL_AUTHORITATIVE + VALIDATED
+    def test_d0_04_capture_provenance_is_authoritative_validated(self):
+        adapter = _make_adapter()
+        capture = adapter.fetch_capture(_valid_request())
+        from backend.app.provenance.models import ProvenanceKind, ProvenanceValidationStatus
+        assert capture.provenance.kind == ProvenanceKind.EXTERNAL_AUTHORITATIVE
+        assert capture.provenance.validation_status == ProvenanceValidationStatus.VALIDATED
+
+    # D0-05. capture raw bytes are byte-for-byte identical to MockTransport body
+    def test_d0_05_capture_raw_bytes_identical_to_transport_body(self):
+        body = self._valid_body_bytes()
+        adapter = _make_adapter(body=body)
+        capture = adapter.fetch_capture(_valid_request())
+        assert capture.raw_response == body
+
+    # D0-06. SHA-256(capture.raw_response) == capture.provenance.content_sha256
+    def test_d0_06_sha256_raw_response_equals_provenance_sha256(self):
+        import hashlib
+        adapter = _make_adapter()
+        capture = adapter.fetch_capture(_valid_request())
+        computed = hashlib.sha256(capture.raw_response).hexdigest()
+        assert computed == capture.provenance.content_sha256
+
+    # D0-07. fetch_capture() makes exactly one request
+    def test_d0_07_fetch_capture_one_request(self):
+        captured = []
+        adapter = _make_adapter(capture_requests=captured)
+        adapter.fetch_capture(_valid_request())
+        assert len(captured) == 1
+
+    # D0-08. existing fetch() still makes exactly one request
+    def test_d0_08_fetch_still_one_request(self):
+        captured = []
+        adapter = _make_adapter(capture_requests=captured)
+        adapter.fetch(_valid_request())
+        assert len(captured) == 1
+
+    # D0-09. existing fetch() output remains (product, provenance)
+    def test_d0_09_fetch_returns_product_provenance_tuple(self):
+        adapter = _make_adapter()
+        result = adapter.fetch(_valid_request())
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        from backend.app.mission_sources.adapters.pds_models import PdsScienceProduct
+        from backend.app.provenance.models import ProvenanceRecord
+        assert isinstance(result[0], PdsScienceProduct)
+        assert isinstance(result[1], ProvenanceRecord)
+
+    # D0-10. fetch() and fetch_capture() produce equivalent values with identical body+clock
+    def test_d0_10_fetch_and_fetch_capture_equivalent(self):
+        body = self._valid_body_bytes()
+        fixed_clock = lambda: _FIXED_CLOCK_UTC
+        adapter_a = _make_adapter(body=body, clock=fixed_clock)
+        adapter_b = _make_adapter(body=body, clock=fixed_clock)
+        req = _valid_request()
+        product_a, prov_a = adapter_a.fetch(req)
+        capture = adapter_b.fetch_capture(req)
+        assert product_a == capture.product
+        assert prov_a == capture.provenance
+
+
+class TestCaptureModeIntegrity:
+    """Tests D0-11..D0-16: PdsScienceProductCapture self-consistency invariants."""
+
+    def _make_valid_capture(self):
+        """Build a valid PdsScienceProductCapture using MockTransport."""
+        from backend.app.mission_sources.adapters.pds_models import PdsScienceProductCapture
+        body = _make_response_bytes(_make_valid_kvp_payload())
+        adapter = _make_adapter(body=body)
+        req = _valid_request()
+        return adapter.fetch_capture(req)
+
+    # D0-11. wrong product LIDVID vs request rejected
+    def test_d0_11_wrong_product_lidvid_rejected(self):
+        from backend.app.mission_sources.adapters.pds_models import PdsScienceProductCapture
+        from pydantic import ValidationError
+        capture = self._make_valid_capture()
+        # Build a request with a different LIDVID
+        other_req = PdsProductRequest(lidvid="urn:nasa:pds:other:data:other::2.0")
+        with pytest.raises(ValidationError, match="lidvid"):
+            PdsScienceProductCapture(
+                request=other_req,
+                product=capture.product,
+                provenance=capture.provenance,
+                raw_response=capture.raw_response,
+            )
+
+    # D0-12. wrong provenance source_record_id vs request rejected
+    def test_d0_12_wrong_provenance_source_record_id_rejected(self):
+        from backend.app.mission_sources.adapters.pds_models import PdsScienceProductCapture
+        from backend.app.provenance.models import ProvenanceRecord
+        from pydantic import ValidationError
+        capture = self._make_valid_capture()
+        # Patch provenance to have a different source_record_id
+        bad_prov = ProvenanceRecord(
+            **{
+                **capture.provenance.model_dump(),
+                "source_record_id": "urn:nasa:pds:wrong::1.0",
+            }
+        )
+        with pytest.raises(ValidationError, match="source_record_id"):
+            PdsScienceProductCapture(
+                request=capture.request,
+                product=capture.product,
+                provenance=bad_prov,
+                raw_response=capture.raw_response,
+            )
+
+    # D0-13. non-EXTERNAL_AUTHORITATIVE provenance rejected
+    def test_d0_13_non_authoritative_provenance_rejected(self):
+        from backend.app.mission_sources.adapters.pds_models import PdsScienceProductCapture
+        from backend.app.provenance.models import ProvenanceRecord, ProvenanceKind
+        from pydantic import ValidationError
+        capture = self._make_valid_capture()
+        bad_prov = ProvenanceRecord(
+            **{
+                **capture.provenance.model_dump(),
+                "kind": ProvenanceKind.DERIVED,
+            }
+        )
+        with pytest.raises(ValidationError, match="EXTERNAL_AUTHORITATIVE"):
+            PdsScienceProductCapture(
+                request=capture.request,
+                product=capture.product,
+                provenance=bad_prov,
+                raw_response=capture.raw_response,
+            )
+
+    # D0-14. non-VALIDATED provenance rejected
+    def test_d0_14_non_validated_provenance_rejected(self):
+        from backend.app.mission_sources.adapters.pds_models import PdsScienceProductCapture
+        from backend.app.provenance.models import ProvenanceRecord, ProvenanceValidationStatus
+        from pydantic import ValidationError
+        capture = self._make_valid_capture()
+        bad_prov = ProvenanceRecord(
+            **{
+                **capture.provenance.model_dump(),
+                "validation_status": ProvenanceValidationStatus.PENDING,
+            }
+        )
+        with pytest.raises(ValidationError, match="VALIDATED"):
+            PdsScienceProductCapture(
+                request=capture.request,
+                product=capture.product,
+                provenance=bad_prov,
+                raw_response=capture.raw_response,
+            )
+
+    # D0-15. missing/None retrieved_at rejected
+    def test_d0_15_missing_retrieved_at_rejected(self):
+        from backend.app.mission_sources.adapters.pds_models import PdsScienceProductCapture
+        from backend.app.provenance.models import ProvenanceRecord
+        from pydantic import ValidationError
+        capture = self._make_valid_capture()
+        d = capture.provenance.model_dump()
+        d["retrieved_at"] = None
+        bad_prov = ProvenanceRecord(**d)
+        with pytest.raises(ValidationError, match="retrieved_at"):
+            PdsScienceProductCapture(
+                request=capture.request,
+                product=capture.product,
+                provenance=bad_prov,
+                raw_response=capture.raw_response,
+            )
+
+    # D0-16. raw-response hash mismatch rejected
+    def test_d0_16_raw_response_hash_mismatch_rejected(self):
+        from backend.app.mission_sources.adapters.pds_models import PdsScienceProductCapture
+        from pydantic import ValidationError
+        capture = self._make_valid_capture()
+        # Tamper with raw bytes — hash will no longer match provenance.content_sha256
+        bad_raw = capture.raw_response + b"\x00"
+        with pytest.raises(ValidationError, match="SHA-256"):
+            PdsScienceProductCapture(
+                request=capture.request,
+                product=capture.product,
+                provenance=capture.provenance,
+                raw_response=bad_raw,
+            )

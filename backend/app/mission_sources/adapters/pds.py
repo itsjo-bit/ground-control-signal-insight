@@ -81,6 +81,7 @@ from backend.app.provenance.models import (
 
 from .pds_models import (
     PdsDataFile,
+    PdsScienceProductCapture,
     PdsProductRequest,
     PdsScienceProduct,
 )
@@ -1107,6 +1108,9 @@ class PdsRegistryAdapter:
         Does NOT follow or download any data-file URLs.
         Redirects are never followed, regardless of injected client config.
 
+        This method delegates to :meth:`fetch_capture` and returns only the
+        product and provenance pair.  One call = one HTTP GET.
+
         Parameters
         ----------
         request:
@@ -1130,9 +1134,53 @@ class PdsRegistryAdapter:
             HTTP 4xx (non-404), malformed JSON, identity mismatch, wrong
             product class, invalid metadata, oversized response, redirect.
         """
+        capture = self.fetch_capture(request)
+        return capture.product, capture.provenance
+
+    def fetch_capture(
+        self, request: PdsProductRequest
+    ) -> PdsScienceProductCapture:
+        """Fetch, validate, and capture metadata for one exact PDS LIDVID.
+
+        Performs exactly one HTTP GET to the fixed PDS Search API endpoint.
+        Returns a :class:`PdsScienceProductCapture` that bundles the validated
+        product, provenance, and the exact raw response bytes.
+
+        The capture can be passed to :class:`PdsSnapshotStore.write` to persist
+        a content-verified offline snapshot for later replay.
+
+        Does NOT follow or download any data-file URLs.
+        Redirects are never followed, regardless of injected client config.
+
+        Parameters
+        ----------
+        request:
+            Validated :class:`PdsProductRequest` specifying the exact LIDVID.
+
+        Returns
+        -------
+        PdsScienceProductCapture
+            Immutable capture binding request, product, provenance, and raw bytes.
+
+        Raises
+        ------
+        PdsUnavailableError
+            Network/transport failure, HTTP 5xx/429, HTTP 404, zero hits, or
+            empty data.
+
+        PdsValidationError
+            HTTP 4xx (non-404), malformed JSON, identity mismatch, wrong
+            product class, invalid metadata, oversized response, redirect.
+        """
         raw_bytes = self._execute_request(request)
         retrieved_at = self._clock()
-        return _validate_pds_raw_response(request, raw_bytes, retrieved_at)
+        product, provenance = _validate_pds_raw_response(request, raw_bytes, retrieved_at)
+        return PdsScienceProductCapture(
+            request=request,
+            product=product,
+            provenance=provenance,
+            raw_response=raw_bytes,
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers

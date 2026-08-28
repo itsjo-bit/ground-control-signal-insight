@@ -28,6 +28,11 @@ PdsScienceProduct
     response.  This is NOT a GCSI DataProduct — it is a lower-level
     external metadata fact.
 
+PdsScienceProductCapture
+    Immutable capture binding a validated PdsScienceProduct and its
+    ProvenanceRecord to the exact raw HTTP response bytes.  Used as the
+    raw-capture contract for PDS snapshot creation (Phase 6E-D0).
+
 Notes
 -----
 - These models are frozen and forbid extra fields.
@@ -39,11 +44,18 @@ Notes
 
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import datetime, timezone
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from backend.app.provenance.models import (
+    ProvenanceKind,
+    ProvenanceRecord,
+    ProvenanceValidationStatus,
+)
 
 # Expose prefix/regex constants so PdsScienceProduct._validate_model can
 # reference them without duplication.
@@ -555,5 +567,120 @@ class PdsScienceProduct(BaseModel):
                 raise ValueError(
                     "observation_start_utc must be <= observation_stop_utc."
                 )
+
+        return self
+
+
+# ---------------------------------------------------------------------------
+# D. PdsScienceProductCapture
+# ---------------------------------------------------------------------------
+
+
+class PdsScienceProductCapture(BaseModel):
+    """Immutable capture binding a validated PDS science product to its raw bytes.
+
+    This is the PDS equivalent of :class:`HorizonsGeometryCapture`.  It bundles:
+
+    - the original :class:`PdsProductRequest` that produced this response,
+    - the derived :class:`PdsScienceProduct` normalized metadata,
+    - the associated :class:`~backend.app.provenance.models.ProvenanceRecord`,
+    - the **exact** raw HTTP response body bytes.
+
+    The raw bytes are the authoritative capture evidence: the snapshot store
+    re-derives the product and provenance from them rather than trusting the
+    stored normalized values alone.
+
+    Capture invariants
+    ------------------
+    The model enforces the following self-consistency properties at construction:
+
+    1. ``product.lidvid == request.lidvid``
+    2. ``provenance.source_record_id == request.lidvid``
+    3. ``provenance.kind == EXTERNAL_AUTHORITATIVE``
+    4. ``provenance.validation_status == VALIDATED``
+    5. ``provenance.retrieved_at`` is present and timezone-aware.
+    6. ``SHA-256(raw_response) == provenance.content_sha256``
+
+    Notes
+    -----
+    - This model does NOT re-run ``_validate_pds_raw_response()``.
+      Self-consistency is checked here; full re-derivation happens in the
+      snapshot store.
+    - ``raw_response`` is stored as ``bytes``; ``arbitrary_types_allowed``
+      is set ``False`` because ``bytes`` is a native Pydantic type.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        arbitrary_types_allowed=False,
+    )
+
+    request: PdsProductRequest
+    product: PdsScienceProduct
+    provenance: ProvenanceRecord
+    raw_response: bytes
+
+    @model_validator(mode="after")
+    def _validate_capture_consistency(self) -> "PdsScienceProductCapture":
+        """Enforce capture self-consistency invariants."""
+        # 1. product LIDVID must match request LIDVID.
+        if self.product.lidvid != self.request.lidvid:
+            raise ValueError(
+                "PdsScienceProductCapture invariant violated: "
+                f"product.lidvid ({self.product.lidvid!r}) != "
+                f"request.lidvid ({self.request.lidvid!r})."
+            )
+
+        # 2. provenance source_record_id must match request LIDVID.
+        if self.provenance.source_record_id != self.request.lidvid:
+            raise ValueError(
+                "PdsScienceProductCapture invariant violated: "
+                f"provenance.source_record_id ({self.provenance.source_record_id!r}) != "
+                f"request.lidvid ({self.request.lidvid!r})."
+            )
+
+        # 3. provenance kind must be EXTERNAL_AUTHORITATIVE.
+        if self.provenance.kind != ProvenanceKind.EXTERNAL_AUTHORITATIVE:
+            raise ValueError(
+                "PdsScienceProductCapture invariant violated: "
+                f"provenance.kind must be EXTERNAL_AUTHORITATIVE; "
+                f"got {self.provenance.kind!r}."
+            )
+
+        # 4. provenance validation_status must be VALIDATED.
+        if self.provenance.validation_status != ProvenanceValidationStatus.VALIDATED:
+            raise ValueError(
+                "PdsScienceProductCapture invariant violated: "
+                f"provenance.validation_status must be VALIDATED; "
+                f"got {self.provenance.validation_status!r}."
+            )
+
+        # 5. provenance retrieved_at must be present and timezone-aware.
+        ret = self.provenance.retrieved_at
+        if ret is None:
+            raise ValueError(
+                "PdsScienceProductCapture invariant violated: "
+                "provenance.retrieved_at must be present (not None) "
+                "so that snapshot re-validation can use the historical timestamp."
+            )
+        if ret.tzinfo is None or ret.utcoffset() is None:
+            raise ValueError(
+                "PdsScienceProductCapture invariant violated: "
+                "provenance.retrieved_at must be timezone-aware."
+            )
+
+        # 6. SHA-256(raw_response) must equal provenance.content_sha256.
+        computed = hashlib.sha256(self.raw_response).hexdigest()
+        if self.provenance.content_sha256 is None:
+            raise ValueError(
+                "PdsScienceProductCapture invariant violated: "
+                "provenance.content_sha256 must be present."
+            )
+        if computed != self.provenance.content_sha256:
+            raise ValueError(
+                "PdsScienceProductCapture invariant violated: "
+                "SHA-256(raw_response) does not match provenance.content_sha256."
+            )
 
         return self

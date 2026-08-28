@@ -1,4 +1,4 @@
-"""GCSI Phase 6D-A — JPL Horizons Source Adapters.
+"""GCSI Mission Source Adapters.
 
 This sub-package contains lower-level source adapters that will eventually
 be consumed by a future ``HistoricalReplayProvider`` / ``ReplayAssembler``.
@@ -10,9 +10,9 @@ Architecture (conceptual future)::
          ReplayAssembler              [future]
           /          \\
  HorizonsGeometry   PDS Products
-    Adapter          Adapter [future]
-       |
-       ↓
+    Adapter          Adapter
+       |                |
+       ↓                ↓
 validated external facts
 
 These adapters are NOT ``BaseMissionSourceProvider`` subclasses.
@@ -28,20 +28,40 @@ Public surface (Phase 6D-A)
 - :class:`~backend.app.mission_sources.adapters.horizons.HorizonsAdapterError`
 - :class:`~backend.app.mission_sources.adapters.horizons.HorizonsUnavailableError`
 - :class:`~backend.app.mission_sources.adapters.horizons.HorizonsValidationError`
+
+Public surface (Phase 6E-A / 6E-D0)
+------------------------------------
+- :class:`~backend.app.mission_sources.adapters.pds.PdsRegistryAdapter`
+- :class:`~backend.app.mission_sources.adapters.pds_models.PdsProductRequest`
+- :class:`~backend.app.mission_sources.adapters.pds_models.PdsScienceProduct`
+- :class:`~backend.app.mission_sources.adapters.pds_models.PdsScienceProductCapture`
+- :class:`~backend.app.mission_sources.adapters.pds.PdsAdapterError`
+- :class:`~backend.app.mission_sources.adapters.pds.PdsUnavailableError`
+- :class:`~backend.app.mission_sources.adapters.pds.PdsValidationError`
 """
 
 from .horizons import HorizonsAdapter, HorizonsAdapterError, HorizonsUnavailableError, HorizonsValidationError
 from .horizons_models import HorizonsGeometry, HorizonsGeometryRequest, HorizonsGeometryResult
+from .pds import PdsAdapterError, PdsRegistryAdapter, PdsUnavailableError, PdsValidationError
+from .pds_models import PdsDataFile, PdsProductRequest, PdsScienceProduct, PdsScienceProductCapture
 
 __all__ = [
-    # Adapter
+    # Horizons adapter
     "HorizonsAdapter",
-    # Errors
     "HorizonsAdapterError",
     "HorizonsUnavailableError",
     "HorizonsValidationError",
-    # Models
     "HorizonsGeometryRequest",
     "HorizonsGeometry",
     "HorizonsGeometryResult",
+    # PDS adapter
+    "PdsRegistryAdapter",
+    "PdsAdapterError",
+    "PdsUnavailableError",
+    "PdsValidationError",
+    # PDS models
+    "PdsProductRequest",
+    "PdsDataFile",
+    "PdsScienceProduct",
+    "PdsScienceProductCapture",
 ]
