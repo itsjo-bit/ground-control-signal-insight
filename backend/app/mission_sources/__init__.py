@@ -1,4 +1,4 @@
-"""GCSI Phase 6C — Mission Source Provider Boundary.
+"""GCSI Phase 6E-C4B — Mission Source Provider Boundary.
 
 This package introduces the top-level mission-source boundary that allows
 interchangeable providers of canonical GCSI Scenarios and their provenance
@@ -46,6 +46,18 @@ from .errors import (
     MissionSourceValidationError,
 )
 from .models import MissionSourceBundle, MissionSourceMode
+from .replay_descriptor import (
+    DESCRIPTOR_SCHEMA,
+    DESCRIPTOR_VERSION,
+    MAX_DESCRIPTOR_BYTES,
+    RISK_LEVEL_POLICY_V1,
+    HistoricalReplayDescriptorV1,
+    ReplayDataProductPolicyV1,
+    ReplayLinkPolicyV1,
+    ReplayMissionPolicyV1,
+    load_historical_replay_descriptor,
+    replay_risk_level_from_score,
+)
 from .synthetic_provider import SyntheticScenarioProvider
 
 __all__ = [
@@ -61,4 +73,15 @@ __all__ = [
     "MissionSourceError",
     "MissionSourceUnavailableError",
     "MissionSourceValidationError",
+    # Replay descriptor (Phase 6E-C4B)
+    "DESCRIPTOR_SCHEMA",
+    "DESCRIPTOR_VERSION",
+    "MAX_DESCRIPTOR_BYTES",
+    "RISK_LEVEL_POLICY_V1",
+    "HistoricalReplayDescriptorV1",
+    "ReplayDataProductPolicyV1",
+    "ReplayLinkPolicyV1",
+    "ReplayMissionPolicyV1",
+    "load_historical_replay_descriptor",
+    "replay_risk_level_from_score",
 ]

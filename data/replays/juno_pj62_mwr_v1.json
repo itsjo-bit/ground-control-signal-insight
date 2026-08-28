@@ -1,0 +1,49 @@
+{
+  "descriptor_schema": "gcsi.historical_replay_descriptor",
+  "descriptor_version": 1,
+  "replay_id": "juno_pj62_mwr_2024166030000_v04_replay_v1",
+  "replay_policy_version": "pj62-mwr-v1",
+  "simulated": true,
+  "decision_epoch_policy": "mwr_observation_stop",
+  "geometry_alignment_policy": "exact_epoch",
+  "product_availability_policy": "mwr_observation_stop",
+  "risk_level_policy": "gcsi_risk_thresholds_v1",
+  "horizons_snapshot_path": "data/verified_snapshots/horizons/juno/juno_spk_-61_2024-06-14T035955.483000Z.json",
+  "irdr_snapshot_path": "data/verified_snapshots/pds_archive/juno_mwr/pj62/mwr62ri2024166030000_r04112_v04_3.0.json",
+  "grdr_snapshot_path": "data/verified_snapshots/pds_archive/juno_mwr/pj62/mwr62rg2024166030000_r04112_v04_3.0.json",
+  "link_policy": {
+    "snr_db": 3.0,
+    "rssi_dbm": -95.0,
+    "nominal_data_rate_bps": 100000.0,
+    "latency_s": 1.5,
+    "link_stability": 0.8,
+    "remaining_window_s": 900.0
+  },
+  "mission_policy": {
+    "mission_phase": "science_downlink",
+    "current_event": "PJ62 MWR historical replay downlink decision",
+    "event_time_remaining_s": 900.0,
+    "comm_window_remaining_s": 900.0,
+    "risk_score": 0.35
+  },
+  "irdr_policy": {
+    "product_type": "science",
+    "criticality": 0.6,
+    "mission_relevance": 0.95,
+    "scientific_value": 0.95,
+    "deadline_s": 900.0,
+    "delivery_requirement": "best_effort",
+    "retry_cost": 0.7,
+    "anomaly_id": null
+  },
+  "grdr_policy": {
+    "product_type": "science",
+    "criticality": 0.5,
+    "mission_relevance": 0.85,
+    "scientific_value": 0.8,
+    "deadline_s": 900.0,
+    "delivery_requirement": "best_effort",
+    "retry_cost": 0.6,
+    "anomaly_id": null
+  }
+}
