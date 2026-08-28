@@ -1363,6 +1363,20 @@ class PdsRegistryAdapter:
 # ---------------------------------------------------------------------------
 
 
+def _raw_url_path(url: httpx.URL) -> bytes:
+    """Return the raw percent-encoded path bytes of a URL, excluding the query.
+
+    ``httpx.URL.raw_path`` includes the query string (e.g. ``b"/path?q=1"``).
+    This helper splits off any query portion so only the raw path bytes are
+    returned for comparison.
+
+    This preserves percent-encoding distinctions that decoded ``.path`` would
+    collapse — e.g. ``/a%2Fb`` and ``/a/b`` decode to the same ``.path`` value
+    but have different raw paths and therefore different security semantics.
+    """
+    return url.raw_path.split(b"?", 1)[0]
+
+
 def _validate_pds_redirect_location(
     original_url: httpx.URL,
     location: Optional[str],
@@ -1380,8 +1394,11 @@ def _validate_pds_redirect_location(
     4. No embedded credentials (username, password, userinfo).
     5. Port must be absent or explicitly ``443``.
     6. No URL fragment.
-    7. Path must equal the original request path exactly.
-    8. Query must equal the original request query exactly.
+    7. Raw percent-encoded path must equal the original request raw
+       percent-encoded path exactly (byte-for-byte).  Decoded-path equality
+       is NOT sufficient — ``/a%2Fb`` and ``/a/b`` are distinct raw paths
+       and must not be treated as equivalent.
+    8. Query must equal the original request query exactly (raw bytes).
     9. (Enforced by caller) — no second redirect hop is followed.
 
     Parameters
@@ -1450,14 +1467,18 @@ def _validate_pds_redirect_location(
             "NASA PDS Search API returned an untrusted redirect."
         )
 
-    # Invariant 7: Path must equal the original request path exactly.
-    if loc_url.path != original_url.path:
+    # Invariant 7: Raw percent-encoded path must match byte-for-byte.
+    # Using _raw_url_path() (which strips the query from raw_path) ensures
+    # that two paths differing only in percent-encoding — e.g. /a%2Fb vs /a/b —
+    # are correctly treated as distinct and the redirect is rejected.
+    # Do NOT decode, normalize, or resolve path components before comparing.
+    if _raw_url_path(loc_url) != _raw_url_path(original_url):
         raise PdsValidationError(
             "NASA PDS Search API returned an untrusted redirect."
         )
 
     # Invariant 8: Query must equal the original request query exactly.
-    # Compare the raw query strings so that no re-encoding artefacts can
+    # Compare the raw query bytes so that no re-encoding artefacts can
     # alter the effective meaning of parameters.
     if loc_url.query != original_url.query:
         raise PdsValidationError(

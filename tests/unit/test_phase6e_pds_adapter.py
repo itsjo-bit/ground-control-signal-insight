@@ -3438,3 +3438,268 @@ class TestD2ExistingGuarantees:
         assert len(captured) == 2, (
             f"Approved redirect must issue exactly 2 requests, got {len(captured)}"
         )
+
+
+# ===========================================================================
+# PHASE 6E-D2.1 — RAW REDIRECT PATH PRESERVATION HARDENING
+# ===========================================================================
+#
+# All tests are OFFLINE.  No live NASA requests are made.
+# Tests use httpx.MockTransport or direct pure-helper validation.
+
+from backend.app.mission_sources.adapters.pds import _raw_url_path
+
+
+class TestD21RawUrlPath:
+    """Unit tests for the _raw_url_path() pure helper."""
+
+    def test_strips_query_from_raw_path(self):
+        """raw_path includes query; _raw_url_path must strip it."""
+        u = httpx.URL("https://example.com/path/to/resource?fields=a%2Cb")
+        assert _raw_url_path(u) == b"/path/to/resource"
+
+    def test_no_query_returns_full_raw_path(self):
+        """No query string — full raw path returned."""
+        u = httpx.URL("https://example.com/path/to/resource")
+        assert _raw_url_path(u) == b"/path/to/resource"
+
+    def test_encoded_slash_preserved_in_raw(self):
+        """%2F in path must be preserved as bytes, not decoded to /."""
+        u = httpx.URL("https://example.com/segment%2Fchild?q=1")
+        raw = _raw_url_path(u)
+        assert raw == b"/segment%2Fchild"
+        # Confirm decoded .path collapses the encoding (proving the problem we solve)
+        assert u.path == "/segment/child"
+
+    def test_returns_bytes(self):
+        """_raw_url_path must return bytes."""
+        u = httpx.URL("https://example.com/path?q=1")
+        assert isinstance(_raw_url_path(u), bytes)
+
+
+class TestD21RedirectRawPath:
+    """D2.1 tests 1-6: Raw percent-encoded path equality enforcement."""
+
+    # -----------------------------------------------------------------------
+    # D2.1-1: Identical raw path accepted
+    # -----------------------------------------------------------------------
+
+    def test_d21_01_identical_raw_path_accepted(self):
+        """D2.1-1: Redirect with byte-for-byte identical raw path is accepted."""
+        captured: list[httpx.Request] = []
+        location = _make_valid_mcp_location()
+        adapter = _make_redirect_adapter(
+            first_status=307, location=location, capture_requests=captured
+        )
+        capture = adapter.fetch_capture(_valid_request())
+        assert len(captured) == 2
+        assert capture.product is not None
+
+    # -----------------------------------------------------------------------
+    # D2.1-2: Encoded slash mutation rejected
+    # -----------------------------------------------------------------------
+
+    def test_d21_02_encoded_slash_mutation_rejected(self):
+        """D2.1-2: /segment%2Fchild → /segment/child is rejected even though
+        decoded .path values are the same."""
+        # Build the canonical original URL to extract its path.
+        from backend.app.mission_sources.adapters.pds import (
+            _PDS_PRODUCTS_ENDPOINT,
+            _REQUESTED_FIELDS,
+        )
+        client = httpx.Client()
+        orig_req = client.build_request(
+            "GET",
+            _PDS_PRODUCTS_ENDPOINT + _VALID_LIDVID,
+            params={"fields": ",".join(_REQUESTED_FIELDS)},
+        )
+        original_url = orig_req.url
+        query_str = original_url.query.decode("ascii")
+
+        # Construct a Location where the path uses %2F instead of /
+        # (simulating a path where an encoded slash was decoded in the redirect).
+        # Replace the first / in the path segment after the base with %2F.
+        # Use a contrived encoded-segment path for the Location:
+        encoded_path = "/api%2Fsearch/1/products/" + _VALID_LIDVID
+        bad_loc = f"https://pds.mcp.nasa.gov{encoded_path}?{query_str}"
+
+        captured: list[httpx.Request] = []
+        adapter = _make_redirect_adapter(
+            first_status=307, location=bad_loc, capture_requests=captured
+        )
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+        assert len(captured) == 1, "Rejected path mutation must stop after 1 request"
+
+    def test_d21_02b_direct_validator_encoded_slash_rejected(self):
+        """D2.1-2b: Direct pure-helper validation: /a%2Fb != /a/b."""
+        from backend.app.mission_sources.adapters.pds import (
+            _PDS_PRODUCTS_ENDPOINT,
+            _REQUESTED_FIELDS,
+        )
+        client = httpx.Client()
+        orig_req = client.build_request(
+            "GET",
+            _PDS_PRODUCTS_ENDPOINT + _VALID_LIDVID,
+            params={"fields": ",".join(_REQUESTED_FIELDS)},
+        )
+        original_url = orig_req.url
+        query_str = original_url.query.decode("ascii")
+
+        # Encoded slash in the Location's path — same decoded semantics, different raw.
+        # Replace the first literal slash after the host with %2F:
+        orig_path = original_url.path  # decoded: /api/search/...
+        # Encode the leading slash — produces %2Fapi/search/...
+        mutated_path = "%2Fapi/search/1/products/" + _VALID_LIDVID
+        bad_loc = f"https://pds.mcp.nasa.gov/{mutated_path}?{query_str}"
+
+        with pytest.raises(PdsValidationError):
+            _validate_pds_redirect_location(original_url, bad_loc)
+
+    # -----------------------------------------------------------------------
+    # D2.1-3: Percent-encoding mutation rejected (reserved character)
+    # -----------------------------------------------------------------------
+
+    def test_d21_03_percent_encoding_mutation_rejected(self):
+        """D2.1-3: Path with a differently-encoded reserved character is rejected.
+
+        Uses a colon (:) present in the LIDVID portion of the path.
+        The canonical URL has literal colons in the path; a redirect that
+        percent-encodes any of them (%3A) has a different raw path and must
+        be rejected.
+        """
+        from backend.app.mission_sources.adapters.pds import (
+            _PDS_PRODUCTS_ENDPOINT,
+            _REQUESTED_FIELDS,
+        )
+        client = httpx.Client()
+        orig_req = client.build_request(
+            "GET",
+            _PDS_PRODUCTS_ENDPOINT + _VALID_LIDVID,
+            params={"fields": ",".join(_REQUESTED_FIELDS)},
+        )
+        original_url = orig_req.url
+        query_str = original_url.query.decode("ascii")
+
+        # Replace first colon in LIDVID portion with %3A so raw path differs.
+        # The decoded .path would still parse the same colons.
+        mutated_lidvid = _VALID_LIDVID.replace(":", "%3A", 1)
+        mutated_path = f"/api/search/1/products/{mutated_lidvid}"
+        bad_loc = f"https://pds.mcp.nasa.gov{mutated_path}?{query_str}"
+
+        captured: list[httpx.Request] = []
+        adapter = _make_redirect_adapter(
+            first_status=307, location=bad_loc, capture_requests=captured
+        )
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+        assert len(captured) == 1, "Encoding mutation must be rejected after 1 request"
+
+    def test_d21_03b_direct_validator_colon_encoding_rejected(self):
+        """D2.1-3b: Direct validator: %3A-encoded colon in path is rejected."""
+        from backend.app.mission_sources.adapters.pds import (
+            _PDS_PRODUCTS_ENDPOINT,
+            _REQUESTED_FIELDS,
+        )
+        client = httpx.Client()
+        orig_req = client.build_request(
+            "GET",
+            _PDS_PRODUCTS_ENDPOINT + _VALID_LIDVID,
+            params={"fields": ",".join(_REQUESTED_FIELDS)},
+        )
+        original_url = orig_req.url
+        query_str = original_url.query.decode("ascii")
+
+        mutated_lidvid = _VALID_LIDVID.replace(":", "%3A", 1)
+        bad_loc = (
+            f"https://pds.mcp.nasa.gov/api/search/1/products/{mutated_lidvid}"
+            f"?{query_str}"
+        )
+        with pytest.raises(PdsValidationError):
+            _validate_pds_redirect_location(original_url, bad_loc)
+
+    # -----------------------------------------------------------------------
+    # D2.1-4: Changed normal path still rejected (regression)
+    # -----------------------------------------------------------------------
+
+    def test_d21_04_changed_normal_path_still_rejected(self):
+        """D2.1-4: Completely different path is still rejected (regression)."""
+        from backend.app.mission_sources.adapters.pds import (
+            _PDS_PRODUCTS_ENDPOINT,
+            _REQUESTED_FIELDS,
+        )
+        client = httpx.Client()
+        orig_req = client.build_request(
+            "GET",
+            _PDS_PRODUCTS_ENDPOINT + _VALID_LIDVID,
+            params={"fields": ",".join(_REQUESTED_FIELDS)},
+        )
+        original_url = orig_req.url
+        query_str = original_url.query.decode("ascii")
+
+        bad_loc = f"https://pds.mcp.nasa.gov/portal/different/path?{query_str}"
+
+        captured: list[httpx.Request] = []
+        adapter = _make_redirect_adapter(
+            first_status=307, location=bad_loc, capture_requests=captured
+        )
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+        assert len(captured) == 1
+
+    # -----------------------------------------------------------------------
+    # D2.1-5: Realistic PDS path remains accepted
+    # -----------------------------------------------------------------------
+
+    def test_d21_05_realistic_pds_path_accepted(self):
+        """D2.1-5: Approved redirect with exact LIDVID path succeeds (2 requests)."""
+        # _make_valid_mcp_location builds the exact same path as the canonical request.
+        captured: list[httpx.Request] = []
+        location = _make_valid_mcp_location(_VALID_LIDVID)
+        adapter = _make_redirect_adapter(
+            first_status=307, location=location, capture_requests=captured
+        )
+        product, provenance = adapter.fetch(_valid_request())
+        assert len(captured) == 2
+        assert product is not None
+        assert provenance is not None
+
+    # -----------------------------------------------------------------------
+    # D2.1-6: Query behavior unchanged
+    # -----------------------------------------------------------------------
+
+    def test_d21_06a_identical_raw_query_accepted(self):
+        """D2.1-6a: Redirect with identical raw query is accepted."""
+        captured: list[httpx.Request] = []
+        location = _make_valid_mcp_location()
+        adapter = _make_redirect_adapter(
+            first_status=307, location=location, capture_requests=captured
+        )
+        adapter.fetch(_valid_request())
+        assert len(captured) == 2
+
+    def test_d21_06b_modified_raw_query_rejected(self):
+        """D2.1-6b: Redirect with modified query is rejected (unchanged behavior)."""
+        from backend.app.mission_sources.adapters.pds import (
+            _PDS_PRODUCTS_ENDPOINT,
+            _REQUESTED_FIELDS,
+        )
+        client = httpx.Client()
+        orig_req = client.build_request(
+            "GET",
+            _PDS_PRODUCTS_ENDPOINT + _VALID_LIDVID,
+            params={"fields": ",".join(_REQUESTED_FIELDS)},
+        )
+        original_url = orig_req.url
+        path = original_url.path
+
+        # Redirect with a stripped-down query — must be rejected.
+        bad_loc = f"https://pds.mcp.nasa.gov{path}?fields=lid"
+
+        captured: list[httpx.Request] = []
+        adapter = _make_redirect_adapter(
+            first_status=307, location=bad_loc, capture_requests=captured
+        )
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+        assert len(captured) == 1
