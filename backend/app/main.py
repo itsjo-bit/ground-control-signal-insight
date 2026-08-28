@@ -14,6 +14,10 @@ The default scenario is ASTERIA-7 (asteria7_thermal_priority_contact_v1.json),
 resolved as an absolute path relative to this file's location so the startup
 path is always correct regardless of the current working directory.
 Set GCSI_SCENARIO_PATH to override with a different scenario.
+
+Phase 6E-C6 adds startup source selection via GCSI_SOURCE_MODE:
+  synthetic_scenario (default) — existing GCSI_SCENARIO_PATH / ASTERIA-7 behaviour.
+  historical_replay — requires GCSI_REPLAY_DESCRIPTOR.
 """
 
 import logging
@@ -64,18 +68,55 @@ _SCENARIOS_DIR: Path = _PROJECT_ROOT / "data" / "scenarios"
 # Resolved as an absolute path so it is independent of cwd.
 _DEFAULT_SCENARIO_PATH: str = str(_SCENARIOS_DIR / "asteria7_thermal_priority_contact_v1.json")
 
+# ---------------------------------------------------------------------------
+# Supported GCSI_SOURCE_MODE values (Phase 6E-C6)
+# ---------------------------------------------------------------------------
+_SOURCE_MODE_SYNTHETIC = "synthetic_scenario"
+_SOURCE_MODE_HISTORICAL = "historical_replay"
+_VALID_SOURCE_MODES = {_SOURCE_MODE_SYNTHETIC, _SOURCE_MODE_HISTORICAL}
+
 
 def _log_active_scenario() -> None:
     """Emit a clear startup banner showing the active scenario capabilities.
 
-    This makes it immediately obvious which scenario is loaded and whether the
-    full V3.4 high-volume workflow is available — eliminating silent fallbacks.
+    Phase 6E-C6: source-aware — emits a distinct banner for historical replay.
     """
+    from .mission_sources.models import MissionSourceMode
+
     scenario = app_state.active_scenario
     if scenario is None:
         logger.warning("[GCSI] No scenario loaded — all API endpoints will return 503.")
         return
 
+    source_mode = app_state.active_source_mode
+
+    # ── Historical replay banner ───────────────────────────────────────────
+    if source_mode == MissionSourceMode.HISTORICAL_REPLAY:
+        prov = app_state.active_source_provenance
+        prov_count = len(prov.records) if prov else 0
+        ms = scenario.mission_state
+        dp_count = len(scenario.data_products)
+        has_geometry = scenario.distance_km is not None
+        print(  # noqa: T201
+            f"\n"
+            f"  [GCSI] ═══════════════════════════════════════════════════\n"
+            f"  [GCSI] Source mode      : HISTORICAL REPLAY\n"
+            f"  [GCSI] Provider         : {app_state.active_source_provider_name}\n"
+            f"  [GCSI] Replay source    : {app_state.active_source_ref}\n"
+            f"  [GCSI] Mission          : {ms.mission_id}\n"
+            f"  [GCSI] Data products    : {dp_count}\n"
+            f"  [GCSI] Geometry         : {'available' if has_geometry else 'unavailable'}\n"
+            f"  [GCSI] Provenance       : {prov_count} source-lineage records\n"
+            f"  [GCSI] Replay semantics : reconstructed historical scenario\n"
+            f"  [GCSI]                    NOT live spacecraft telemetry\n"
+            f"  [GCSI] Data origin      : NASA/JPL/PDS facts + explicit GCSI\n"
+            f"  [GCSI]                    modeled communications policy\n"
+            f"  [GCSI] ═══════════════════════════════════════════════════\n",
+            file=sys.stderr,
+        )
+        return
+
+    # ── Synthetic scenario banners ─────────────────────────────────────────
     path = app_state.active_scenario_path or "(unknown)"
     ms = scenario.mission_state
     dp_count = len(scenario.data_products)
@@ -132,50 +173,95 @@ def _log_active_scenario() -> None:
         )
 
 
+def _load_configured_mission_source() -> None:
+    """Read environment variables and invoke the appropriate state loading path.
+
+    This is a small testable helper that implements the startup source-selection
+    contract (Phase 6E-C6 Part A).
+
+    Reads:
+        GCSI_SOURCE_MODE         — "synthetic_scenario" | "historical_replay" | absent/blank
+        GCSI_REPLAY_DESCRIPTOR   — required when GCSI_SOURCE_MODE=historical_replay
+        GCSI_SCENARIO_PATH       — synthetic mode only
+
+    Rules:
+        - Absent / blank GCSI_SOURCE_MODE → synthetic_scenario (backward compat).
+        - historical_replay without GCSI_REPLAY_DESCRIPTOR → raises RuntimeError.
+        - Invalid GCSI_SOURCE_MODE → raises ValueError (no fallback).
+        - GCSI_REPLAY_DESCRIPTOR without historical mode → ignored.
+        - historical mode + GCSI_SCENARIO_PATH → historical wins; GCSI_SCENARIO_PATH not loaded.
+
+    Raises:
+        ValueError:   Invalid GCSI_SOURCE_MODE value.
+        RuntimeError: historical_replay mode with missing GCSI_REPLAY_DESCRIPTOR.
+        Any exception from state.load_scenario or state.load_historical_replay.
+    """
+    raw_mode = os.getenv("GCSI_SOURCE_MODE", "").strip()
+    source_mode = raw_mode if raw_mode else _SOURCE_MODE_SYNTHETIC
+
+    if source_mode not in _VALID_SOURCE_MODES:
+        raise ValueError(
+            f"Invalid GCSI_SOURCE_MODE value: {source_mode!r}. "
+            f"Allowed values: {sorted(_VALID_SOURCE_MODES)}. "
+            f"No fallback — fix the configuration and restart."
+        )
+
+    if source_mode == _SOURCE_MODE_HISTORICAL:
+        replay_descriptor = os.getenv("GCSI_REPLAY_DESCRIPTOR", "").strip()
+        if not replay_descriptor:
+            raise RuntimeError(
+                "GCSI_SOURCE_MODE=historical_replay requires GCSI_REPLAY_DESCRIPTOR to be set. "
+                "No fallback to synthetic — fix the configuration and restart."
+            )
+        print(  # noqa: T201
+            f"  [GCSI] Source mode       : historical_replay\n"
+            f"  [GCSI] Replay descriptor : {replay_descriptor}",
+            file=sys.stderr,
+        )
+        scenario_path_env = os.getenv("GCSI_SCENARIO_PATH", "").strip()
+        if scenario_path_env:
+            print(  # noqa: T201
+                f"  [GCSI] GCSI_SCENARIO_PATH ignored — historical_replay mode active.",
+                file=sys.stderr,
+            )
+        app_state.load_historical_replay(replay_descriptor)
+    else:
+        # synthetic_scenario (default)
+        env_path = os.getenv("GCSI_SCENARIO_PATH")
+        scenario_path = env_path if env_path else _DEFAULT_SCENARIO_PATH
+
+        if env_path:
+            print(  # noqa: T201
+                f"  [GCSI] GCSI_SCENARIO_PATH override: {env_path}",
+                file=sys.stderr,
+            )
+        else:
+            print(  # noqa: T201
+                f"  [GCSI] No GCSI_SCENARIO_PATH set — using default: {_DEFAULT_SCENARIO_PATH}",
+                file=sys.stderr,
+            )
+        app_state.load_scenario(scenario_path)
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):  # noqa: ARG001
     """Auto-load scenario on startup.
 
-    Priority:
-    1. GCSI_SCENARIO_PATH env var (explicit override — used by tests and CI).
-       Relative paths in GCSI_SCENARIO_PATH are left as-is (resolved against
-       the process cwd, matching the documented behaviour in .env.example).
-    2. _DEFAULT_SCENARIO_PATH — the project-relative absolute path to
-       asteria7_thermal_priority_contact_v1.json (ASTERIA-7 canonical mission).
-       This path is always correct regardless of which directory uvicorn was
-       started from.
-
-    A clear startup banner is printed so the active scenario is immediately
-    visible in the terminal — no silent fallbacks.
+    Phase 6E-C6: delegates source selection to _load_configured_mission_source().
     """
-    env_path = os.getenv("GCSI_SCENARIO_PATH")
-    scenario_path = env_path if env_path else _DEFAULT_SCENARIO_PATH
-
-    if env_path:
-        print(  # noqa: T201
-            f"  [GCSI] GCSI_SCENARIO_PATH override: {env_path}",
-            file=sys.stderr,
-        )
-    else:
-        print(  # noqa: T201
-            f"  [GCSI] No GCSI_SCENARIO_PATH set — using default: {_DEFAULT_SCENARIO_PATH}",
-            file=sys.stderr,
-        )
-
     try:
-        app_state.load_scenario(scenario_path)
+        _load_configured_mission_source()
         _log_active_scenario()
     except Exception as exc:  # noqa: BLE001
         print(  # noqa: T201
             f"\n"
-            f"  [GCSI] SCENARIO LOAD ERROR\n"
-            f"  [GCSI] Requested : {scenario_path}\n"
+            f"  [GCSI] SOURCE LOAD ERROR\n"
             f"  [GCSI] Reason    : {exc}\n"
-            f"  [GCSI] Application cannot initialize the requested scenario.\n"
-            f"  [GCSI] All API endpoints will return 503 until a valid scenario is loaded.\n",
+            f"  [GCSI] Application cannot initialize the requested source.\n"
+            f"  [GCSI] All API endpoints will return 503 until a valid source is loaded.\n",
             file=sys.stderr,
         )
-        logger.error("[GCSI] Failed to load scenario '%s': %s", scenario_path, exc)
+        logger.error("[GCSI] Failed to load mission source: %s", exc)
     yield
 
 
@@ -221,8 +307,18 @@ app.include_router(experience_router)
 
 @app.get("/health")
 def health() -> dict:
-    """Liveness probe."""
+    """Liveness probe.
+
+    Phase 6E-C6: adds additive source-mode fields.
+    Existing fields are preserved unchanged.
+    For historical replay, scenario_path is None (descriptor-backed).
+    """
+    from .mission_sources.models import MissionSourceMode
+
     scenario = app_state.active_scenario
+    source_mode = app_state.active_source_mode
+    is_historical = source_mode == MissionSourceMode.HISTORICAL_REPLAY
+
     return {
         "status": "ok",
         "version": "1.0.0",
@@ -232,6 +328,9 @@ def health() -> dict:
         "data_products_count": len(scenario.data_products) if scenario else 0,
         "anomalies_count": len(scenario.anomalies) if scenario else 0,
         "has_geometry": scenario.distance_km is not None if scenario else False,
+        # Phase 6E-C6 additive fields
+        "source_mode": source_mode.value if source_mode else None,
+        "source_provider_name": app_state.active_source_provider_name,
+        "historical_replay_active": is_historical,
+        "source_provenance_available": app_state.active_source_provenance is not None,
     }
-
-

@@ -301,9 +301,15 @@ def switch_scenario(req: SwitchScenarioRequest) -> SwitchScenarioResponse:
         )
 
     # ── Snapshot current state in case the new scenario fails to load ────────
+    # Phase 6E-C6: also snapshot source metadata globals so that a failed
+    # switch while historical replay is active leaves all historical state intact.
     _prev_scenario = state.active_scenario
     _prev_link_state = state.active_link_state
     _prev_path = state.active_scenario_path
+    _prev_source_mode = state.active_source_mode
+    _prev_source_ref = state.active_source_ref
+    _prev_source_provider_name = state.active_source_provider_name
+    _prev_source_provenance = state.active_source_provenance
 
     try:
         state.load_scenario(str(target))
@@ -312,6 +318,10 @@ def switch_scenario(req: SwitchScenarioRequest) -> SwitchScenarioResponse:
         state.active_scenario = _prev_scenario
         state.active_link_state = _prev_link_state
         state.active_scenario_path = _prev_path
+        state.active_source_mode = _prev_source_mode
+        state.active_source_ref = _prev_source_ref
+        state.active_source_provider_name = _prev_source_provider_name
+        state.active_source_provenance = _prev_source_provenance
         raise HTTPException(
             status_code=422,
             detail=f"Failed to load scenario '{req.filename}': {exc}",
