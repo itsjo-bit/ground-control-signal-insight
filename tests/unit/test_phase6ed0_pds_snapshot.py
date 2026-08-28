@@ -994,3 +994,194 @@ class TestSnapshotPackageExports:
 
         # Aliases must NOT point to PDS constants.
         assert SNAPSHOT_SCHEMA != PDS_SNAPSHOT_SCHEMA
+
+
+# ===========================================================================
+# PHASE 6E-D3 — SNAPSHOT REGRESSION FOR FLAT RESPONSE AND PIPE DATA_FILE_INFO
+# ===========================================================================
+# All tests are OFFLINE. No live NASA PDS requests are made.
+
+
+def _make_flat_valid_payload_for_snapshot(
+    lidvid: str = _VALID_LIDVID,
+    lid: str = _VALID_LID,
+    version_id: str = _VALID_VERSION,
+) -> dict:
+    """Synthetic flat exact-product payload (no summary/data envelope).
+
+    Represents the observed MCP endpoint structure.  Uses synthetic identifiers
+    only — NOT a real NASA PDS product.
+    """
+    return {
+        "lid": lid,
+        "lidvid": lidvid,
+        "product_class": "Product_Observational",
+        "title": "GCSI D3 Flat Snapshot Test Product",
+        "pds:Identification_Area.pds:logical_identifier": lid,
+        "pds:Identification_Area.pds:version_id": version_id,
+        "pds:Identification_Area.pds:title": "GCSI D3 Flat Snapshot Test Product",
+        "pds:Identification_Area.pds:product_class": "Product_Observational",
+        "pds:Time_Coordinates.pds:start_date_time": "2024-06-14T09:00:44.000Z",
+        "pds:Time_Coordinates.pds:stop_date_time": "2024-06-14T09:00:45.000Z",
+        "pds:Primary_Result_Summary.pds:processing_level": "Calibrated",
+        "ref_lid_instrument": "urn:nasa:pds:context:instrument:test.inst",
+        "ref_lid_instrument_host": "urn:nasa:pds:context:instrument_host:spacecraft.test",
+        "ref_lid_investigation": "urn:nasa:pds:context:investigation:mission.test",
+        "ref_lid_target": "urn:nasa:pds:context:target:calibration_field.sky",
+        "ops:Data_File_Info.ops:file_name": "test_d3_product.dat",
+        "ops:Data_File_Info.ops:file_ref": "https://pds-atmospheres.nmsu.edu/test/test_d3_product.dat",
+        "ops:Data_File_Info.ops:file_size": "59120",
+        "ops:Data_File_Info.ops:md5_checksum": "d41d8cd98f00b204e9800998ecf8427e",
+        "ops:Data_File_Info.ops:mime_type": "application/octet-stream",
+        "ops:Harvest_Info.ops:node_name": "PDS_ATM",
+        "ops:Harvest_Info.ops:harvest_date_time": "2025-08-28T15:11:50.000Z",
+    }
+
+
+def _make_pipe_payload_for_snapshot(
+    lidvid: str = _VALID_LIDVID,
+    lid: str = _VALID_LID,
+    version_id: str = _VALID_VERSION,
+) -> dict:
+    """Synthetic flat payload with pipe-delimited two-file Data_File_Info.
+
+    Represents the observed MCP endpoint KVP encoding for multiple files.
+    Uses synthetic identifiers only — NOT a real NASA PDS product.
+    """
+    doc = _make_flat_valid_payload_for_snapshot(lidvid=lidvid, lid=lid, version_id=version_id)
+    doc.update({
+        "ops:Data_File_Info.ops:file_name": "test_d3_product.LBL|test_d3_product.TAB",
+        "ops:Data_File_Info.ops:file_ref": (
+            "https://pds-atmospheres.nmsu.edu/test/test_d3_product.LBL"
+            "|https://pds-atmospheres.nmsu.edu/test/test_d3_product.TAB"
+        ),
+        "ops:Data_File_Info.ops:file_size": "59120|72",
+        "ops:Data_File_Info.ops:md5_checksum": (
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            "|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ),
+        "ops:Data_File_Info.ops:mime_type": "text/plain|application/octet-stream",
+    })
+    return doc
+
+
+class TestD3FlatSnapshotRegression:
+    """D3 snapshot regression: flat exact-product response survives write → load cycle."""
+
+    def test_d3_snap_1_flat_response_roundtrip(self, tmp_path):
+        """D3 snap-1: Flat exact-product raw bytes → fetch_capture → write → load →
+        loaded product == capture.product and loaded provenance == capture.provenance."""
+        body = json.dumps(_make_flat_valid_payload_for_snapshot()).encode("utf-8")
+        adapter = _make_adapter(body=body)
+        req = PdsProductRequest(lidvid=_VALID_LIDVID)
+        capture = adapter.fetch_capture(req)
+
+        dest = tmp_path / "flat_snap.json"
+        PdsSnapshotStore.write(capture, dest)
+
+        loaded_product, loaded_provenance = PdsSnapshotStore.load(dest)
+
+        assert loaded_product == capture.product, (
+            "Loaded product must equal capture.product after flat-response write/load."
+        )
+        assert loaded_provenance == capture.provenance, (
+            "Loaded provenance must equal capture.provenance after flat-response write/load."
+        )
+
+    def test_d3_snap_1b_flat_provenance_sha_equals_raw_bytes_sha(self, tmp_path):
+        """D3 snap-1b: provenance.content_sha256 == SHA-256(original flat raw bytes)."""
+        body = json.dumps(_make_flat_valid_payload_for_snapshot()).encode("utf-8")
+        expected_sha = hashlib.sha256(body).hexdigest()
+        adapter = _make_adapter(body=body)
+        req = PdsProductRequest(lidvid=_VALID_LIDVID)
+        capture = adapter.fetch_capture(req)
+
+        dest = tmp_path / "flat_snap_sha.json"
+        PdsSnapshotStore.write(capture, dest)
+        _, loaded_provenance = PdsSnapshotStore.load(dest)
+
+        assert loaded_provenance.content_sha256 == expected_sha, (
+            "Loaded provenance.content_sha256 must equal SHA-256 of original flat raw bytes."
+        )
+
+    def test_d3_snap_1c_flat_raw_bytes_not_rewritten_for_hash(self, tmp_path):
+        """D3 snap-1c: snapshot raw_response_sha256 in file == SHA-256 of original flat bytes."""
+        body = json.dumps(_make_flat_valid_payload_for_snapshot()).encode("utf-8")
+        expected_sha = hashlib.sha256(body).hexdigest()
+        adapter = _make_adapter(body=body)
+        req = PdsProductRequest(lidvid=_VALID_LIDVID)
+        capture = adapter.fetch_capture(req)
+
+        dest = tmp_path / "flat_snap_file.json"
+        PdsSnapshotStore.write(capture, dest)
+        raw = json.loads(dest.read_text("utf-8"))
+
+        assert raw["raw_response_sha256"] == expected_sha, (
+            "Snapshot file raw_response_sha256 must equal SHA-256 of exact flat raw bytes."
+        )
+        assert raw["provenance"]["content_sha256"] == expected_sha
+
+
+class TestD3PipeSnapshotRegression:
+    """D3 snapshot regression: pipe-delimited Data_File_Info survives write → load cycle."""
+
+    def test_d3_snap_2_pipe_two_files_roundtrip(self, tmp_path):
+        """D3 snap-2: Pipe-delimited flat payload → fetch_capture → write → load →
+        two PdsDataFile entries reconstructed correctly."""
+        body = json.dumps(_make_pipe_payload_for_snapshot()).encode("utf-8")
+        adapter = _make_adapter(body=body)
+        req = PdsProductRequest(lidvid=_VALID_LIDVID)
+        capture = adapter.fetch_capture(req)
+
+        # Verify two files were parsed
+        assert len(capture.product.data_files) == 2, (
+            "Pipe-delimited payload must produce exactly 2 PdsDataFile entries."
+        )
+
+        dest = tmp_path / "pipe_snap.json"
+        PdsSnapshotStore.write(capture, dest)
+
+        loaded_product, loaded_provenance = PdsSnapshotStore.load(dest)
+
+        assert loaded_product == capture.product, (
+            "Loaded product must equal capture.product for pipe-delimited snapshot."
+        )
+        assert loaded_provenance == capture.provenance, (
+            "Loaded provenance must equal capture.provenance for pipe-delimited snapshot."
+        )
+
+    def test_d3_snap_2b_pipe_two_files_reconstructed(self, tmp_path):
+        """D3 snap-2b: After write/load, loaded product still has two files with correct values."""
+        body = json.dumps(_make_pipe_payload_for_snapshot()).encode("utf-8")
+        adapter = _make_adapter(body=body)
+        req = PdsProductRequest(lidvid=_VALID_LIDVID)
+        capture = adapter.fetch_capture(req)
+
+        dest = tmp_path / "pipe_snap_b.json"
+        PdsSnapshotStore.write(capture, dest)
+        loaded_product, _ = PdsSnapshotStore.load(dest)
+
+        assert len(loaded_product.data_files) == 2
+        assert loaded_product.data_files[0].file_name == "test_d3_product.LBL"
+        assert loaded_product.data_files[1].file_name == "test_d3_product.TAB"
+        assert loaded_product.data_files[0].file_size_bytes == 59120
+        assert loaded_product.data_files[1].file_size_bytes == 72
+        assert loaded_product.total_data_size_bytes == 59120 + 72
+        assert loaded_product.data_files[0].md5_checksum == "a" * 32
+        assert loaded_product.data_files[1].md5_checksum == "b" * 32
+
+    def test_d3_snap_2c_pipe_provenance_sha_exact_raw_bytes(self, tmp_path):
+        """D3 snap-2c: provenance.content_sha256 == SHA-256 of original pipe raw bytes."""
+        body = json.dumps(_make_pipe_payload_for_snapshot()).encode("utf-8")
+        expected_sha = hashlib.sha256(body).hexdigest()
+        adapter = _make_adapter(body=body)
+        req = PdsProductRequest(lidvid=_VALID_LIDVID)
+        capture = adapter.fetch_capture(req)
+
+        dest = tmp_path / "pipe_snap_c.json"
+        PdsSnapshotStore.write(capture, dest)
+        _, loaded_provenance = PdsSnapshotStore.load(dest)
+
+        assert loaded_provenance.content_sha256 == expected_sha, (
+            "provenance.content_sha256 must equal SHA-256 of original pipe-delimited raw bytes."
+        )

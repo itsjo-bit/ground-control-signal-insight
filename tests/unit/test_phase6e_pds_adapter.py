@@ -38,6 +38,8 @@ from backend.app.mission_sources.adapters.pds import (
     _REQUESTED_FIELDS,
     _build_canonical_request_identity,
     _compute_provenance_id,
+    _extract_exact_product_item,
+    _normalize_data_file_kvp_value,
 )
 from backend.app.mission_sources.adapters.pds_models import (
     PdsDataFile,
@@ -3703,3 +3705,570 @@ class TestD21RedirectRawPath:
         with pytest.raises(PdsValidationError):
             adapter.fetch(_valid_request())
         assert len(captured) == 1
+
+
+# ===========================================================================
+# PHASE 6E-D3 — FLAT DOCUMENT + PIPE-DELIMITED DATA_FILE_INFO TESTS
+# ===========================================================================
+# All tests are OFFLINE.  No live NASA PDS requests are made.
+# Tests use MockTransport or direct pure-function calls.
+#
+# Coverage map (D3-1 through D3-35):
+#
+# D3 ENVELOPE REGRESSION  (1–8)
+# D3 FLAT EXACT-PRODUCT   (9–18)
+# D3 PIPE NORMALIZATION   (19–35)
+
+
+def _make_flat_valid_payload(
+    lidvid: str = _VALID_LIDVID,
+    lid: str = _VALID_LID,
+    version_id: str = _VALID_VERSION,
+    title: str = "Test Flat Observational Product",
+    product_class: str = "Product_Observational",
+    ia_product_class: str = "Product_Observational",
+    start_dt: Optional[str] = "2026-08-27T00:00:00Z",
+    stop_dt: Optional[str] = "2026-08-27T01:00:00Z",
+    processing_level: Optional[str] = "Calibrated",
+    file_name: str = "test_flat_product.dat",
+    file_ref: str = "https://pds-atmospheres.nmsu.edu/test/test_flat_product.dat",
+    file_size: str = "4096",
+    md5: str = "d41d8cd98f00b204e9800998ecf8427e",
+    mime: str = "application/octet-stream",
+    harvest_node: str = "PDS_ATM",
+    harvest_time: str = "2026-09-01T12:00:00Z",
+    instruments=None,
+    instrument_hosts=None,
+    investigations=None,
+    targets=None,
+) -> dict:
+    """Build a synthetic flat exact-product payload (no summary/data envelope).
+
+    This represents the observed MCP endpoint structure: all product fields
+    as top-level keys, no wrapping {"summary": ..., "data": [...]} envelope.
+    Uses entirely synthetic identifiers — NOT a real NASA PDS product.
+    """
+    if instruments is None:
+        instruments = "urn:nasa:pds:context:instrument:test.inst"
+    if instrument_hosts is None:
+        instrument_hosts = "urn:nasa:pds:context:instrument_host:spacecraft.test"
+    if investigations is None:
+        investigations = "urn:nasa:pds:context:investigation:mission.test"
+    if targets is None:
+        targets = "urn:nasa:pds:context:target:calibration_field.sky"
+
+    doc: dict = {
+        "lid": lid,
+        "lidvid": lidvid,
+        "product_class": product_class,
+        "title": title,
+        "pds:Identification_Area.pds:logical_identifier": lid,
+        "pds:Identification_Area.pds:version_id": version_id,
+        "pds:Identification_Area.pds:title": title,
+        "pds:Identification_Area.pds:product_class": ia_product_class,
+        "ref_lid_instrument": instruments,
+        "ref_lid_instrument_host": instrument_hosts,
+        "ref_lid_investigation": investigations,
+        "ref_lid_target": targets,
+        "ops:Data_File_Info.ops:file_name": file_name,
+        "ops:Data_File_Info.ops:file_ref": file_ref,
+        "ops:Data_File_Info.ops:file_size": file_size,
+        "ops:Data_File_Info.ops:md5_checksum": md5,
+        "ops:Data_File_Info.ops:mime_type": mime,
+        "ops:Harvest_Info.ops:node_name": harvest_node,
+        "ops:Harvest_Info.ops:harvest_date_time": harvest_time,
+    }
+    if start_dt is not None:
+        doc["pds:Time_Coordinates.pds:start_date_time"] = start_dt
+    if stop_dt is not None:
+        doc["pds:Time_Coordinates.pds:stop_date_time"] = stop_dt
+    if processing_level is not None:
+        doc["pds:Primary_Result_Summary.pds:processing_level"] = processing_level
+    return doc
+
+
+def _make_flat_response_bytes(**kwargs) -> bytes:
+    return json.dumps(_make_flat_valid_payload(**kwargs)).encode("utf-8")
+
+
+def _make_pipe_flat_payload(
+    lidvid: str = _VALID_LIDVID,
+    lid: str = _VALID_LID,
+    version_id: str = _VALID_VERSION,
+    title: str = "GCSI Test Two-File Flat Product",
+) -> dict:
+    """Build a flat payload with D2R-observed pipe-delimited two-file Data_File_Info."""
+    doc = _make_flat_valid_payload(
+        lidvid=lidvid,
+        lid=lid,
+        version_id=version_id,
+        title=title,
+        file_name="test_flat_product.LBL|test_flat_product.TAB",
+        file_ref=(
+            "https://pds-atmospheres.nmsu.edu/test/test_flat_product.LBL"
+            "|https://pds-atmospheres.nmsu.edu/test/test_flat_product.TAB"
+        ),
+        file_size="59120|72",
+        md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        mime="text/plain|application/octet-stream",
+    )
+    return doc
+
+
+# ---------------------------------------------------------------------------
+# D3 PART 1 — ENVELOPE REGRESSION (tests D3-1 through D3-8)
+# ---------------------------------------------------------------------------
+
+
+class TestD3EnvelopeRegression:
+    """D3-1 through D3-8: Existing envelope form must continue to work unchanged."""
+
+    # D3-1: valid envelope still accepted
+    def test_d3_01_valid_envelope_still_accepted(self):
+        """D3-1: Existing valid envelope response is still accepted."""
+        adapter = _make_adapter()
+        product, provenance = adapter.fetch(_valid_request())
+        assert product.product_class == "Product_Observational"
+        assert provenance.kind == ProvenanceKind.EXTERNAL_AUTHORITATIVE
+
+    # D3-2: envelope hits == 0 still raises PdsUnavailableError
+    def test_d3_02_envelope_hits_zero_still_unavailable(self):
+        """D3-2: Envelope with hits==0 still raises PdsUnavailableError."""
+        payload = {"summary": {"hits": 0}, "data": []}
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsUnavailableError):
+            adapter.fetch(_valid_request())
+
+    # D3-3: envelope empty data still raises PdsUnavailableError
+    def test_d3_03_envelope_empty_data_still_unavailable(self):
+        """D3-3: Envelope with empty data array still raises PdsUnavailableError."""
+        payload = {"summary": {"hits": 0}, "data": []}
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsUnavailableError):
+            adapter.fetch(_valid_request())
+
+    # D3-4: envelope multiple data items still rejected
+    def test_d3_04_envelope_multiple_items_still_rejected(self):
+        """D3-4: Envelope with 2 data items still raises PdsValidationError."""
+        payload = _make_valid_kvp_payload()
+        payload["data"].append(payload["data"][0].copy())
+        payload["summary"]["hits"] = 2
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+
+    # D3-5: envelope malformed summary still rejected
+    def test_d3_05_envelope_malformed_summary_still_rejected(self):
+        """D3-5: summary present but not a dict → PdsValidationError."""
+        payload = {"summary": "invalid_string", "data": [{}]}
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError, match="summary"):
+            adapter.fetch(_valid_request())
+
+    # D3-6: envelope malformed data still rejected
+    def test_d3_06_envelope_malformed_data_still_rejected(self):
+        """D3-6: data present but not a list → PdsValidationError."""
+        payload = {"summary": {"hits": 1}, "data": "not_a_list"}
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError, match="data"):
+            adapter.fetch(_valid_request())
+
+    # D3-7: summary present but data absent rejected (does NOT fall back to flat)
+    def test_d3_07_summary_present_data_absent_rejected(self):
+        """D3-7: summary present, data absent → PdsValidationError. Must NOT fall back to flat."""
+        payload = {"summary": {"hits": 1}, "lid": _VALID_LID}
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+
+    # D3-8: data present but summary absent rejected (does NOT fall back to flat)
+    def test_d3_08_data_present_summary_absent_rejected(self):
+        """D3-8: data present, summary absent → PdsValidationError. Must NOT fall back to flat."""
+        payload = _make_valid_kvp_payload()
+        del payload["summary"]  # remove summary entirely
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+
+
+# ---------------------------------------------------------------------------
+# D3 PART 2 — FLAT EXACT-PRODUCT SUPPORT (tests D3-9 through D3-18)
+# ---------------------------------------------------------------------------
+
+
+class TestD3FlatExactProduct:
+    """D3-9 through D3-18: Flat exact-product JSON document support."""
+
+    # D3-9: valid flat exact-product object accepted
+    def test_d3_09_valid_flat_product_accepted(self):
+        """D3-9: A valid flat exact-product document is accepted."""
+        body = _make_flat_response_bytes()
+        adapter = _make_adapter(body=body)
+        product, provenance = adapter.fetch(_valid_request())
+        assert product is not None
+        assert provenance is not None
+
+    # D3-10: flat response returns correct normalized identity
+    def test_d3_10_flat_returns_correct_identity(self):
+        """D3-10: Normalized product from flat response has correct lid, lidvid, version."""
+        body = _make_flat_response_bytes()
+        adapter = _make_adapter(body=body)
+        product, _ = adapter.fetch(_valid_request())
+        assert product.lid == _VALID_LID
+        assert product.lidvid == _VALID_LIDVID
+        assert product.version_id == _VALID_VERSION
+        assert product.product_class == "Product_Observational"
+
+    # D3-11: flat wrong LIDVID rejected
+    def test_d3_11_flat_wrong_lidvid_rejected(self):
+        """D3-11: Flat document with wrong lidvid is rejected."""
+        wrong_lid = "urn:nasa:pds:wrong_bundle:data:wrong_product"
+        body = _make_flat_response_bytes(
+            lidvid=wrong_lid + "::1.0",
+            lid=wrong_lid,
+        )
+        adapter = _make_adapter(body=body)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+
+    # D3-12: flat missing logical_identifier rejected
+    def test_d3_12_flat_missing_logical_identifier_rejected(self):
+        """D3-12: Flat document missing pds:logical_identifier is rejected."""
+        payload = _make_flat_valid_payload()
+        del payload["pds:Identification_Area.pds:logical_identifier"]
+        body = json.dumps(payload).encode("utf-8")
+        adapter = _make_adapter(body=body)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+
+    # D3-13: flat wrong version rejected
+    def test_d3_13_flat_wrong_version_rejected(self):
+        """D3-13: Flat document with wrong version_id is rejected."""
+        payload = _make_flat_valid_payload(version_id="9.9")
+        body = json.dumps(payload).encode("utf-8")
+        adapter = _make_adapter(body=body)
+        with pytest.raises(PdsValidationError, match="version"):
+            adapter.fetch(_valid_request())
+
+    # D3-14: flat wrong product class rejected
+    def test_d3_14_flat_wrong_product_class_rejected(self):
+        """D3-14: Flat document with unsupported product class is rejected."""
+        payload = _make_flat_valid_payload(
+            product_class="Product_Bundle",
+            ia_product_class="Product_Bundle",
+        )
+        body = json.dumps(payload).encode("utf-8")
+        adapter = _make_adapter(body=body)
+        with pytest.raises(PdsValidationError, match="product class|not supported"):
+            adapter.fetch(_valid_request())
+
+    # D3-15: flat missing title rejected
+    def test_d3_15_flat_missing_title_rejected(self):
+        """D3-15: Flat document with no title field is rejected."""
+        payload = _make_flat_valid_payload()
+        del payload["title"]
+        del payload["pds:Identification_Area.pds:title"]
+        body = json.dumps(payload).encode("utf-8")
+        adapter = _make_adapter(body=body)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+
+    # D3-16: flat malformed timestamp rejected
+    def test_d3_16_flat_malformed_timestamp_rejected(self):
+        """D3-16: Flat document with naive (no timezone) start timestamp is rejected."""
+        payload = _make_flat_valid_payload(start_dt="2026-08-27T00:00:00")  # naive
+        body = json.dumps(payload).encode("utf-8")
+        adapter = _make_adapter(body=body)
+        with pytest.raises(PdsValidationError, match="[Nn]aive|timezone"):
+            adapter.fetch(_valid_request())
+
+    # D3-17: exact raw flat-response SHA-256 becomes provenance content SHA
+    def test_d3_17_raw_flat_sha256_becomes_provenance_sha(self):
+        """D3-17: provenance.content_sha256 == SHA-256(exact raw flat bytes)."""
+        body = _make_flat_response_bytes()
+        expected_sha = hashlib.sha256(body).hexdigest()
+        adapter = _make_adapter(body=body)
+        _, provenance = adapter.fetch(_valid_request())
+        assert provenance.content_sha256 == expected_sha
+
+    # D3-18: capture.raw_response is byte-for-byte equal to the flat JSON input
+    def test_d3_18_capture_raw_response_exact_flat_bytes(self):
+        """D3-18: capture.raw_response == exact raw flat JSON bytes."""
+        body = _make_flat_response_bytes()
+        adapter = _make_adapter(body=body)
+        capture = adapter.fetch_capture(_valid_request())
+        assert capture.raw_response == body
+
+
+# ---------------------------------------------------------------------------
+# D3 PART 3 — PIPE NORMALIZATION (tests D3-19 through D3-35)
+# ---------------------------------------------------------------------------
+
+
+class TestD3PipeNormalizationHelper:
+    """Unit tests for _normalize_data_file_kvp_value() helper directly."""
+
+    def test_none_returns_empty_list(self):
+        assert _normalize_data_file_kvp_value(None) == []
+
+    def test_empty_list_returns_empty_list(self):
+        assert _normalize_data_file_kvp_value([]) == []
+
+    def test_list_returned_unchanged(self):
+        lst = ["a", "b", "c"]
+        assert _normalize_data_file_kvp_value(lst) is lst
+
+    def test_scalar_without_pipe_wrapped_in_list(self):
+        assert _normalize_data_file_kvp_value("single.dat") == ["single.dat"]
+
+    def test_scalar_with_pipe_split(self):
+        assert _normalize_data_file_kvp_value("A.LBL|B.TAB") == ["A.LBL", "B.TAB"]
+
+    def test_scalar_with_multiple_pipes_split_all(self):
+        assert _normalize_data_file_kvp_value("a|b|c") == ["a", "b", "c"]
+
+    def test_list_element_containing_pipe_not_further_split(self):
+        """A list element containing | must NOT be recursively split."""
+        lst = ["A|B"]
+        result = _normalize_data_file_kvp_value(lst)
+        assert result == ["A|B"]
+
+    def test_integer_scalar_wrapped_in_list(self):
+        assert _normalize_data_file_kvp_value(1024) == [1024]
+
+    def test_integer_not_pipe_split(self):
+        # Integers cannot contain pipe, just verify they pass through
+        result = _normalize_data_file_kvp_value(42)
+        assert result == [42]
+
+
+class TestD3PipeDataFiles:
+    """D3-19 through D3-35: Pipe-delimited Data_File_Info integration tests."""
+
+    # D3-19: five parallel pipe-delimited scalar fields normalize to two files
+    def test_d3_19_five_pipe_fields_normalize_to_two_files(self):
+        """D3-19: Five parallel pipe-delimited scalars → exactly two PdsDataFile objects."""
+        body = json.dumps(_make_pipe_flat_payload()).encode("utf-8")
+        adapter = _make_adapter(body=body)
+        product, _ = adapter.fetch(_valid_request())
+        assert len(product.data_files) == 2
+
+    # D3-20: normalized sizes become integers 59120 and 72
+    def test_d3_20_pipe_sizes_normalized_to_ints(self):
+        """D3-20: file_size '59120|72' → file_size_bytes 59120 and 72."""
+        body = json.dumps(_make_pipe_flat_payload()).encode("utf-8")
+        adapter = _make_adapter(body=body)
+        product, _ = adapter.fetch(_valid_request())
+        assert product.data_files[0].file_size_bytes == 59120
+        assert product.data_files[1].file_size_bytes == 72
+
+    # D3-21: normalized filenames preserve segment order
+    def test_d3_21_pipe_filenames_preserve_order(self):
+        """D3-21: file_name 'A.LBL|B.TAB' → [A.LBL, B.TAB] in order."""
+        body = json.dumps(_make_pipe_flat_payload()).encode("utf-8")
+        adapter = _make_adapter(body=body)
+        product, _ = adapter.fetch(_valid_request())
+        assert product.data_files[0].file_name == "test_flat_product.LBL"
+        assert product.data_files[1].file_name == "test_flat_product.TAB"
+
+    # D3-22: normalized file refs preserve segment order
+    def test_d3_22_pipe_file_refs_preserve_order(self):
+        """D3-22: pipe-delimited file_ref produces correct URL for each file."""
+        body = json.dumps(_make_pipe_flat_payload()).encode("utf-8")
+        adapter = _make_adapter(body=body)
+        product, _ = adapter.fetch(_valid_request())
+        assert "test_flat_product.LBL" in product.data_files[0].file_ref
+        assert "test_flat_product.TAB" in product.data_files[1].file_ref
+
+    # D3-23: normalized MD5 values preserve segment order
+    def test_d3_23_pipe_md5_values_preserve_order(self):
+        """D3-23: md5 'aaa...|bbb...' → first file gets aaa..., second bbb..."""
+        body = json.dumps(_make_pipe_flat_payload()).encode("utf-8")
+        adapter = _make_adapter(body=body)
+        product, _ = adapter.fetch(_valid_request())
+        assert product.data_files[0].md5_checksum == "a" * 32
+        assert product.data_files[1].md5_checksum == "b" * 32
+
+    # D3-24: normalized MIME values preserve segment order
+    def test_d3_24_pipe_mime_values_preserve_order(self):
+        """D3-24: mime 'text/plain|application/octet-stream' → one per file in order."""
+        body = json.dumps(_make_pipe_flat_payload()).encode("utf-8")
+        adapter = _make_adapter(body=body)
+        product, _ = adapter.fetch(_valid_request())
+        assert product.data_files[0].mime_type == "text/plain"
+        assert product.data_files[1].mime_type == "application/octet-stream"
+
+    # D3-25: total_data_size_bytes equals sum of split sizes
+    def test_d3_25_total_size_equals_sum_of_pipe_sizes(self):
+        """D3-25: total_data_size_bytes == 59120 + 72 == 59192."""
+        body = json.dumps(_make_pipe_flat_payload()).encode("utf-8")
+        adapter = _make_adapter(body=body)
+        product, _ = adapter.fetch(_valid_request())
+        assert product.total_data_size_bytes == 59120 + 72
+
+    # D3-26: scalar values without | retain existing one-file behavior
+    def test_d3_26_scalar_no_pipe_one_file(self):
+        """D3-26: Scalar file fields without | produce exactly one file."""
+        body = _make_flat_response_bytes()  # single-file scalars
+        adapter = _make_adapter(body=body)
+        product, _ = adapter.fetch(_valid_request())
+        assert len(product.data_files) == 1
+        assert product.data_files[0].file_name == "test_flat_product.dat"
+        assert product.data_files[0].file_size_bytes == 4096
+
+    # D3-27: existing JSON arrays retain existing behavior (envelope form)
+    def test_d3_27_json_array_unchanged(self):
+        """D3-27: JSON list representation still produces correct files (envelope form)."""
+        payload = _make_valid_kvp_payload(
+            file_names=["file_a.dat", "file_b.dat"],
+            file_refs=["https://pds.nasa.gov/a.dat", "https://pds.nasa.gov/b.dat"],
+            file_sizes=["1000", "2000"],
+            md5s=["d41d8cd98f00b204e9800998ecf8427e", "d41d8cd98f00b204e9800998ecf8427e"],
+            mimes=["text/plain", "application/octet-stream"],
+        )
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        assert len(product.data_files) == 2
+        assert product.data_files[0].file_name == "file_a.dat"
+        assert product.data_files[1].file_name == "file_b.dat"
+
+    # D3-28: JSON list element containing | is NOT recursively split
+    def test_d3_28_list_element_with_pipe_not_recursively_split(self):
+        """D3-28: A list value ['A|B'] is treated as one file named 'A|B', not split."""
+        payload = _make_valid_kvp_payload(
+            file_names=["A|B"],
+            file_refs=["https://pds.nasa.gov/A"],
+            file_sizes=["100"],
+            md5s=None,
+            mimes=None,
+        )
+        # Remove optional fields
+        payload["data"][0].pop("ops:Data_File_Info.ops:md5_checksum", None)
+        payload["data"][0].pop("ops:Data_File_Info.ops:mime_type", None)
+        adapter = _make_adapter(payload=payload)
+        product, _ = adapter.fetch(_valid_request())
+        # Must be exactly 1 file — the list element is not pipe-split
+        assert len(product.data_files) == 1
+        assert product.data_files[0].file_name == "A|B"
+
+    # D3-29: required pipe cardinality mismatch rejected
+    def test_d3_29_pipe_cardinality_mismatch_rejected(self):
+        """D3-29: file_name='A|B' but file_ref='urlA' (cardinality 2 vs 1) → rejected."""
+        payload = _make_flat_valid_payload(
+            file_name="file_a.dat|file_b.dat",   # 2 after split
+            file_ref="https://pds.nasa.gov/a.dat",  # 1 (no pipe)
+            file_size="1000|2000",               # 2 after split
+        )
+        body = json.dumps(payload).encode("utf-8")
+        adapter = _make_adapter(body=body)
+        with pytest.raises(PdsValidationError, match="cardinality"):
+            adapter.fetch(_valid_request())
+
+    # D3-30: optional MD5 pipe cardinality mismatch rejected
+    def test_d3_30_optional_md5_pipe_cardinality_mismatch_rejected(self):
+        """D3-30: md5 cardinality 1, file_name cardinality 2 → PdsValidationError."""
+        payload = _make_flat_valid_payload(
+            file_name="file_a.dat|file_b.dat",
+            file_ref=(
+                "https://pds.nasa.gov/a.dat"
+                "|https://pds.nasa.gov/b.dat"
+            ),
+            file_size="1000|2000",
+            md5="d41d8cd98f00b204e9800998ecf8427e",  # only 1 — mismatch
+            mime="text/plain|application/octet-stream",
+        )
+        body = json.dumps(payload).encode("utf-8")
+        adapter = _make_adapter(body=body)
+        with pytest.raises(PdsValidationError, match="cardinality"):
+            adapter.fetch(_valid_request())
+
+    # D3-31: optional MIME pipe cardinality mismatch rejected
+    def test_d3_31_optional_mime_pipe_cardinality_mismatch_rejected(self):
+        """D3-31: mime cardinality 1, file_name cardinality 2 → PdsValidationError."""
+        payload = _make_flat_valid_payload(
+            file_name="file_a.dat|file_b.dat",
+            file_ref=(
+                "https://pds.nasa.gov/a.dat"
+                "|https://pds.nasa.gov/b.dat"
+            ),
+            file_size="1000|2000",
+            md5=(
+                "d41d8cd98f00b204e9800998ecf8427e"
+                "|d41d8cd98f00b204e9800998ecf8427e"
+            ),
+            mime="text/plain",  # only 1 — mismatch
+        )
+        body = json.dumps(payload).encode("utf-8")
+        adapter = _make_adapter(body=body)
+        with pytest.raises(PdsValidationError, match="cardinality"):
+            adapter.fetch(_valid_request())
+
+    # D3-32: invalid numeric pipe segment rejected
+    def test_d3_32_invalid_numeric_pipe_segment_rejected(self):
+        """D3-32: file_size '59120|not-an-int' → PdsValidationError (invalid size segment)."""
+        payload = _make_flat_valid_payload(
+            file_name="file_a.dat|file_b.dat",
+            file_ref=(
+                "https://pds.nasa.gov/a.dat"
+                "|https://pds.nasa.gov/b.dat"
+            ),
+            file_size="59120|not-an-int",
+            # Supply matching cardinality for optional fields so size error is hit first.
+            md5="d41d8cd98f00b204e9800998ecf8427e|d41d8cd98f00b204e9800998ecf8427e",
+            mime="application/octet-stream|application/octet-stream",
+        )
+        body = json.dumps(payload).encode("utf-8")
+        adapter = _make_adapter(body=body)
+        with pytest.raises(PdsValidationError, match="integer"):
+            adapter.fetch(_valid_request())
+
+    # D3-33: empty required size segment rejected
+    def test_d3_33_empty_pipe_size_segment_rejected(self):
+        """D3-33: file_size '59120|' produces empty string segment → PdsValidationError."""
+        payload = _make_flat_valid_payload(
+            file_name="file_a.dat|file_b.dat",
+            file_ref=(
+                "https://pds.nasa.gov/a.dat"
+                "|https://pds.nasa.gov/b.dat"
+            ),
+            file_size="59120|",  # empty segment after pipe — produces ["59120", ""]
+            # Supply matching cardinality for optional fields to isolate the size error.
+            md5="d41d8cd98f00b204e9800998ecf8427e|d41d8cd98f00b204e9800998ecf8427e",
+            mime="application/octet-stream|application/octet-stream",
+        )
+        body = json.dumps(payload).encode("utf-8")
+        adapter = _make_adapter(body=body)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+
+    # D3-34: non-string file_name element still rejected
+    def test_d3_34_non_string_file_name_element_rejected(self):
+        """D3-34: list element that is not a string for file_name → PdsValidationError."""
+        payload = _make_valid_kvp_payload(
+            file_names=[12345],  # integer element in list
+            file_refs=["https://pds.nasa.gov/test.dat"],
+            file_sizes=["1024"],
+            md5s=None,
+            mimes=None,
+        )
+        payload["data"][0].pop("ops:Data_File_Info.ops:md5_checksum", None)
+        payload["data"][0].pop("ops:Data_File_Info.ops:mime_type", None)
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())
+
+    # D3-35: non-string file_ref element still rejected
+    def test_d3_35_non_string_file_ref_element_rejected(self):
+        """D3-35: list element that is not a string for file_ref → PdsValidationError."""
+        payload = _make_valid_kvp_payload(
+            file_names=["test.dat"],
+            file_refs=[{"url": "https://pds.nasa.gov/test.dat"}],  # dict element
+            file_sizes=["1024"],
+            md5s=None,
+            mimes=None,
+        )
+        payload["data"][0].pop("ops:Data_File_Info.ops:md5_checksum", None)
+        payload["data"][0].pop("ops:Data_File_Info.ops:mime_type", None)
+        adapter = _make_adapter(payload=payload)
+        with pytest.raises(PdsValidationError):
+            adapter.fetch(_valid_request())

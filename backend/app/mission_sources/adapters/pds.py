@@ -487,6 +487,33 @@ def _parse_file_size(raw: object, index: int) -> int:
     )
 
 
+def _normalize_data_file_kvp_value(value: object) -> list:
+    """Normalize a single Data_File_Info KVP field value to a list.
+
+    Handles the pipe-delimited scalar encoding observed in D2R where multiple
+    file values are returned as a single ``"|"``-joined string rather than a
+    JSON array:
+
+    - ``None``             → ``[]``
+    - ``list``             → return list unchanged (no recursive splitting)
+    - ``str`` containing ``"|"``  → ``value.split("|")``
+    - any other scalar     → ``[value]``
+
+    Only scalar strings are pipe-split.  List elements that happen to contain
+    ``"|"`` are NOT further split — a list ``["A|B"]`` remains ``["A|B"]``.
+
+    This helper is used ONLY for the five observed Data_File_Info parallel
+    fields.  It must NOT be applied to identity, reference, or harvest fields.
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str) and "|" in value:
+        return value.split("|")
+    return [value]
+
+
 def _normalize_data_files(data_item: dict) -> tuple[PdsDataFile, ...]:
     """Extract and normalize ops:Data_File_Info fields into PdsDataFile instances.
 
@@ -494,6 +521,8 @@ def _normalize_data_files(data_item: dict) -> tuple[PdsDataFile, ...]:
     - Absent (no data files)
     - Scalar (one file)
     - Parallel arrays (multiple files)
+    - Pipe-delimited scalar strings (observed MCP endpoint encoding for multiple
+      files, e.g. ``"A.LBL|A.TAB"`` representing two file names)
 
     IMPORTANT: Does NOT include ops:Label_File_Info.  The XML label is
     metadata, not the science data payload.
@@ -514,11 +543,14 @@ def _normalize_data_files(data_item: dict) -> tuple[PdsDataFile, ...]:
     raw_mimes = data_item.get("ops:Data_File_Info.ops:mime_type")
 
     # Normalize all fields to lists for uniform processing.
-    names = _normalize_to_list(raw_names)
-    refs = _normalize_to_list(raw_refs)
-    sizes = _normalize_to_list(raw_sizes)
-    md5s = _normalize_to_list_optional(raw_md5s)
-    mimes = _normalize_to_list_optional(raw_mimes)
+    # Use _normalize_data_file_kvp_value for the five Data_File_Info fields so
+    # that pipe-delimited scalar strings (observed MCP endpoint encoding) are
+    # split into parallel element lists before cardinality validation.
+    names = _normalize_data_file_kvp_value(raw_names)
+    refs = _normalize_data_file_kvp_value(raw_refs)
+    sizes = _normalize_data_file_kvp_value(raw_sizes)
+    md5s = _normalize_data_file_kvp_value(raw_md5s)
+    mimes = _normalize_data_file_kvp_value(raw_mimes)
 
     n = len(names)
 
@@ -806,6 +838,142 @@ def _extract_title(data_item: dict) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _extract_exact_product_item(payload: dict) -> dict:
+    """Extract the single product data item from a parsed PDS JSON payload.
+
+    Supports two response forms based solely on JSON structure:
+
+    Form A — Envelope (existing format)
+    ------------------------------------
+    Detected when the top-level object contains EITHER ``"summary"`` or
+    ``"data"`` as a key.  When either is present, BOTH are required and must
+    be structurally valid.  Partial or malformed envelope responses fail closed
+    and do NOT fall back to flat mode.
+
+    Expected shape::
+
+        {
+            "summary": {"hits": 1, ...},
+            "data": [{...product fields...}]
+        }
+
+    Form B — Flat exact-product document (observed MCP endpoint)
+    -------------------------------------------------------------
+    Detected when BOTH ``"summary"`` and ``"data"`` are absent from the
+    top-level object.  The entire top-level object is treated directly as the
+    product data item and passed into downstream validation unchanged.
+
+    Expected shape::
+
+        {
+            "lid": "...",
+            "lidvid": "...",
+            ...all product fields as top-level keys...
+        }
+
+    A random flat dict is NOT automatically valid: the same downstream
+    identity, product-class, timestamp, and data-file validators apply.
+
+    Detection rule
+    --------------
+    The response form is determined exclusively from parsed JSON structure.
+    It does NOT depend on response host, redirect history, HTTP headers, or
+    Content-Type.  This ensures ``_validate_pds_raw_response()`` behaves
+    identically for live responses and offline snapshot re-validation.
+
+    Raises
+    ------
+    PdsValidationError
+        - If an envelope key is present but the envelope is malformed.
+        - If ``summary`` is present but ``data`` is absent (hybrid/partial).
+        - If ``data`` is present but ``summary`` is absent (hybrid/partial).
+        - If ``summary.hits == 0`` (zero-results response).
+        - If ``data`` is empty.
+        - If ``data`` contains more than one item.
+        - If ``data[0]`` is not an object.
+
+    PdsUnavailableError
+        - If ``summary.hits == 0`` or ``data == []``.
+    """
+    has_summary_key = "summary" in payload
+    has_data_key = "data" in payload
+
+    # --- Form A: envelope detection ---
+    # If either envelope key is present, treat the response as envelope form.
+    # Both keys must then be present and structurally valid.
+    if has_summary_key or has_data_key:
+        # Partial envelope: one key present, other absent → fail closed.
+        # Must NOT fall back to flat mode.
+        if has_summary_key and not has_data_key:
+            raise PdsValidationError(
+                "PDS Search API response is missing a valid 'data' array."
+            )
+        if has_data_key and not has_summary_key:
+            raise PdsValidationError(
+                "PDS Search API response is missing a valid 'summary' object."
+            )
+
+        # Both keys present: validate types.
+        summary = payload["summary"]
+        if not isinstance(summary, dict):
+            raise PdsValidationError(
+                "PDS Search API response is missing a valid 'summary' object."
+            )
+
+        data = payload["data"]
+        if not isinstance(data, list):
+            raise PdsValidationError(
+                "PDS Search API response is missing a valid 'data' array."
+            )
+
+        # Validate hits cardinality (strict non-boolean integer if present).
+        hits = summary.get("hits")
+        if hits is not None:
+            if not isinstance(hits, int) or isinstance(hits, bool):
+                raise PdsValidationError(
+                    "PDS Search API response summary.hits is not a valid integer."
+                )
+            hits_int: int = hits
+            if hits_int == 0:
+                raise PdsUnavailableError(
+                    "PDS Search API reported zero hits for this LIDVID. "
+                    "The product metadata is not available from this PDS Search API "
+                    "request/service. The Search API is not guaranteed to be fully "
+                    "populated with every PDS dataset."
+                )
+            if hits_int != 1:
+                raise PdsValidationError(
+                    f"PDS Search API returned summary.hits={hits_int}; "
+                    "expected exactly 1 for an exact LIDVID request."
+                )
+
+        if len(data) == 0:
+            raise PdsUnavailableError(
+                "PDS Search API returned an empty data array for this LIDVID. "
+                "The product metadata is not available from this PDS Search API "
+                "request/service. The Search API is not guaranteed to be fully "
+                "populated with every PDS dataset."
+            )
+
+        if len(data) > 1:
+            raise PdsValidationError(
+                f"PDS Search API returned {len(data)} items in data; "
+                "expected exactly 1 for an exact LIDVID request."
+            )
+
+        data_item = data[0]
+        if not isinstance(data_item, dict):
+            raise PdsValidationError(
+                "PDS Search API data[0] is not an object."
+            )
+        return data_item
+
+    # --- Form B: flat exact-product document ---
+    # Neither "summary" nor "data" is present: the top-level object is itself
+    # the product data item.  No synthetic authority is injected.
+    return payload
+
+
 def _validate_pds_raw_response(
     request: PdsProductRequest,
     raw_bytes: bytes,
@@ -816,6 +984,15 @@ def _validate_pds_raw_response(
     This is the single authoritative validation boundary for the live HTTP
     fetch path.  It performs NO HTTP requests.
 
+    Accepts two response forms, detected from JSON structure only (not from
+    transport history, host, or Content-Type):
+
+    - **Envelope form** ``{"summary": {...}, "data": [{...}]}``: the existing
+      NASA PDS Search API format.  Malformed or partial envelopes fail closed.
+    - **Flat exact-product form** ``{...product fields...}``: observed from the
+      MCP deployment endpoint (D2R).  The top-level object is treated directly
+      as the product data item and subjected to the same strict validators.
+
     Parameters
     ----------
     request:
@@ -823,7 +1000,8 @@ def _validate_pds_raw_response(
 
     raw_bytes:
         Exact raw HTTP response body bytes.  Must not exceed
-        ``_MAX_RESPONSE_BYTES`` (2 MiB).
+        ``_MAX_RESPONSE_BYTES`` (2 MiB).  Provenance SHA-256 is computed from
+        these exact bytes — they are never re-serialized or altered.
 
     retrieved_at:
         Timezone-aware datetime representing when the response was acquired.
@@ -875,6 +1053,8 @@ def _validate_pds_raw_response(
         )
 
     # 2. Hash the raw bytes before any decoding.
+    # This hash is ALWAYS computed from the exact original raw_bytes and is
+    # never recomputed from re-serialized or normalized content.
     content_sha256 = hashlib.sha256(raw_bytes).hexdigest()
 
     # 3. Parse JSON.
@@ -890,62 +1070,11 @@ def _validate_pds_raw_response(
             "PDS Search API response JSON is not an object."
         )
 
-    # 4. Validate envelope structure: summary + data.
-    summary = payload.get("summary")
-    if not isinstance(summary, dict):
-        raise PdsValidationError(
-            "PDS Search API response is missing a valid 'summary' object."
-        )
+    # 4. Extract the single product data item (envelope or flat form).
+    # Response form is determined solely from parsed JSON structure.
+    data_item = _extract_exact_product_item(payload)
 
-    data = payload.get("data")
-    if not isinstance(data, list):
-        raise PdsValidationError(
-            "PDS Search API response is missing a valid 'data' array."
-        )
-
-    # 5. Validate cardinality: exactly one product.
-    # hits must be a strict non-boolean integer if present.
-    hits = summary.get("hits")
-    if hits is not None:
-        if not isinstance(hits, int) or isinstance(hits, bool):
-            raise PdsValidationError(
-                "PDS Search API response summary.hits is not a valid integer."
-            )
-        hits_int: int = hits
-        if hits_int == 0:
-            raise PdsUnavailableError(
-                "PDS Search API reported zero hits for this LIDVID. "
-                "The product metadata is not available from this PDS Search API "
-                "request/service. The Search API is not guaranteed to be fully "
-                "populated with every PDS dataset."
-            )
-        if hits_int != 1:
-            raise PdsValidationError(
-                f"PDS Search API returned summary.hits={hits_int}; "
-                "expected exactly 1 for an exact LIDVID request."
-            )
-
-    if len(data) == 0:
-        raise PdsUnavailableError(
-            "PDS Search API returned an empty data array for this LIDVID. "
-            "The product metadata is not available from this PDS Search API "
-            "request/service. The Search API is not guaranteed to be fully "
-            "populated with every PDS dataset."
-        )
-
-    if len(data) > 1:
-        raise PdsValidationError(
-            f"PDS Search API returned {len(data)} items in data; "
-            "expected exactly 1 for an exact LIDVID request."
-        )
-
-    data_item = data[0]
-    if not isinstance(data_item, dict):
-        raise PdsValidationError(
-            "PDS Search API data[0] is not an object."
-        )
-
-    # 6. Identity + product-class validation.
+    # 5. Identity + product-class validation (formerly step 6).
     # Returns the actual IA-sourced logical_identifier and version_id.
     effective_lid, effective_version = _validate_identity(request, data_item)
 
