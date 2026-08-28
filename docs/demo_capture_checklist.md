@@ -248,4 +248,73 @@ gcsi-14-evidence-before-after.png
 
 ---
 
-*GCSI Demo Capture Checklist — Phase 5*
+## PJ62 Historical Replay Capture Path
+
+Use this additional section when capturing the Juno PJ62 historical replay demonstration.
+
+### Pre-Capture Setup (Historical Replay)
+
+- [ ] Backend started with historical replay environment:
+  - `GCSI_SOURCE_MODE=historical_replay`
+  - `GCSI_REPLAY_DESCRIPTOR=data/replays/juno_pj62_mwr_v1.json`
+  - `GCSI_AI_PROVIDER=local`
+- [ ] Startup banner confirms: `HISTORICAL REPLAY`, `GCSI-HistoricalReplayProvider`, `JUNO`, `2 data products`
+- [ ] No accidental external API keys in environment (`GCSI_GRANITE_API_KEY` blank)
+- [ ] Frontend at `http://localhost:5173`
+- [ ] Console clear of uncaught exceptions
+
+### Mandatory pre-record checklist (PJ62)
+
+- [ ] Historical replay banner visible in UI
+- [ ] JUNO visible in source/mission context
+- [ ] "not live telemetry" wording visible
+- [ ] Capacity pressure visible: queued (94.3 Mbit) > available (81.0 Mbit)
+- [ ] IRDR and GRDR both visible in data products panel
+- [ ] `GCSI_AI_PROVIDER=local` confirmed (no external AI call during capture)
+- [ ] Backend and frontend clean startup confirmed
+- [ ] No accidental secrets visible in any panel or URL bar
+
+### PJ62 Capture Scenes
+
+**Scene H1 — Source Context**
+- HISTORICAL REPLAY mode visible
+- JUNO mission context visible
+- Not-live-telemetry wording visible
+- Provenance counts visible (3 external-authoritative, 13 derived, 1 modeled)
+
+**Scene H2 — Link Geometry**
+- Distance: 893,345,396.8 km (authoritative JPL value)
+- Protocol Latency and Signal Propagation Delay labeled separately
+- Propagation delay ~49.7 min (not 1.5 s)
+
+**Scene H3 — Capacity Shortfall**
+- Available capacity: 81,000,000 bits
+- Queued: 94,309,288 bits
+- Shortfall visible
+
+**Scene H4 — Two MWR Products**
+- JUNO-MWR-PJ62-IRDR: 53,557,312 bits
+- JUNO-MWR-PJ62-GRDR: 40,751,976 bits
+- Both labeled with role (IRDR = primary science, GRDR = geometry/ancillary)
+
+**Scene H5 — Plan Generation**
+- Four deterministic plans generated
+- IRDR ranked first in all plans
+- GRDR deferred
+
+**Scene H6 — AI Advisory**
+- Local provider recommendation visible
+- `actual_provider: Local` (no external AI call)
+- Advisory label visible — not yet approved
+
+**Scene H7 — Human Authority**
+- Approve button visible but not yet clicked
+- Risk level and plan summary visible
+
+**Scene H8 — Reset (optional)**
+- POST /state/reset → `randomized: false`, `scenario_path: null`
+- State reloads: `distance_km = 893345396.8038701` (deterministic)
+
+---
+
+*GCSI Demo Capture Checklist — Phase 6E-C8*

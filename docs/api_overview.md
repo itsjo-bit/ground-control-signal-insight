@@ -12,8 +12,9 @@
 
 | Method | Path | Mutation | Description |
 |---|---|---|---|
-| `GET` | `/state` | READ-ONLY | Full mission state: link conditions, scenario info, propagation delay, approval status |
-| `GET` | `/health` | READ-ONLY | Liveness probe: version, scenario loaded, product count |
+| `GET` | `/state` | READ-ONLY | Full mission state: link conditions, scenario info, propagation delay, approval status. Includes `source` sub-object with `mode`, `is_historical_replay`, `provenance_scope`, and `provenance_kind_counts` when in historical replay mode. |
+| `GET` | `/health` | READ-ONLY | Liveness probe: version, scenario loaded, product count. In historical replay mode also reports `source_mode`, `historical_replay_active`, and `source_provenance_available`. |
+| `POST` | `/state/reset` | **STATE-MUTATING** | Reset to initial state. In historical replay mode: deterministic, `randomized: false`, `scenario_path: null`. In synthetic mode: randomized jitter applied. |
 
 ### Data Products & Queue
 
@@ -67,7 +68,8 @@ Both approval endpoints verify canonical fingerprint integrity before registerin
 |---|---|---|---|
 | `GET` | `/scenarios` | READ-ONLY | List available scenario files |
 | `POST` | `/scenarios/load` | **STATE-MUTATING** | Load a different scenario; resets all state |
-| `POST` | `/scenarios/reset` | **STATE-MUTATING** | Reset active scenario to initial state (clears approval + simulation) |
+| `POST` | `/scenarios/switch` | **STATE-MUTATING** | Switch to a different scenario by filename (basename only; path traversal rejected). Switches from historical to synthetic mode. |
+| `POST` | `/scenarios/reset` | **STATE-MUTATING** | Alias for `/state/reset`. Reset active scenario to initial state. |
 
 ---
 
@@ -95,4 +97,48 @@ When the backend is running, the full OpenAPI schema is available at:
 
 ---
 
-*GCSI API Overview — Phase 4.2F5*
+---
+
+## Historical Replay Source Metadata
+
+When `GCSI_SOURCE_MODE=historical_replay` is active, `/health` and `/state` expose
+additional fields documenting the mission source context.
+
+### GET /health (historical fields)
+
+```json
+{
+  "source_mode": "historical_replay",
+  "historical_replay_active": true,
+  "source_provenance_available": true
+}
+```
+
+### GET /state (source sub-object)
+
+```json
+{
+  "source": {
+    "mode": "historical_replay",
+    "is_historical_replay": true,
+    "provenance_scope": "source_baseline",
+    "provenance_kind_counts": {
+      "external_authoritative": 3,
+      "derived": 13,
+      "modeled": 1
+    }
+  }
+}
+```
+
+**Provenance categories:**
+
+| Kind | Meaning |
+|---|---|
+| `external_authoritative` | Value comes directly from a verified external NASA/JPL source |
+| `derived` | Computed deterministically from authoritative inputs by GCSI |
+| `modeled` | GCSI communication policy assumption — not from NASA |
+
+---
+
+*GCSI API Overview — Phase 6E-C8*

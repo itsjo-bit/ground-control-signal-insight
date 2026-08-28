@@ -150,4 +150,59 @@ See [`docs/benchmark_methodology.md`](benchmark_methodology.md) for the complete
 
 ---
 
-*GCSI architecture documentation — Phase 4.2F5*
+---
+
+## Historical Mission-Source Architecture
+
+GCSI supports two source modes for runtime scenario construction:
+
+```
+Synthetic ScenarioLoader                    HistoricalReplayProvider
+        |                                           |
+        |  loads JSON scenario file                 |  reads verified snapshot stores
+        |                                           |     └─ HorizonsSnapshotStore
+        |                                           |     └─ PdsArchiveSnapshotStore
+        |                                           |            ↓
+        |                                           |     ReplayAssembler
+        |                                           |     (constructs Scenario + MissionState
+        |                                           |      from authoritative facts +
+        |                                           |      modeled GCSI policy)
+        |                                           |            ↓
+        |                                           |     MissionSourceBundle
+        |                                           |     (Scenario + ProvenanceManifest)
+        ↓                                           ↓
+                    runtime Scenario
+                    (identical contract for all downstream components)
+                           ↓
+             TelecomEngine → LinkState
+             CandidatePrioritizer → bounded candidate set
+             CandidateGenerator → 5 plans
+             PlanEvaluator + MissionOutcomeEvaluator (authoritative)
+             AI advisory (Stage 1 + Stage 2)
+             Human operator → final authority
+```
+
+**Source mode selection:**
+- `GCSI_SOURCE_MODE=synthetic_scenario` — default; loads from `data/scenarios/`
+- `GCSI_SOURCE_MODE=historical_replay` — activates `HistoricalReplayProvider`
+
+**Provenance manifest:**
+The `ProvenanceManifest` attached to every historical bundle classifies each value as
+`external_authoritative`, `derived`, or `modeled`. This classification is surfaced in the
+`/state` and `/health` API responses.
+
+**What does NOT change between modes:**
+- TelecomEngine formulas (authoritative, deterministic)
+- CandidatePrioritizer algorithm
+- PlanEvaluator and MissionOutcomeEvaluator
+- AI advisory layers (Stage 1 and Stage 2)
+- Human approval authority
+
+The three-layer authority model applies equally in both modes:
+- AI = advisory
+- Deterministic telecom/evaluation = authoritative
+- Operator = final authority
+
+---
+
+*GCSI architecture documentation — Phase 6E-C8*

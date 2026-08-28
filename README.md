@@ -50,13 +50,15 @@ during development and led to a deliberately iterative workflow:
 **small scoped task → Bob implementation → independent review → regression
 testing → refinement**
 
-At the current submission state, GCSI's final CI run validates
-**2,117 passing automated tests** across backend and frontend:
-- 1,915 backend tests passing
-- 202 frontend tests passing
+At the **Phase 6E-C8 readiness checkpoint**, the canonical verification suite reports:
 
-The frontend CI also validates TypeScript type checking and the production
-build.
+- **3,590 backend tests passing** (3 skipped, 1 deselected) — run with `python -m pytest tests -q`
+- **218 frontend tests passing** (6 test files) — run with `npm test` from `frontend/`
+- TypeScript typecheck: **pass** — run with `npm run typecheck` from `frontend/`
+- Production build: **pass** — run with `npm run build` from `frontend/`
+
+These numbers reflect the Phase 6E-C8 state.
+Reproduce them with the canonical commands above rather than relying on this static count.
 
 ---
 
@@ -477,6 +479,106 @@ displays a clear warning that high-volume AI prioritization is unavailable. This
 Legacy scenarios are not the demo target.
 
 `mission_data_v2.json` is an intermediate data-product scenario, also retained for compatibility.
+
+---
+
+## Historical Replay — Juno PJ62
+
+GCSI's second demonstration mode anchors the mission context in verified real-world archival data
+rather than a synthetic scenario.
+
+### Purpose
+
+| Demo | Purpose | Source |
+|---|---|---|
+| **ASTERIA-7** | Stress-test triage at large queue scale | Synthetic scenario (fictional mission) |
+| **Juno PJ62** | Demonstrate trustworthy real-world archive integration | NASA/JPL/PDS archival facts + explicit modeled GCSI policy |
+
+They demonstrate different capabilities. ASTERIA-7 is not replaced — it remains the primary
+stress-test and high-volume pipeline demonstration.
+
+### What the Juno PJ62 replay is
+
+Juno is a real NASA spacecraft in orbit around Jupiter. Perijove 62 (PJ62) was a real
+close flyby in June 2024.
+
+GCSI reconstructs a **decision scenario** from verified archival facts:
+
+| Source | What GCSI uses |
+|---|---|
+| **JPL Horizons** (external authoritative) | Exact-epoch Juno–Sun geometry at 2024-06-14T03:59:55.483Z |
+| **NASA PDS archive** (external authoritative) | MWR PJ62 IRDR and GRDR product metadata (size, LIDVID, observation window) |
+| **GCSI modeled policy** (modeled) | SNR, data rate, link stability, decision window, risk score, product priority attributes |
+
+The archival facts are committed as verified snapshots with SHA-256 integrity locks.
+
+> **Critical boundary**: This is not live telemetry and not a reconstruction of
+> an actual NASA transmission decision. GCSI uses verified archival facts to anchor
+> the mission context. Communication constraints and product priority attributes are
+> explicitly modeled GCSI policy — not NASA data.
+
+### The decision pressure
+
+- **Available capacity**: 81,000,000 bits (modeled 90 s window × 90,000 bps goodput)
+- **IRDR queued**: 53,557,312 bits (6,694,664 bytes — from PDS archive)
+- **GRDR queued**: 40,751,976 bits (5,093,997 bytes — from PDS archive)
+- **Total queued**: 94,309,288 bits — **does not fit in one window**
+
+Both products cannot be transmitted sequentially within the modeled window.
+This capacity shortfall is the core decision problem.
+
+### Running the PJ62 historical replay
+
+**Bash / macOS / Linux:**
+
+```bash
+export GCSI_SOURCE_MODE=historical_replay
+export GCSI_REPLAY_DESCRIPTOR=data/replays/juno_pj62_mwr_v1.json
+export GCSI_AI_PROVIDER=local
+# from project root:
+uvicorn backend.app.main:app --port 8000
+```
+
+**Windows PowerShell:**
+
+```powershell
+$env:GCSI_SOURCE_MODE = "historical_replay"
+$env:GCSI_REPLAY_DESCRIPTOR = "data/replays/juno_pj62_mwr_v1.json"
+$env:GCSI_AI_PROVIDER = "local"
+# from project root:
+.venv\Scripts\python.exe -m uvicorn backend.app.main:app --port 8000
+```
+
+**Frontend (same as any other mode):**
+
+```bash
+cd frontend
+npm run dev
+```
+
+The backend startup banner will confirm:
+```
+[GCSI] Source mode      : HISTORICAL REPLAY
+[GCSI] Provider         : GCSI-HistoricalReplayProvider
+[GCSI] Mission          : JUNO
+[GCSI] Data products    : 2
+[GCSI] Geometry         : available
+[GCSI] Replay semantics : reconstructed historical scenario
+[GCSI]                    NOT live spacecraft telemetry
+```
+
+**AI provider notes:**
+
+| Provider | Use | Credentials |
+|---|---|---|
+| `local` | Reliable offline demo — **recommended** | None |
+| `granite` | Optional external AI advisory | IBM watsonx.ai credentials required |
+
+Setting `GCSI_AI_PROVIDER=local` does not affect the historical source data.
+The replay loads from verified NASA/JPL/PDS snapshots regardless of AI provider.
+
+See [`docs/juno_pj62_historical_replay_demo.md`](docs/juno_pj62_historical_replay_demo.md)
+for the complete operator/judge demonstration guide.
 
 ---
 

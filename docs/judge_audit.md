@@ -295,6 +295,58 @@ The manifest correctly records `run_type: "pilot"` and `run_status: "completed"`
 
 ---
 
+---
+
+## Phase 6E-C8 Supplement — Historical Replay PJ62
+
+This section documents the C8 audit findings for the Juno PJ62 historical replay.
+
+### C8.1 — PJ62 Path Verification
+
+| Check | Result |
+|---|---|
+| Historical backend starts from documented env | PASS |
+| No NASA network request at runtime | PASS |
+| Local AI provider works without credentials | PASS |
+| `/state` reports exact PJ62 frozen values | PASS |
+| Two MWR products visible | PASS |
+| Capacity shortfall visible (queued > available) | PASS |
+| Historical/not-live context visible in API | PASS |
+| Provenance category boundary clear (3 ext-auth, 13 derived, 1 modeled) | PASS |
+| Deterministic baseline plans work (IRDR first in all) | PASS |
+| AI advisory route works | PASS |
+| Human approval authority intact | PASS |
+| Historical reset is deterministic (randomized: false) | PASS |
+| Historical → synthetic switching works | PASS |
+| Frontend typecheck/tests/build pass | PASS |
+
+### C8.2 — Prohibited Claim Audit
+
+No README, docs, or submission material was found to contain:
+- "live Juno telemetry"
+- "actual historical NASA transmission"
+- "NASA-reported SNR/data rate"
+- "PDS proves both files queued together"
+- "AI controls transmission"
+
+The `.env.example` correctly documents historical replay variables.
+The README's new Historical Replay section includes the critical limitation notice.
+
+### C8.3 — Documentation Added
+
+| File | Status |
+|---|---|
+| `docs/juno_pj62_historical_replay_demo.md` | NEW — canonical PJ62 demo guide |
+| `README.md` | UPDATED — PJ62 section added, stale test counts replaced |
+| `docs/api_overview.md` | UPDATED — `/state/reset`, `/scenarios/switch`, historical metadata documented |
+| `docs/architecture.md` | UPDATED — historical mission-source architecture added |
+| `docs/judge_audit.md` | UPDATED — C8 supplement added (this section) |
+| `docs/demo_capture_checklist.md` | UPDATED — PJ62 path added |
+
+*No production code was modified in C8.*
+
+---
+
 ## Architecture Freeze Verification
 
 No changes were made to:
@@ -312,5 +364,5 @@ No changes were made to:
 - `data/scenarios/mission_data_v3.json`
 - `data/scenarios/asteria7_thermal_priority_contact_v1.json`
 
-*GCSI Phase 5A — Hostile Judge Audit*
+*GCSI Phase 5A — Hostile Judge Audit (updated Phase 6E-C8)*
 *Document purpose: internal pre-submission engineering review only.*
