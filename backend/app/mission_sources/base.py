@@ -63,8 +63,7 @@ class BaseMissionSourceProvider(ABC):
         manifest = bundle.provenance
 
     The provider is intentionally NOT wired into ``state.py`` or any
-    API route in Phase 6C.  It remains dormant until a later controlled
-    activation phase.
+    API route until a controlled activation phase (Phase 6E-C6).
     """
 
     @property

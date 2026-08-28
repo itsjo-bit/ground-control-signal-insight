@@ -7,10 +7,9 @@ Design notes
 ------------
 ``MissionSourceMode``
     Stable string enum representing the top-level source mode.
-    ``synthetic_scenario`` is the only *implemented* mode in Phase 6C.
-    ``historical_replay`` is a forward contract: the enum value exists so
-    that code that inspects the mode does not break when a future provider
-    is introduced, but no ``HistoricalReplayProvider`` is implemented here.
+    Both ``synthetic_scenario`` and ``historical_replay`` are implemented.
+    ``historical_replay`` is dormant until Phase 6E-C6 activates it in the
+    runtime source selector.
 
 ``MissionSourceBundle``
     Boundary object produced by a provider.  It carries:
@@ -55,14 +54,13 @@ class MissionSourceMode(str, Enum):
 
     ``historical_replay``
         A reconstructed real mission scenario assembled from authoritative
-        external archives (e.g. NASA PDS + JPL Horizons).  This value is a
-        forward contract only: no ``HistoricalReplayProvider`` exists in
-        Phase 6C.  The presence of this enum value does NOT imply that
-        historical replay is functional.
+        external archives (e.g. NASA PDS + JPL Horizons).  Implemented in
+        Phase 6E-C5 by :class:`~backend.app.mission_sources.historical_provider.HistoricalReplayProvider`.
+        Dormant until Phase 6E-C6 activation in the runtime source selector.
     """
 
     SYNTHETIC_SCENARIO = "synthetic_scenario"
-    HISTORICAL_REPLAY = "historical_replay"  # forward contract — not implemented
+    HISTORICAL_REPLAY = "historical_replay"  # implemented — Phase 6E-C5
 
 
 # ---------------------------------------------------------------------------

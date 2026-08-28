@@ -1,4 +1,4 @@
-"""GCSI Phase 6E-C4B — Mission Source Provider Boundary.
+"""GCSI Phase 6E-C5 — Mission Source Provider Boundary.
 
 This package introduces the top-level mission-source boundary that allows
 interchangeable providers of canonical GCSI Scenarios and their provenance
@@ -12,7 +12,7 @@ Architecture
         |
         +-- SyntheticScenarioProvider      [Phase 6C — implemented]
         |
-        +-- HistoricalReplayProvider       [future — NOT implemented here]
+        +-- HistoricalReplayProvider       [Phase 6E-C5 — implemented]
 
 The output of any provider is a :class:`MissionSourceBundle`:
 
@@ -22,16 +22,16 @@ The output of any provider is a :class:`MissionSourceBundle`:
           ↓
     MissionSourceBundle (Scenario + ProvenanceManifest + metadata)
           ↓
-    future runtime activation
+    future runtime activation (Phase 6E-C6)
 
 IMPORTANT
 ---------
-- This package is completely dormant in Phase 6C.  It is NOT wired into
-  ``state.py``, ``ScenarioLoader``, or any API route.
+- ``HistoricalReplayProvider`` is implemented but dormant.  It is NOT
+  wired into ``state.py``, ``ScenarioLoader``, or any API route.
 - The existing application startup path is unchanged.
-- No NASA/JPL/Horizons/PDS/SPICE code exists here or is planned here;
-  those will eventually be SOURCE ADAPTERS used *internally* by a future
-  ``HistoricalReplayProvider``, not top-level provider implementations.
+- All historical replay snapshot IO is performed through verified stores only
+  (HorizonsSnapshotStore, PdsArchiveSnapshotStore).
+- ``ReplayAssembler`` is a pure function — it performs zero IO.
 
 Public surface
 --------------
@@ -45,7 +45,9 @@ from .errors import (
     MissionSourceUnavailableError,
     MissionSourceValidationError,
 )
+from .historical_provider import HistoricalReplayProvider
 from .models import MissionSourceBundle, MissionSourceMode
+from .replay_assembler import ReplayAssembler
 from .replay_descriptor import (
     DESCRIPTOR_SCHEMA,
     DESCRIPTOR_VERSION,
@@ -69,6 +71,9 @@ __all__ = [
     "BaseMissionSourceProvider",
     # Concrete providers
     "SyntheticScenarioProvider",
+    "HistoricalReplayProvider",  # Phase 6E-C5 — implemented, dormant
+    # Assembler
+    "ReplayAssembler",           # Phase 6E-C5 — implemented
     # Errors
     "MissionSourceError",
     "MissionSourceUnavailableError",

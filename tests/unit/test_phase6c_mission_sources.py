@@ -217,22 +217,29 @@ def test_3_synthetic_provider_mode_is_synthetic_scenario(
 
 
 # ---------------------------------------------------------------------------
-# Test 4 — historical_replay enum exists but no historical provider exists
+# Test 4 — historical_replay enum exists; Phase 6E-C5 implements provider
 # ---------------------------------------------------------------------------
 
 
-def test_4_historical_replay_enum_exists_no_provider() -> None:
-    """MissionSourceMode.HISTORICAL_REPLAY must exist as a forward contract.
-    No HistoricalReplayProvider class must exist in the package."""
+def test_4_historical_replay_enum_exists_with_provider() -> None:
+    """MissionSourceMode.HISTORICAL_REPLAY must exist.
+
+    Updated in Phase 6E-C5: HistoricalReplayProvider is now implemented
+    and exported from the package (dormant — not wired into runtime).
+    The enum value serialization must remain unchanged.
+    """
     assert MissionSourceMode.HISTORICAL_REPLAY is not None
     assert MissionSourceMode.HISTORICAL_REPLAY.value == "historical_replay"
 
-    # Confirm no HistoricalReplayProvider is importable from the package
+    # Phase 6E-C5: HistoricalReplayProvider is now implemented and exported.
     import backend.app.mission_sources as pkg
 
-    assert not hasattr(pkg, "HistoricalReplayProvider"), (
-        "HistoricalReplayProvider must NOT be implemented in Phase 6C"
+    assert hasattr(pkg, "HistoricalReplayProvider"), (
+        "HistoricalReplayProvider must be implemented in Phase 6E-C5"
     )
+    from backend.app.mission_sources import HistoricalReplayProvider
+    provider = HistoricalReplayProvider()
+    assert provider.source_mode.value == "historical_replay"
 
 
 # ---------------------------------------------------------------------------
