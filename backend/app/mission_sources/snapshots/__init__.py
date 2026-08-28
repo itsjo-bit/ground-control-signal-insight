@@ -48,6 +48,11 @@ from .pds_snapshot_models import (
     PdsSnapshotEnvelope,
 )
 
+# Backward-compatible Phase 6D aliases.
+# New code should prefer source-qualified constants.
+SNAPSHOT_SCHEMA = HORIZONS_SNAPSHOT_SCHEMA
+SNAPSHOT_VERSION = HORIZONS_SNAPSHOT_VERSION
+
 __all__ = [
     # Horizons
     "HorizonsSnapshotStore",
@@ -65,4 +70,7 @@ __all__ = [
     "PdsSnapshotValidationError",
     "PDS_SNAPSHOT_SCHEMA",
     "PDS_SNAPSHOT_VERSION",
+    # Backward-compatible Phase 6D aliases
+    "SNAPSHOT_SCHEMA",
+    "SNAPSHOT_VERSION",
 ]

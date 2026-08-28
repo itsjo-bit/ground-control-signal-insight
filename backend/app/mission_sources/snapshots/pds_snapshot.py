@@ -72,6 +72,7 @@ from typing import Optional, Union
 from pydantic import ValidationError as PydanticValidationError
 
 from backend.app.mission_sources.adapters.pds import (
+    PdsAdapterError,
     PdsValidationError,
     _validate_pds_raw_response,
 )
@@ -307,7 +308,7 @@ class PdsSnapshotStore:
                 raw_bytes=raw_bytes,
                 retrieved_at=retrieved_at,
             )
-        except PdsValidationError as exc:
+        except PdsAdapterError as exc:
             raise PdsSnapshotValidationError(
                 "Snapshot write rejected: capture failed raw-response re-validation."
             ) from exc
@@ -551,7 +552,7 @@ class PdsSnapshotStore:
                 raw_bytes=decoded_raw,
                 retrieved_at=envelope.retrieved_at,
             )
-        except PdsValidationError as exc:
+        except PdsAdapterError as exc:
             raise PdsSnapshotValidationError(
                 "Snapshot raw PDS response failed re-validation."
             ) from exc

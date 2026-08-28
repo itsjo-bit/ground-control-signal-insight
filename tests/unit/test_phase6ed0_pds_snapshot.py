@@ -812,3 +812,185 @@ class TestErrorHierarchy:
     def test_pds_snapshot_validation_is_mission_source_validation(self):
         from backend.app.mission_sources.errors import MissionSourceValidationError
         assert issubclass(PdsSnapshotValidationError, MissionSourceValidationError)
+
+
+# ---------------------------------------------------------------------------
+# J. Zero-hit / PdsUnavailableError normalization (D0.1 — tests 46-47)
+# ---------------------------------------------------------------------------
+
+
+class TestZeroHitNormalization:
+    """J.46–J.47: PdsUnavailableError from shared validator is normalized to
+    PdsSnapshotValidationError and must not escape the snapshot boundary.
+    """
+
+    # ------------------------------------------------------------------
+    # helpers
+    # ------------------------------------------------------------------
+
+    def _zero_hit_envelope_bytes(self) -> bytes:
+        """Return a structurally valid PDS JSON envelope with zero hits."""
+        return json.dumps({"summary": {"hits": 0}, "data": []}).encode("utf-8")
+
+    def _make_valid_snapshot_dict(self, tmp_path) -> tuple[Path, dict]:
+        """Write a valid snapshot and return (path, parsed dict)."""
+        dest = tmp_path / "snap.json"
+        PdsSnapshotStore.write(_make_capture(), dest)
+        return dest, json.loads(dest.read_text("utf-8"))
+
+    # ------------------------------------------------------------------
+    # J.46 — load: zero-hit raw bytes inside snapshot → PdsSnapshotValidationError
+    # ------------------------------------------------------------------
+
+    def test_46_load_zero_hit_raises_snapshot_validation_not_unavailable(
+        self, tmp_path
+    ):
+        """Starting from a structurally valid snapshot, replace the decoded raw
+        PDS response with a valid zero-hit envelope and update only the stored
+        raw-response hashes so execution reaches shared raw-response re-validation.
+
+        Requires PdsSnapshotValidationError.
+        Proves PdsUnavailableError does NOT escape.
+        """
+        from backend.app.mission_sources.adapters.pds import PdsUnavailableError
+
+        dest, raw = self._make_valid_snapshot_dict(tmp_path)
+
+        # Replace raw bytes with a zero-hit PDS envelope.
+        zero_bytes = self._zero_hit_envelope_bytes()
+        new_b64 = base64.b64encode(zero_bytes).decode("ascii")
+        new_hash = hashlib.sha256(zero_bytes).hexdigest()
+
+        raw["raw_response_base64"] = new_b64
+        raw["raw_response_sha256"] = new_hash
+        # Update provenance.content_sha256 to pass hash checks and reach the
+        # shared validator (steps 9 and 10 in the load sequence).
+        raw["provenance"]["content_sha256"] = new_hash
+
+        dest.write_text(json.dumps(raw, sort_keys=True), encoding="utf-8")
+
+        # Must raise PdsSnapshotValidationError, never PdsUnavailableError.
+        with pytest.raises(PdsSnapshotValidationError):
+            PdsSnapshotStore.load(dest)
+
+        # Explicitly prove PdsUnavailableError does not escape.
+        try:
+            PdsSnapshotStore.load(dest)
+        except PdsSnapshotValidationError:
+            pass  # correct — normalized
+        except Exception as exc:  # noqa: BLE001
+            raise AssertionError(
+                f"PdsUnavailableError (or other non-snapshot exception) escaped "
+                f"snapshot load boundary: {type(exc).__name__}: {exc}"
+            ) from exc
+
+    # ------------------------------------------------------------------
+    # J.47 — write: zero-hit capture bytes → PdsSnapshotValidationError
+    # ------------------------------------------------------------------
+
+    def test_47_write_zero_hit_raises_snapshot_validation_not_unavailable(
+        self, tmp_path
+    ):
+        """Construct a phase-local test capture whose raw bytes are a valid
+        zero-hit PDS envelope while satisfying the capture model's hash/identity
+        structural requirements so PdsSnapshotStore.write() reaches shared
+        re-validation.
+
+        Requires PdsSnapshotValidationError.
+        Proves PdsUnavailableError does NOT escape.
+        No network activity.
+        """
+        from backend.app.mission_sources.adapters.pds import PdsUnavailableError
+        from backend.app.provenance.models import (
+            ProvenanceKind,
+            ProvenanceValidationStatus,
+        )
+
+        # Raw bytes: valid zero-hit PDS envelope.
+        zero_bytes = self._zero_hit_envelope_bytes()
+        content_sha = hashlib.sha256(zero_bytes).hexdigest()
+
+        # We need a capture whose provenance.content_sha256 == SHA-256(zero_bytes)
+        # so the write path's hash check passes and execution reaches the shared
+        # validator.  Build the provenance and product from a valid capture, then
+        # override content_sha256 and raw_response.
+        valid_capture = _make_capture()
+
+        # Rebuild provenance with the zero-hit content hash.
+        prov_dict = valid_capture.provenance.model_dump()
+        prov_dict["content_sha256"] = content_sha
+        zero_provenance = ProvenanceRecord(**prov_dict)
+
+        # Build the zero-hit capture.  PdsScienceProductCapture validates that
+        # SHA-256(raw_response) == provenance.content_sha256 in its own
+        # __init__ validator only if the model enforces it; otherwise the write
+        # path performs the check.  We inject consistent fields here.
+        zero_capture = PdsScienceProductCapture(
+            request=valid_capture.request,
+            product=valid_capture.product,
+            provenance=zero_provenance,
+            raw_response=zero_bytes,
+        )
+
+        dest = tmp_path / "snap.json"
+
+        # Must raise PdsSnapshotValidationError, never PdsUnavailableError.
+        with pytest.raises(PdsSnapshotValidationError):
+            PdsSnapshotStore.write(zero_capture, dest)
+
+        # Explicitly prove PdsUnavailableError does not escape.
+        try:
+            PdsSnapshotStore.write(zero_capture, dest)
+        except PdsSnapshotValidationError:
+            pass  # correct — normalized
+        except Exception as exc:  # noqa: BLE001
+            raise AssertionError(
+                f"PdsUnavailableError (or other non-snapshot exception) escaped "
+                f"snapshot write boundary: {type(exc).__name__}: {exc}"
+            ) from exc
+
+
+# ---------------------------------------------------------------------------
+# K. Snapshot package backward-compatibility export regression (D0.1)
+# ---------------------------------------------------------------------------
+
+
+class TestSnapshotPackageExports:
+    """K.48: Regression test for backward-compatible Phase 6D aliases and all
+    Phase 6E-D0 exports in backend.app.mission_sources.snapshots.
+    """
+
+    def test_48_all_package_exports_importable_and_correct(self):
+        """Prove all required names are importable from the snapshots package
+        and satisfy the Phase 6D / 6E-D0 contract:
+
+        - SNAPSHOT_SCHEMA == HORIZONS_SNAPSHOT_SCHEMA  (backward compat alias)
+        - SNAPSHOT_VERSION == HORIZONS_SNAPSHOT_VERSION (backward compat alias)
+        - SNAPSHOT_SCHEMA == "gcsi.horizons_geometry_snapshot"
+        - SNAPSHOT_VERSION == 1
+        - PDS_SNAPSHOT_SCHEMA == "gcsi.pds_science_product_snapshot"
+        - PDS_SNAPSHOT_VERSION == 1
+        """
+        from backend.app.mission_sources.snapshots import (
+            HORIZONS_SNAPSHOT_SCHEMA,
+            HORIZONS_SNAPSHOT_VERSION,
+            PDS_SNAPSHOT_SCHEMA,
+            PDS_SNAPSHOT_VERSION,
+            SNAPSHOT_SCHEMA,
+            SNAPSHOT_VERSION,
+        )
+
+        # Backward-compatible aliases must equal Horizons constants.
+        assert SNAPSHOT_SCHEMA == HORIZONS_SNAPSHOT_SCHEMA
+        assert SNAPSHOT_VERSION == HORIZONS_SNAPSHOT_VERSION
+
+        # Historical Phase 6D values must be preserved.
+        assert SNAPSHOT_SCHEMA == "gcsi.horizons_geometry_snapshot"
+        assert SNAPSHOT_VERSION == 1
+
+        # PDS constants must retain their Phase 6E-D0 values.
+        assert PDS_SNAPSHOT_SCHEMA == "gcsi.pds_science_product_snapshot"
+        assert PDS_SNAPSHOT_VERSION == 1
+
+        # Aliases must NOT point to PDS constants.
+        assert SNAPSHOT_SCHEMA != PDS_SNAPSHOT_SCHEMA

@@ -801,9 +801,22 @@ def _validate_pds_raw_response(
     Raises
     ------
     PdsValidationError
-        For any validation failure.
+        For structural or semantic validation failures, including malformed
+        JSON, oversized response, identity mismatches, wrong product class,
+        invalid timestamps, and cardinality errors other than zero hits.
+
     PdsUnavailableError
-        (not raised from this function; raised by the HTTP transport layer)
+        Raised by this function (not only by the HTTP transport layer) when
+        the validated envelope reports that the product's metadata is
+        unavailable:
+
+        - ``summary.hits == 0`` — PDS Search API reported zero hits for the
+          LIDVID; the product's metadata is not available from this service.
+        - empty ``data`` array — PDS Search API returned no data items.
+
+        These conditions indicate the PDS Search API did not return the
+        requested product, which does NOT mean the product does not exist in
+        the PDS archive.
     """
     # 0. Validate retrieved_at before doing any parsing work.
     if not isinstance(retrieved_at, datetime):
