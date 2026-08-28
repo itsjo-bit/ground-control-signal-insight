@@ -49,10 +49,19 @@ is enforced at the ``send()`` level.
 
 XML security
 ------------
-- Archive label XML must be valid UTF-8 before ElementTree parsing.
-- ``<!DOCTYPE`` and ``<!ENTITY`` (case-insensitive) are rejected on the
-  decoded text before parsing — prevents XXE, Billion-Laughs, DTD-based SSRF,
-  and alternate-encoding bypass (UTF-16/NUL-byte tricks).
+- Archive label XML must be non-empty, NUL-free, and strict UTF-8 before any
+  parsing.  A NUL byte anywhere in the raw bytes is rejected immediately —
+  this closes UTF-16 / UTF-32 NUL-interleaving bypass.
+- The XML declaration ``encoding`` attribute, if present, must be ``UTF-8``
+  (case-insensitive).  Non-UTF-8 declarations are rejected; the bytes are
+  never transcoded.
+- ``<!DOCTYPE`` and ``<!ENTITY`` (case-insensitive) are scanned on the
+  already-validated UTF-8 decoded text.
+- ElementTree receives the decoded Unicode string (``ET.fromstring(xml_text)``)
+  so that the scan and the parse operate on the same representation.  Raw bytes
+  are never re-encoded; SHA-256 is computed from the original ``raw_bytes``.
+- BOM (UTF-8 BOM ``\\xef\\xbb\\xbf``) is **rejected** — an unexpected BOM on a
+  UTF-8 stream signals a potentially non-canonical encoding.
 - ``xml.etree.ElementTree`` is used with a bounded in-memory parse.
 - No entity resolution, no XInclude, no schemaLocation fetch, no network.
 """
@@ -151,6 +160,11 @@ _ARCHIVE_SOURCE_SYSTEM: str = "NASA Planetary Data System Atmospheres Node"
 # Maximum raw response body size (2 MiB).
 MAX_ARCHIVE_LABEL_BYTES: int = 2 * 1024 * 1024
 
+# Explicit streaming chunk size for bounded body reads (64 KiB).
+# Using a finite chunk size ensures that a single oversized transport chunk
+# cannot be appended to memory before the limit check fires.
+_STREAM_CHUNK_BYTES: int = 64 * 1024
+
 # HTTP request timeout (seconds).
 _HTTP_TIMEOUT: float = 30.0
 
@@ -175,6 +189,14 @@ _FILE_REF_DERIVATION_NOTE: str = (
 # Strict ASCII decimal integer pattern for file_size values.
 # Rejects: +1, -1, 1.0, 1e3, empty, whitespace, non-ASCII numerals.
 _ASCII_DECIMAL_RE = re.compile(r"^[0-9]+$")
+
+# Pattern to inspect the XML declaration encoding attribute.
+# Matches: encoding="..." or encoding='...' within the first 256 bytes of XML.
+# Group 1 captures the declared encoding value.
+_XML_ENCODING_DECL_RE = re.compile(
+    r"""encoding\s*=\s*(?:"([^"]+)"|'([^']+)')""",
+    re.IGNORECASE,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -307,20 +329,68 @@ def _parse_archive_datetime(raw: str, field_name: str) -> datetime:
 # ---------------------------------------------------------------------------
 
 
-def _scan_xml_security(raw_bytes: bytes) -> None:
+def _scan_xml_security(raw_bytes: bytes) -> str:
     """Validate XML encoding safety and reject DOCTYPE/ENTITY declarations.
 
-    Strategy:
-    1. Require valid UTF-8 encoding (fail closed for any other encoding).
-       This prevents alternate-encoding bypass (UTF-16/NUL-byte tricks).
-    2. Scan the decoded text case-insensitively for <!DOCTYPE and <!ENTITY.
-       This is reliable because the text is now in the known safe encoding.
+    Strict octet contract (applied in order):
 
-    Raises PdsArchiveLabelValidationError for:
-    - Invalid UTF-8 bytes.
-    - Any <!DOCTYPE or <!ENTITY occurrence (case-insensitive).
+    1. Non-empty.
+    2. No NUL byte (0x00) anywhere — rejects UTF-16/UTF-32 NUL-interleaving.
+    3. No UTF-8 BOM (0xEF 0xBB 0xBF) — rejected as non-canonical.
+    4. Strict UTF-8 decode succeeds and contains no U+0000.
+    5. XML declaration encoding attribute, if present, must be ``UTF-8``
+       (case-insensitive).  Any other declared encoding is rejected.
+    6. No ``<!DOCTYPE`` or ``<!ENTITY`` tokens (case-insensitive) in the
+       decoded text.
+
+    ElementTree MUST receive ``xml_text`` (the return value of this function),
+    NOT ``raw_bytes``, so that the scan and the parse operate on the identical
+    representation.  SHA-256 is always computed from ``raw_bytes``.
+
+    Parameters
+    ----------
+    raw_bytes:
+        Raw XML bytes as received from the HTTP response.
+
+    Returns
+    -------
+    str
+        The strict UTF-8 decoded text, already validated.  Caller must use
+        this string for ``ET.fromstring()``.
+
+    Raises
+    ------
+    PdsArchiveLabelValidationError
+        For any octet-contract or security violation.
     """
-    # Step 1: Require valid UTF-8.
+    # Step 1: Non-empty.
+    if not raw_bytes:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 archive label XML body is empty."
+        )
+
+    # Step 2: Reject NUL bytes BEFORE UTF-8 decode.
+    # This closes UTF-16/UTF-32 NUL-interleaving bypass: UTF-16LE ASCII content
+    # produces bytes like b'<\x00!\x00D\x00O\x00C\x00T\x00Y\x00P\x00E\x00'
+    # which may survive UTF-8 decoding (NUL is a valid UTF-8 codepoint) but
+    # the resulting Unicode string would not contain contiguous '<!DOCTYPE'.
+    # Rejecting NUL bytes eliminates the entire class of attack.
+    if b"\x00" in raw_bytes:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 archive label XML contains NUL bytes (0x00). "
+            "UTF-16/UTF-32 encoded XML is not permitted; only strict UTF-8 is accepted."
+        )
+
+    # Step 3: Reject UTF-8 BOM.
+    # A BOM on a UTF-8 stream is unexpected and signals a potentially non-canonical
+    # encoding.  We reject it explicitly to maintain a simple, testable contract.
+    if raw_bytes[:3] == b"\xef\xbb\xbf":
+        raise PdsArchiveLabelValidationError(
+            "PDS4 archive label XML contains a UTF-8 BOM (byte-order mark). "
+            "BOM-prefixed UTF-8 is not accepted; use plain UTF-8 without BOM."
+        )
+
+    # Step 4: Strict UTF-8 decode.
     try:
         xml_text = raw_bytes.decode("utf-8")
     except (UnicodeDecodeError, ValueError) as exc:
@@ -329,7 +399,30 @@ def _scan_xml_security(raw_bytes: bytes) -> None:
             "the response body failed UTF-8 decoding."
         ) from exc
 
-    # Step 2: Scan decoded text for DOCTYPE/ENTITY (case-insensitive).
+    # Sanity: decoded text must not contain U+0000 (should be guaranteed by the
+    # NUL-byte check above, but we verify at the Unicode level as well).
+    if "\x00" in xml_text:
+        raise PdsArchiveLabelValidationError(
+            "PDS4 archive label XML contains U+0000 characters after UTF-8 decoding. "
+            "Rejected."
+        )
+
+    # Step 5: XML declaration encoding check.
+    # Inspect only the first 256 decoded characters (the declaration is always at
+    # the start).  If an encoding attribute is present, it must be 'UTF-8'.
+    decl_head = xml_text[:256]
+    enc_match = _XML_ENCODING_DECL_RE.search(decl_head)
+    if enc_match is not None:
+        declared_enc = (enc_match.group(1) or enc_match.group(2) or "").strip()
+        if declared_enc.upper() != "UTF-8":
+            raise PdsArchiveLabelValidationError(
+                f"PDS4 archive label XML declares encoding {declared_enc!r}; "
+                "only UTF-8 is accepted.  Transcoding is not performed."
+            )
+
+    # Step 6: Scan decoded text for DOCTYPE/ENTITY (case-insensitive).
+    # The scan operates on the same decoded text that will be passed to
+    # ET.fromstring(), eliminating any encoding-parser differential.
     upper_text = xml_text.upper()
     if "<!DOCTYPE" in upper_text:
         raise PdsArchiveLabelValidationError(
@@ -341,6 +434,8 @@ def _scan_xml_security(raw_bytes: bytes) -> None:
             "PDS4 label rejected: ENTITY declaration detected. "
             "External entity expansion is not permitted."
         )
+
+    return xml_text
 
 
 # ---------------------------------------------------------------------------
@@ -409,12 +504,15 @@ def _validate_pds_archive_label_response(
     content_sha256 = hashlib.sha256(raw_bytes).hexdigest()
 
     # 3. XML security: validate UTF-8 encoding and reject DOCTYPE/ENTITY.
-    #    PART I: Must be UTF-8 first, then text scan for dangerous tokens.
-    _scan_xml_security(raw_bytes)
+    #    Returns the decoded UTF-8 text; ET.fromstring() receives this string
+    #    so that the security scan and the parse operate on the same
+    #    representation — eliminating any encoding-parser differential.
+    xml_text = _scan_xml_security(raw_bytes)
 
-    # 4. Parse XML.
+    # 4. Parse XML from the already-validated Unicode text (NOT raw_bytes).
+    #    SHA-256 was already computed from raw_bytes above.
     try:
-        root = ET.fromstring(raw_bytes)
+        root = ET.fromstring(xml_text)
     except ET.ParseError as exc:
         raise PdsArchiveLabelValidationError(
             "PDS4 label XML is malformed and could not be parsed."
@@ -542,22 +640,23 @@ def _validate_pds_archive_label_response(
             "in Observation_Area; expected exactly 1."
         )
     inv_area = investigation_areas[0]
-    # Find exactly one Internal_Reference with the required investigation ref.
+    # Require exactly one direct Internal_Reference inside Investigation_Area.
+    # No first-match/break: duplicate valid refs fail closed.
     inv_refs = _find_all_direct(inv_area, "Internal_Reference")
-    _found_inv = False
-    for ir in inv_refs:
-        lid_ref_elem = ir.find(f"{_PDS_NS_BRACED}lid_reference")
-        ref_type_elem = ir.find(f"{_PDS_NS_BRACED}reference_type")
-        if lid_ref_elem is not None and ref_type_elem is not None:
-            lid_ref = (lid_ref_elem.text or "").strip()
-            ref_type = (ref_type_elem.text or "").strip()
-            if (
-                lid_ref == "urn:nasa:pds:context:investigation:mission.juno"
-                and ref_type == "data_to_investigation"
-            ):
-                _found_inv = True
-                break
-    if not _found_inv:
+    if len(inv_refs) != 1:
+        raise PdsArchiveLabelValidationError(
+            f"PDS4 label Investigation_Area must contain exactly 1 "
+            f"<Internal_Reference>; found {len(inv_refs)}."
+        )
+    _inv_ir = inv_refs[0]
+    _inv_lid_elem = _inv_ir.find(f"{_PDS_NS_BRACED}lid_reference")
+    _inv_ref_type_elem = _inv_ir.find(f"{_PDS_NS_BRACED}reference_type")
+    _inv_lid = (_inv_lid_elem.text or "").strip() if _inv_lid_elem is not None else ""
+    _inv_ref_type = (_inv_ref_type_elem.text or "").strip() if _inv_ref_type_elem is not None else ""
+    if (
+        _inv_lid != "urn:nasa:pds:context:investigation:mission.juno"
+        or _inv_ref_type != "data_to_investigation"
+    ):
         raise PdsArchiveLabelValidationError(
             "PDS4 label is missing required context reference: "
             "Juno investigation (reference_type='data_to_investigation', "
@@ -565,77 +664,143 @@ def _validate_pds_archive_label_response(
             "inside Investigation_Area."
         )
 
-    # Observing_System: one or more, must collectively contain exactly one
-    # Instrument component and exactly one Spacecraft component with the
-    # correct LIDs and reference_types.
+    # Observing_System: EXACTLY ONE — C3B.2 narrows from one-or-more to exactly one.
     observing_systems = _find_all_direct(obs_area, "Observing_System")
     if len(observing_systems) == 0:
         raise PdsArchiveLabelValidationError(
             "PDS4 label is missing required element <Observing_System> "
             "in Observation_Area."
         )
+    if len(observing_systems) > 1:
+        raise PdsArchiveLabelValidationError(
+            f"PDS4 label has {len(observing_systems)} <Observing_System> elements "
+            "in Observation_Area; expected exactly 1."
+        )
+    os_elem = observing_systems[0]
 
-    # Collect all Observing_System_Component elements across all Observing_System elements.
-    _instrument_refs: list[tuple[str, str]] = []   # (lid_ref, ref_type) for Instrument components
-    _spacecraft_refs: list[tuple[str, str]] = []   # (lid_ref, ref_type) for Spacecraft components
-    for os_elem in observing_systems:
-        components = _find_all_direct(os_elem, "Observing_System_Component")
-        for comp in components:
-            # Get type element (direct child of Observing_System_Component, tag "type").
-            # The component's Internal_Reference carries lid and reference_type.
-            comp_type_elems = comp.findall(f"{_PDS_NS_BRACED}type")
-            comp_type = ""
-            if comp_type_elems:
-                comp_type = (comp_type_elems[0].text or "").strip()
+    # Inside the single Observing_System, find exactly one valid Instrument
+    # component and exactly one valid Spacecraft component.
+    #
+    # A valid Instrument component requires ALL of:
+    #   - Observing_System_Component/type == "Instrument"
+    #   - Internal_Reference/lid_reference == urn:nasa:pds:context:instrument:mwr.jno
+    #   - Internal_Reference/reference_type == is_instrument
+    #
+    # A valid Spacecraft component requires ALL of:
+    #   - Observing_System_Component/type == "Spacecraft"
+    #   - Internal_Reference/lid_reference == urn:nasa:pds:context:instrument_host:spacecraft.jno
+    #   - Internal_Reference/reference_type == is_instrument_host
+    #
+    # Duplicate type child elements and duplicate Internal_Reference children
+    # are rejected.  Wrong type/LID combinations are rejected.
+    _instrument_refs: list[tuple[str, str]] = []   # (lid_ref, ref_type) for valid Instrument
+    _spacecraft_refs: list[tuple[str, str]] = []   # (lid_ref, ref_type) for valid Spacecraft
 
-            ir_elems = comp.findall(f"{_PDS_NS_BRACED}Internal_Reference")
-            for ir in ir_elems:
-                lid_ref_elem = ir.find(f"{_PDS_NS_BRACED}lid_reference")
-                ref_type_elem = ir.find(f"{_PDS_NS_BRACED}reference_type")
-                if lid_ref_elem is not None and ref_type_elem is not None:
-                    lid_ref = (lid_ref_elem.text or "").strip()
-                    ref_type = (ref_type_elem.text or "").strip()
-                    if (
-                        lid_ref == "urn:nasa:pds:context:instrument:mwr.jno"
-                        and ref_type == "is_instrument"
-                    ):
-                        _instrument_refs.append((lid_ref, ref_type))
-                    if (
-                        lid_ref == "urn:nasa:pds:context:instrument_host:spacecraft.jno"
-                        and ref_type == "is_instrument_host"
-                    ):
-                        _spacecraft_refs.append((lid_ref, ref_type))
+    components = _find_all_direct(os_elem, "Observing_System_Component")
+    for comp in components:
+        # Require exactly one direct <type> child element.
+        comp_type_elems = comp.findall(f"{_PDS_NS_BRACED}type")
+        if len(comp_type_elems) == 0:
+            raise PdsArchiveLabelValidationError(
+                "PDS4 label Observing_System_Component is missing required "
+                "<type> element."
+            )
+        if len(comp_type_elems) > 1:
+            raise PdsArchiveLabelValidationError(
+                f"PDS4 label Observing_System_Component has {len(comp_type_elems)} "
+                "<type> elements; expected exactly 1."
+            )
+        comp_type = (comp_type_elems[0].text or "").strip()
+
+        # Require exactly one direct <Internal_Reference> child element.
+        ir_elems = comp.findall(f"{_PDS_NS_BRACED}Internal_Reference")
+        if len(ir_elems) == 0:
+            raise PdsArchiveLabelValidationError(
+                "PDS4 label Observing_System_Component is missing required "
+                "<Internal_Reference> element."
+            )
+        if len(ir_elems) > 1:
+            raise PdsArchiveLabelValidationError(
+                f"PDS4 label Observing_System_Component has {len(ir_elems)} "
+                "<Internal_Reference> elements; expected exactly 1."
+            )
+        ir = ir_elems[0]
+        lid_ref_elem = ir.find(f"{_PDS_NS_BRACED}lid_reference")
+        ref_type_elem = ir.find(f"{_PDS_NS_BRACED}reference_type")
+        lid_ref = (lid_ref_elem.text or "").strip() if lid_ref_elem is not None else ""
+        ref_type = (ref_type_elem.text or "").strip() if ref_type_elem is not None else ""
+
+        # Check Instrument component: type MUST be "Instrument".
+        if (
+            lid_ref == "urn:nasa:pds:context:instrument:mwr.jno"
+            and ref_type == "is_instrument"
+        ):
+            if comp_type != "Instrument":
+                raise PdsArchiveLabelValidationError(
+                    "PDS4 label Observing_System_Component with MWR instrument LID "
+                    f"has component type {comp_type!r}; expected 'Instrument'."
+                )
+            _instrument_refs.append((lid_ref, ref_type))
+
+        # Check Spacecraft component: type MUST be "Spacecraft".
+        elif (
+            lid_ref == "urn:nasa:pds:context:instrument_host:spacecraft.jno"
+            and ref_type == "is_instrument_host"
+        ):
+            if comp_type != "Spacecraft":
+                raise PdsArchiveLabelValidationError(
+                    "PDS4 label Observing_System_Component with Juno spacecraft LID "
+                    f"has component type {comp_type!r}; expected 'Spacecraft'."
+                )
+            _spacecraft_refs.append((lid_ref, ref_type))
+
+        # Any other combination: verify the type is not masquerading as a known type
+        # with a wrong LID (or vice versa).
+        else:
+            if comp_type == "Instrument":
+                raise PdsArchiveLabelValidationError(
+                    "PDS4 label Observing_System_Component has type 'Instrument' "
+                    "but its lid_reference/reference_type does not match the "
+                    "required MWR instrument identity."
+                )
+            if comp_type == "Spacecraft":
+                raise PdsArchiveLabelValidationError(
+                    "PDS4 label Observing_System_Component has type 'Spacecraft' "
+                    "but its lid_reference/reference_type does not match the "
+                    "required Juno spacecraft host identity."
+                )
 
     if len(_instrument_refs) == 0:
         raise PdsArchiveLabelValidationError(
             "PDS4 label is missing required context reference: "
-            "MWR instrument (reference_type='is_instrument', "
+            "MWR instrument (type='Instrument', reference_type='is_instrument', "
             "lid='urn:nasa:pds:context:instrument:mwr.jno') "
             "inside an Observing_System_Component in Observing_System."
         )
     if len(_instrument_refs) > 1:
         raise PdsArchiveLabelValidationError(
             "PDS4 label has duplicate MWR instrument context references "
-            "(reference_type='is_instrument', "
+            "(type='Instrument', reference_type='is_instrument', "
             "lid='urn:nasa:pds:context:instrument:mwr.jno') "
             "inside Observing_System; expected exactly 1."
         )
     if len(_spacecraft_refs) == 0:
         raise PdsArchiveLabelValidationError(
             "PDS4 label is missing required context reference: "
-            "Juno spacecraft (reference_type='is_instrument_host', "
+            "Juno spacecraft (type='Spacecraft', reference_type='is_instrument_host', "
             "lid='urn:nasa:pds:context:instrument_host:spacecraft.jno') "
             "inside an Observing_System_Component in Observing_System."
         )
     if len(_spacecraft_refs) > 1:
         raise PdsArchiveLabelValidationError(
             "PDS4 label has duplicate Juno spacecraft context references "
-            "(reference_type='is_instrument_host', "
+            "(type='Spacecraft', reference_type='is_instrument_host', "
             "lid='urn:nasa:pds:context:instrument_host:spacecraft.jno') "
             "inside Observing_System; expected exactly 1."
         )
 
-    # Target_Identification: exactly one, with exactly one suitable Internal_Reference.
+    # Target_Identification: exactly one, with exactly one direct Internal_Reference.
+    # No first-match/break: duplicate valid refs fail closed.
     target_ids = _find_all_direct(obs_area, "Target_Identification")
     if len(target_ids) == 0:
         raise PdsArchiveLabelValidationError(
@@ -649,20 +814,20 @@ def _validate_pds_archive_label_response(
         )
     tgt_area = target_ids[0]
     tgt_refs = _find_all_direct(tgt_area, "Internal_Reference")
-    _found_target = False
-    for ir in tgt_refs:
-        lid_ref_elem = ir.find(f"{_PDS_NS_BRACED}lid_reference")
-        ref_type_elem = ir.find(f"{_PDS_NS_BRACED}reference_type")
-        if lid_ref_elem is not None and ref_type_elem is not None:
-            lid_ref = (lid_ref_elem.text or "").strip()
-            ref_type = (ref_type_elem.text or "").strip()
-            if (
-                lid_ref == "urn:nasa:pds:context:target:planet.jupiter"
-                and ref_type == "data_to_target"
-            ):
-                _found_target = True
-                break
-    if not _found_target:
+    if len(tgt_refs) != 1:
+        raise PdsArchiveLabelValidationError(
+            f"PDS4 label Target_Identification must contain exactly 1 "
+            f"<Internal_Reference>; found {len(tgt_refs)}."
+        )
+    _tgt_ir = tgt_refs[0]
+    _tgt_lid_elem = _tgt_ir.find(f"{_PDS_NS_BRACED}lid_reference")
+    _tgt_ref_type_elem = _tgt_ir.find(f"{_PDS_NS_BRACED}reference_type")
+    _tgt_lid = (_tgt_lid_elem.text or "").strip() if _tgt_lid_elem is not None else ""
+    _tgt_ref_type = (_tgt_ref_type_elem.text or "").strip() if _tgt_ref_type_elem is not None else ""
+    if (
+        _tgt_lid != "urn:nasa:pds:context:target:planet.jupiter"
+        or _tgt_ref_type != "data_to_target"
+    ):
         raise PdsArchiveLabelValidationError(
             "PDS4 label is missing required context reference: "
             "Jupiter target (reference_type='data_to_target', "
@@ -1159,22 +1324,35 @@ class PdsArchiveLabelAdapter:
                     "unexpected HTTP status."
                 )
 
-            # PART D: Genuinely bounded body read.
-            # Accumulate at most MAX_ARCHIVE_LABEL_BYTES + 1 bytes.
-            # Stop reading and raise immediately once accumulated bytes exceed MAX.
-            # The complete oversized stream is never materialized.
+            # Optional: Content-Length early rejection.
+            # If a syntactically valid non-negative Content-Length header is
+            # present and exceeds MAX, reject before consuming the body.
+            # The streaming bound below remains the authoritative enforcement.
+            cl_header = response.headers.get("content-length", "").strip()
+            if cl_header and cl_header.isdigit():
+                if int(cl_header) > MAX_ARCHIVE_LABEL_BYTES:
+                    raise PdsArchiveLabelValidationError(
+                        f"PDS4 archive label Content-Length ({cl_header}) exceeds "
+                        f"maximum allowed size ({MAX_ARCHIVE_LABEL_BYTES} bytes)."
+                    )
+
+            # PART D: Genuinely bounded body read with explicit finite chunk size.
+            # Using _STREAM_CHUNK_BYTES ensures that no single transport-provided
+            # chunk can be arbitrarily large: the iterator yields at most
+            # _STREAM_CHUNK_BYTES bytes per iteration.
+            # Limit check fires BEFORE appending — retained body memory never
+            # exceeds MAX_ARCHIVE_LABEL_BYTES plus one iterator-buffer chunk.
             chunks: list[bytes] = []
             accumulated = 0
-            _limit = MAX_ARCHIVE_LABEL_BYTES + 1
 
-            for chunk in response.iter_bytes():
-                accumulated += len(chunk)
-                chunks.append(chunk)
-                if accumulated > MAX_ARCHIVE_LABEL_BYTES:
+            for chunk in response.iter_bytes(chunk_size=_STREAM_CHUNK_BYTES):
+                if accumulated + len(chunk) > MAX_ARCHIVE_LABEL_BYTES:
                     raise PdsArchiveLabelValidationError(
                         f"PDS4 archive label response body exceeds maximum allowed size "
                         f"({MAX_ARCHIVE_LABEL_BYTES} bytes)."
                     )
+                chunks.append(chunk)
+                accumulated += len(chunk)
 
             raw_bytes = b"".join(chunks)
 

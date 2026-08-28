@@ -120,7 +120,16 @@ def _make_valid_label_xml(
     title: str = "MWR PJ62 IRDR Calibrated Snapshot Test",
     file_name: str = "MWR62RI2024166030000_R04112_V04.csv",
     file_size: int = 2097152,
+    instrument_comp_type: str = "Instrument",
+    duplicate_investigation_ref: bool = False,
 ) -> bytes:
+    extra_inv_ref = ""
+    if duplicate_investigation_ref:
+        extra_inv_ref = """
+      <Internal_Reference>
+        <lid_reference>urn:nasa:pds:context:investigation:mission.juno</lid_reference>
+        <reference_type>data_to_investigation</reference_type>
+      </Internal_Reference>"""
     xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Product_Observational xmlns="{_PDS_NS}">
   <Identification_Area>
@@ -142,16 +151,18 @@ def _make_valid_label_xml(
       <Internal_Reference>
         <lid_reference>urn:nasa:pds:context:investigation:mission.juno</lid_reference>
         <reference_type>data_to_investigation</reference_type>
-      </Internal_Reference>
+      </Internal_Reference>{extra_inv_ref}
     </Investigation_Area>
     <Observing_System>
       <Observing_System_Component>
+        <type>{instrument_comp_type}</type>
         <Internal_Reference>
           <lid_reference>urn:nasa:pds:context:instrument:mwr.jno</lid_reference>
           <reference_type>is_instrument</reference_type>
         </Internal_Reference>
       </Observing_System_Component>
       <Observing_System_Component>
+        <type>Spacecraft</type>
         <Internal_Reference>
           <lid_reference>urn:nasa:pds:context:instrument_host:spacecraft.jno</lid_reference>
           <reference_type>is_instrument_host</reference_type>
@@ -659,6 +670,103 @@ class TestNetworkIsolation:
 # ---------------------------------------------------------------------------
 # Additional integrity checks
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# J. C3B.2 Snapshot Tamper Regressions (zero-network)
+# ---------------------------------------------------------------------------
+
+
+class TestC3B2SnapshotTamperRegressions:
+    """J: C3B.2 snapshot tamper regression tests (Part E).
+
+    These tests verify that the shared validator (_validate_pds_archive_label_response)
+    rejects specific attack payloads when loaded from a snapshot, proving that
+    snapshot load and live fetch share the same validator authority.
+
+    All tests are OFFLINE — no network calls are made.
+    """
+
+    def _make_valid_xml_with_types(self) -> bytes:
+        """Return a minimal valid XML with correct component types."""
+        return _make_valid_label_xml()
+
+    def test_j01_stored_utf16_nul_raw_bytes_rejected_on_load(self, tmp_path):
+        """Stored raw_label containing UTF-16/NUL bytes is rejected on snapshot load.
+
+        If an attacker tampers with the stored raw_label_base64 to contain
+        NUL-interleaved bytes (e.g. UTF-16LE), the validator rejects on load
+        BEFORE ElementTree sees the data.
+        """
+        # Write a valid snapshot first.
+        capture = _make_capture()
+        dest = tmp_path / "snap.json"
+        PdsArchiveSnapshotStore.write(capture, dest)
+
+        # Tamper: replace raw_label with UTF-16LE encoded content containing NUL bytes.
+        import base64
+        import json as _json
+        raw_dict = _json.loads(dest.read_text("utf-8"))
+
+        evil_xml = '<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY bar "baz">]><x/>'
+        evil_bytes = evil_xml.encode("utf-16-le")  # produces NUL bytes
+        raw_dict["raw_label_base64"] = base64.b64encode(evil_bytes).decode("ascii")
+        raw_dict["raw_label_sha256"] = __import__("hashlib").sha256(evil_bytes).hexdigest()
+        raw_dict["provenance"]["content_sha256"] = raw_dict["raw_label_sha256"]
+
+        dest.write_text(_json.dumps(raw_dict), encoding="utf-8")
+
+        with pytest.raises(PdsArchiveSnapshotValidationError):
+            PdsArchiveSnapshotStore.load(dest)
+
+    def test_j02_stored_xml_with_wrong_component_type_rejected_on_load(self, tmp_path):
+        """Stored XML with instrument LID under type=Spacecraft is rejected on load."""
+        # Build a label with wrong component type.
+        evil_xml = _make_valid_label_xml(instrument_comp_type="Spacecraft")
+
+        # Build capture with this XML — but we can't use the adapter directly since
+        # the adapter validation will reject it. We need to craft the snapshot JSON
+        # manually with a valid-looking (but semantically wrong) raw label.
+        # Instead, write a valid snapshot and then tamper the raw_label_base64.
+        import base64
+        import json as _json
+
+        # Write valid snapshot first.
+        capture = _make_capture()
+        dest = tmp_path / "snap.json"
+        PdsArchiveSnapshotStore.write(capture, dest)
+        raw_dict = _json.loads(dest.read_text("utf-8"))
+
+        # Replace raw_label with wrong-component-type XML.
+        raw_dict["raw_label_base64"] = base64.b64encode(evil_xml).decode("ascii")
+        new_sha = __import__("hashlib").sha256(evil_xml).hexdigest()
+        raw_dict["raw_label_sha256"] = new_sha
+        raw_dict["provenance"]["content_sha256"] = new_sha
+        dest.write_text(_json.dumps(raw_dict), encoding="utf-8")
+
+        with pytest.raises(PdsArchiveSnapshotValidationError):
+            PdsArchiveSnapshotStore.load(dest)
+
+    def test_j03_stored_xml_with_duplicate_investigation_ref_rejected_on_load(self, tmp_path):
+        """Stored XML with duplicate Investigation Internal_Reference is rejected on load."""
+        import base64
+        import json as _json
+
+        evil_xml = _make_valid_label_xml(duplicate_investigation_ref=True)
+
+        capture = _make_capture()
+        dest = tmp_path / "snap.json"
+        PdsArchiveSnapshotStore.write(capture, dest)
+        raw_dict = _json.loads(dest.read_text("utf-8"))
+
+        raw_dict["raw_label_base64"] = base64.b64encode(evil_xml).decode("ascii")
+        new_sha = __import__("hashlib").sha256(evil_xml).hexdigest()
+        raw_dict["raw_label_sha256"] = new_sha
+        raw_dict["provenance"]["content_sha256"] = new_sha
+        dest.write_text(_json.dumps(raw_dict), encoding="utf-8")
+
+        with pytest.raises(PdsArchiveSnapshotValidationError):
+            PdsArchiveSnapshotStore.load(dest)
 
 
 class TestAdditionalIntegrity:
