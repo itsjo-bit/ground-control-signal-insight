@@ -39,10 +39,12 @@ import type {
   LinkState,
   MissionState,
   ScenarioInfo,
+  SourceSummary,
   WhatIfEvalResponse,
 } from './types/domain';
 import type { ExperienceManifest } from './types/experience';
 import type { ApprovalPhase } from './components/ApprovalBar';
+import { SourceContextBanner } from './components/SourceContextBanner';
 import { NavigationSidebar, type NavSection } from './components/NavigationSidebar';
 import { MissionViewport } from './components/MissionViewport';
 import { RightPanel } from './components/RightPanel';
@@ -297,6 +299,8 @@ export default function MissionControl() {
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
   const [propagationDelayS, setPropagationDelayS] = useState<number | null>(null);
   const [roundTripTimeS, setRoundTripTimeS] = useState<number | null>(null);
+  // ── Phase 6E-C7: Source provenance summary ────────────────────────────────
+  const [sourceSummary, setSourceSummary] = useState<SourceSummary | null>(null);
   const [queue, setQueue] = useState<CandidatePlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [resetting, setResetting] = useState(false);
@@ -535,6 +539,8 @@ export default function MissionControl() {
       setDistanceKm(stateData.distance_km ?? null);
       setPropagationDelayS(stateData.propagation_delay_s ?? null);
       setRoundTripTimeS(stateData.round_trip_time_s ?? null);
+      // Phase 6E-C7: source provenance from GET /state — no additional request
+      setSourceSummary(stateData.source ?? null);
       setQueue(queueData);
       if (totalWindowRef.current === null) {
         totalWindowRef.current = stateData.mission_state.comm_window_remaining_s;
@@ -1319,6 +1325,14 @@ export default function MissionControl() {
         </div>
       )}
 
+      {/* ── Phase 6E-C7: Source context banner ───────────────────────────── */}
+      {!loading && !error && (
+        <SourceContextBanner
+          source={sourceSummary}
+          missionId={missionState?.mission_id ?? null}
+        />
+      )}
+
       {/* ── Legacy mode banner ───────────────────────────────────────────── */}
       {!loading && !error && !hasDataProducts && dataProductsCount === 0 && (
         <div style={{
@@ -1521,6 +1535,7 @@ export default function MissionControl() {
             activeScenarioPath={activeScenarioPath}
             scenarioSwitching={scenarioSwitching}
             onSwitchScenario={handleSwitchScenario}
+            sourceMode={sourceSummary?.mode ?? null}
             experienceManifest={experienceManifest}
             experienceAvailable={experienceAvailable}
             manualAssessment={manualAssessment}

@@ -204,7 +204,7 @@ export function SignalGeometryBlock({
           border: '1px solid rgba(53,231,183,0.14)',
           borderRadius: 4, padding: '7px 10px',
         }}>
-          <SectionLabel>One-Way Signal</SectionLabel>
+          <SectionLabel>Signal Propagation Delay</SectionLabel>
           <div style={{
             fontFamily: 'var(--font-mono)', fontSize: 15, fontWeight: 700,
             color: SIGNAL_COLOR, marginBottom: 2, letterSpacing: '-0.01em',

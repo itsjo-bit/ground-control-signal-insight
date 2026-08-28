@@ -4,7 +4,7 @@
  * V3.4: Added scenario management section.
  */
 import type { ViewSettings } from '../hooks/useViewSettings';
-import type { ScenarioInfo } from '../types/domain';
+import type { MissionSourceMode, ScenarioInfo } from '../types/domain';
 
 interface Props {
   settings: ViewSettings;
@@ -18,6 +18,8 @@ interface Props {
   activeScenarioPath?: string | null;
   scenarioSwitching?: boolean;
   onSwitchScenario?: (filename: string) => void;
+  // Phase 6E-C7: source mode for historical context note
+  sourceMode?: MissionSourceMode | null;
 }
 
 function ToggleRow({
@@ -153,7 +155,9 @@ export function ConfigPanel({
   activeScenarioPath: _activeScenarioPath,
   scenarioSwitching = false,
   onSwitchScenario,
+  sourceMode,
 }: Props) {
+  const isHistoricalReplay = sourceMode === 'historical_replay';
 
   return (
     <div style={{ padding: '4px 0', minWidth: 0 }}>
@@ -296,6 +300,30 @@ export function ConfigPanel({
       {availableScenarios && availableScenarios.length > 0 && (
         <>
           <SectionHead>Active Scenario</SectionHead>
+
+          {/* Phase 6E-C7: Historical replay context note */}
+          {isHistoricalReplay && (
+            <div style={{
+              padding: '8px 10px',
+              marginBottom: 10,
+              background: 'rgba(76,141,255,0.05)',
+              border: '1px solid rgba(76,141,255,0.20)',
+              borderRadius: 6,
+              fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
+              fontSize: 10.5, lineHeight: 1.5,
+              color: 'rgba(147,160,180,0.80)',
+            }}>
+              <span style={{
+                display: 'block', fontWeight: 600,
+                color: '#6EA8FF', fontSize: 10, marginBottom: 3,
+              }}>
+                Historical replay is currently active.
+              </span>
+              The list below contains synthetic scenarios.
+              Selecting one exits historical replay and switches the runtime to synthetic mode.
+            </div>
+          )}
+
           <div style={{ marginBottom: 10 }}>
             {availableScenarios.map((scen: ScenarioInfo) => {
               const isActive = scen.is_active;

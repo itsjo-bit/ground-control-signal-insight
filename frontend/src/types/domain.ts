@@ -3,6 +3,32 @@
  * Maintained manually — keep in sync with backend/app/models/.
  */
 
+// ── Phase 6E-C7: Source mode and provenance ───────────────────────────────────
+
+/** Authority source mode — determined by state.source.mode, never inferred. */
+export type MissionSourceMode =
+  | 'synthetic_scenario'
+  | 'historical_replay';
+
+/** Aggregate source provenance summary from GET /state. */
+export interface SourceSummary {
+  mode: MissionSourceMode | null;
+  provider_name: string | null;
+  source_ref: string | null;
+  is_historical_replay: boolean;
+  provenance_available: boolean;
+  provenance_scope: 'source_baseline' | null;
+  provenance_record_count: number;
+  provenance_binding_count: number;
+  provenance_kind_counts: {
+    external_authoritative?: number;
+    derived?: number;
+    modeled?: number;
+    synthetic?: number;
+    [key: string]: number | undefined;
+  };
+}
+
 // ── V3.4: Decision mode ───────────────────────────────────────────────────────
 /** The operator's chosen decision workflow. */
 export type DecisionMode = 'unselected' | 'manual' | 'ai';
@@ -72,6 +98,17 @@ export interface StateResponse {
   propagation_delay_s: number | null;
   /** Round-trip propagation time in seconds (2 × propagation_delay_s). null when distance_km is null. */
   round_trip_time_s: number | null;
+  /** Phase 6E-C7: source provenance summary. Mandatory — C6 backend always supplies it. */
+  source: SourceSummary;
+}
+
+// Phase 6E-C7: typed reset response
+export interface ResetStateResponse {
+  status: string;
+  scenario_path: string | null;
+  comm_window_remaining_s: number;
+  source_mode: MissionSourceMode;
+  randomized: boolean;
 }
 
 export interface AnomalyEvent {

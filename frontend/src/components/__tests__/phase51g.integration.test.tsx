@@ -126,6 +126,18 @@ const BASE_STATE = {
   distance_km: 380000,
   propagation_delay_s: 1.27,
   round_trip_time_s: 2.54,
+  // Phase 6E-C7: source provenance summary
+  source: {
+    mode: 'synthetic_scenario' as const,
+    provider_name: null,
+    source_ref: null,
+    is_historical_replay: false,
+    provenance_available: false,
+    provenance_scope: null,
+    provenance_record_count: 0,
+    provenance_binding_count: 0,
+    provenance_kind_counts: {},
+  },
 };
 
 // Fix #2: All DataProduct fields provided; criticality is numeric (not string).
@@ -373,6 +385,8 @@ function setupDefaultMocks() {
     status: 'ok',
     scenario_path: '/test',
     comm_window_remaining_s: 300,
+    source_mode: 'synthetic_scenario',
+    randomized: true,
   });
   vi.mocked(apiClient.getRecommendation).mockResolvedValue({
     recommendation: AI_RECOMMENDATION,

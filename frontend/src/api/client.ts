@@ -11,6 +11,7 @@ import type {
   EvaluationResult,
   MissionOutcomeResult,
   RecommendResponse,
+  ResetStateResponse,
   ScenariosResponse,
   SimulationResult,
   StateResponse,
@@ -46,7 +47,7 @@ export async function getState(): Promise<StateResponse> {
 }
 
 // Reset scenario — reloads original scenario from disk, discarding simulation mutations
-export async function resetScenario(): Promise<{ status: string; scenario_path: string; comm_window_remaining_s: number }> {
+export async function resetScenario(): Promise<ResetStateResponse> {
   return fetchJson(`${BASE}/state/reset`, { method: 'POST' });
 }
 

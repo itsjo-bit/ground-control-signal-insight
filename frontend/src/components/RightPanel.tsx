@@ -24,6 +24,7 @@ import type {
   DecisionMode,
   EvaluationResult,
   LinkState,
+  MissionSourceMode,
   MissionState,
   RankedProduct,
   ScenarioInfo,
@@ -154,6 +155,8 @@ interface CommonProps {
   activeScenarioPath: string | null;
   scenarioSwitching: boolean;
   onSwitchScenario: (filename: string) => void;
+  // Phase 6E-C7: source mode for historical context note in ConfigPanel
+  sourceMode?: MissionSourceMode | null;
   // ── V3.5 props ───────────────────────────────────────────────────────────────
   workspaceMode: WorkspaceMode;
   onSetWorkspaceMode: (mode: WorkspaceMode) => void;
@@ -2382,6 +2385,7 @@ export function RightPanel({
             activeScenarioPath={props.activeScenarioPath}
             scenarioSwitching={props.scenarioSwitching}
             onSwitchScenario={props.onSwitchScenario}
+            sourceMode={props.sourceMode}
           />
         )}
       </div>

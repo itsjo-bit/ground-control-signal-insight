@@ -207,8 +207,8 @@ export function LinkHealthPanel({ linkState: ls, snrHistory, onWhatIfResult }: P
 <td>{ls.remaining_window_s.toFixed(1)} s</td>
 </tr>
 <tr>
-  <td title="Link-layer / protocol-stack latency (headers, ACKs, framing). NOT free-space propagation delay — see Comm Geometry panel for spacecraft signal travel time.">
-    Link Latency
+  <td title="Link-layer / protocol-stack latency (headers, ACKs, framing). NOT signal propagation delay — see Comm Geometry panel for spacecraft signal travel time.">
+    Protocol Latency
   </td>
   <td>{ls.latency_s.toFixed(3)} s</td>
 </tr>
