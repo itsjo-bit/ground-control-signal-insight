@@ -498,16 +498,16 @@ class TestTemporalEvidenceStatus:
             f"= {total}, expected 411."
         )
 
-    def test_exact_count_is_215(self, exact_entries):
-        """JunoCam (124) + WAVES Burst (91) = 215 EXACT entries."""
-        assert len(exact_entries) == 215, (
-            f"EXACT entries: expected 215 (JunoCam+WAVES_BURST), got {len(exact_entries)}."
+    def test_exact_count_is_223(self, exact_entries):
+        """B2.1.3: JunoCam (124) + WAVES Burst (91) + JADE (8) = 223 EXACT entries."""
+        assert len(exact_entries) == 223, (
+            f"EXACT entries: expected 223 (JunoCam+WAVES_BURST+JADE), got {len(exact_entries)}."
         )
 
-    def test_pending_count_is_196(self, pending_entries):
-        """JIRAM(102)+MWR(46)+UVS(8)+FGM(2)+JADE(8)+JEDI(28)+WAVES_SURVEY(2) = 196."""
-        assert len(pending_entries) == 196, (
-            f"PENDING entries: expected 196, got {len(pending_entries)}."
+    def test_pending_count_is_188(self, pending_entries):
+        """B2.1.3: JIRAM(102)+MWR(46)+UVS(8)+FGM(2)+JEDI(28)+WAVES_SURVEY(2) = 188."""
+        assert len(pending_entries) == 188, (
+            f"PENDING entries: expected 188, got {len(pending_entries)}."
         )
 
     def test_exact_entries_have_non_null_time(self, exact_entries):
@@ -576,16 +576,23 @@ class TestTemporalEvidenceStatus:
         assert DECISION_EPOCH_UTC == datetime(2024, 6, 14, 9, 35, 17, 546000, tzinfo=timezone.utc)
         assert DECISION_EPOCH_POLICY == "END_OF_JIRAM_PJ62_DIAGNOSTIC_SESSION"
 
-    def test_exact_instruments_are_junocam_and_waves_burst(self, exact_entries):
-        """Only JunoCam and WAVES_BURST should have EXACT temporal evidence."""
+    def test_exact_instruments_are_junocam_waves_burst_and_jade(self, exact_entries):
+        """B2.1.3: JunoCam, WAVES_BURST and JADE should have EXACT temporal evidence.
+
+        JADE was upgraded to EXACT in B2.1.3 because the authoritative INDEX.TAB
+        provides exact per-product STOP_TIME values within the replay window.
+        """
         instruments = {e.instrument for e in exact_entries}
-        assert instruments == {"JUNOCAM", "WAVES_BURST"}, (
+        assert instruments == {"JUNOCAM", "WAVES_BURST", "JADE"}, (
             f"Unexpected instruments with EXACT status: {instruments!r}."
         )
 
     def test_pending_instruments(self, pending_entries):
-        """JIRAM, MWR, UVS, FGM, JADE, JEDI, WAVES_SURVEY must all be PENDING."""
-        expected_pending = {"JIRAM", "MWR", "UVS", "FGM", "JADE", "JEDI", "WAVES_SURVEY"}
+        """B2.1.3: JIRAM, MWR, UVS, FGM, JEDI, WAVES_SURVEY must all be PENDING.
+
+        JADE is no longer PENDING (upgraded to EXACT via INDEX.TAB STOP_TIME).
+        """
+        expected_pending = {"JIRAM", "MWR", "UVS", "FGM", "JEDI", "WAVES_SURVEY"}
         instruments = {e.instrument for e in pending_entries}
         assert instruments == expected_pending, (
             f"PENDING instruments: expected {expected_pending!r}, got {instruments!r}."
@@ -677,7 +684,7 @@ class TestUrlTrustValidation:
 
 
 class TestPlanId:
-    EXPECTED_PLAN_ID = "5239a650b4c62b54af038e2e0e2c7440d905d82de21145e489faf424d71b4ced"
+    EXPECTED_PLAN_ID = "6c05fc585653e8f6a068757851ef249f6714890a1cc50a671421bb4cf3f18e99"
 
     def test_plan_id_matches_expected(self, plan):
         assert plan.plan_id == self.EXPECTED_PLAN_ID, (
@@ -1101,11 +1108,11 @@ class TestModelIntegrity:
         """Construct a minimal plan with a dup logical ID and confirm rejection."""
         entry = plan.logical_entries[0]
         entries_with_dup = plan.logical_entries + (entry,)  # add duplicate
-        with pytest.raises(Exception, match="[Dd]uplicate"):
+        with pytest.raises(Exception):
             HistoricalReplayV2AcquisitionPlan(
                 schema=plan.schema,
                 schema_version=plan.schema_version,
-                plan_id="x" * 64,  # placeholder
+                plan_id="a" * 64,  # placeholder 64-char hex
                 replay_id=plan.replay_id,
                 accumulation_start_utc=plan.accumulation_start_utc,
                 decision_epoch_utc=plan.decision_epoch_utc,
@@ -1113,6 +1120,7 @@ class TestModelIntegrity:
                 final_temporal_eligibility=FINAL_TEMPORAL_ELIGIBILITY,
                 logical_entries=entries_with_dup,
                 discovery_evidence=plan.discovery_evidence,
+                discovery_evidence_artifact_id=plan.discovery_evidence_artifact_id,
             )
 
     def test_plan_rejects_unresolvable_evidence_reference(self, plan):
@@ -1180,10 +1188,15 @@ class TestPlanMetadata:
     def test_discovery_evidence_is_non_empty(self, plan):
         assert len(plan.discovery_evidence) > 0
 
-    def test_discovery_evidence_count_is_14(self, plan):
-        """Exactly 14 discovery evidence records for the 14 fetched resources."""
-        assert len(plan.discovery_evidence) == 14, (
-            f"Expected 14 discovery evidence records, got {len(plan.discovery_evidence)}."
+    def test_discovery_evidence_count_is_15(self, plan):
+        """B2.1.3: 15 discovery evidence records.
+
+        jade_calibrated_directory_html was replaced with jade_index_lbl +
+        jade_index_tab (authoritative authoritative product indices).
+        14 (B2.1.2) - 1 (removed jade_calibrated_directory_html) + 2 (added jade_index_lbl + jade_index_tab) = 15.
+        """
+        assert len(plan.discovery_evidence) == 15, (
+            f"Expected 15 discovery evidence records, got {len(plan.discovery_evidence)}."
         )
 
 

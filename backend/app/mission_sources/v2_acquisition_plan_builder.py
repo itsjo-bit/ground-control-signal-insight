@@ -270,16 +270,20 @@ def _load_sidecar() -> dict[str, Any]:
             f"Sidecar replay_id {data['replay_id']!r} != expected {_REPLAY_ID!r}."
         )
 
-    # Verify artifact_id if present
-    if "artifact_id" in data:
-        expected_artifact_id = compute_sidecar_artifact_id(data)
-        if data["artifact_id"] != expected_artifact_id:
-            raise ValueError(
-                f"Sidecar artifact_id mismatch: "
-                f"stored {data['artifact_id']!r} != "
-                f"computed {expected_artifact_id!r}. "
-                "Sidecar has been mutated since artifact_id was set."
-            )
+    # artifact_id is REQUIRED in B2.1.3 (not optional)
+    if "artifact_id" not in data:
+        raise ValueError(
+            "Sidecar is missing required field: 'artifact_id'. "
+            "Run scripts/refresh_v2_discovery_evidence.py to regenerate."
+        )
+    expected_artifact_id = compute_sidecar_artifact_id(data)
+    if data["artifact_id"] != expected_artifact_id:
+        raise ValueError(
+            f"Sidecar artifact_id mismatch: "
+            f"stored {data['artifact_id']!r} != "
+            f"computed {expected_artifact_id!r}. "
+            "Sidecar has been mutated since artifact_id was set."
+        )
 
     return data
 
@@ -330,24 +334,22 @@ def _build_jiram_entries(
 ) -> list[AcquisitionLogicalProductEntry]:
     """Build JIRAM entries from sidecar normalized extraction rows.
 
-    Each row must have: filename, family, hhmmss
+    Each row must have: filename, family, hhmmss, relative_label_path
     """
     entries = []
     for row in sidecar_rows:
         filename = row["filename"]
         family = row["family"]  # "IMG" or "SPE"
         ts = row["hhmmss"]
+        relative_label_path = row.get("relative_label_path", filename)
 
         stem = filename[:-4] if filename.endswith(".xml") else filename
         family_lower = family.lower()
-        if family_lower == "img":
-            lid_prefix = f"urn:nasa:pds:juno_jiram:data_calibrated:{stem.lower()}"
-            archive_identity = f"{lid_prefix}::2.0"
-        else:
-            lid_prefix = f"urn:nasa:pds:juno_jiram:data_calibrated:{stem.lower()}"
-            archive_identity = f"{lid_prefix}::1.0"
+        # B2.1.3: JIRAM expected_archive_identity is UNAVAILABLE_UNTIL_LABEL
+        # Do not fabricate LIDVID versions. expected_archive_identity = None
+        archive_identity = None
 
-        url = f"{_JIRAM_BASE_URL}{filename}"
+        url = f"{_JIRAM_BASE_URL}{relative_label_path}"
         logical_id = f"gcsi.jiram.pj62.{family_lower}.{ts}"
 
         rep = AcquisitionSourceRepresentation(
@@ -375,9 +377,11 @@ def _build_jiram_entries(
 # ---------------------------------------------------------------------------
 # MWR (46 = 23 IRDR + 23 GRDR)
 # ---------------------------------------------------------------------------
+# Archive has 24 products per type per DOY (hours 0-23).
 # DOY165 eligible hours: 10–23 = 14 slots
 # DOY166 eligible hours: 00–08 = 9 slots
-# Total: 23 per product type × 2 types = 46
+# Total plan-eligible: 23 per product type × 2 types = 46
+# (All 96 discovered rows stored in sidecar; builder selects inclusion==ELIGIBLE)
 # Discovery source: directory HTML only.
 # DISCOVERY_TIME_AUTHORITY = LABEL_PENDING
 # discovery_availability_time_utc = None for all MWR products.
@@ -394,19 +398,30 @@ def _build_mwr_entries(
 ) -> list[AcquisitionLogicalProductEntry]:
     """Build MWR entries from sidecar normalized extraction rows.
 
-    Each row must have: filename, product_type, doy, hour, code
+    Each row must have: filename, product_type, doy, hour, code, relative_label_path, inclusion
+    Only rows with inclusion == "ELIGIBLE" are included in the plan.
+    URL is constructed from base + relative_label_path (source-derived exact path).
     """
     entries = []
     for row in sidecar_rows:
+        # Only eligible rows (within temporal window) produce plan entries
+        if row.get("inclusion") != "ELIGIBLE":
+            continue
+
         product_type = row["product_type"]  # "IRDR" or "GRDR"
         doy = row["doy"]
         hour = row["hour"]
         code = row["code"]
+        fname_stem = row["filename"]  # exact filename from source
 
         kind = product_type.lower()  # "irdr" or "grdr"
-        kind_letter = "I" if kind == "irdr" else "G"
-        fname_stem = f"MWR62R{kind_letter}2024{doy}{hour:02d}0000_{code}_V04"
-        url = f"{_MWR_BASE_URL}{product_type}/2024/2024{doy}/{fname_stem}.xml"
+        relative_label_path = row.get("relative_label_path")
+        if relative_label_path:
+            url = f"{_MWR_BASE_URL}{relative_label_path}"
+        else:
+            # fallback for backward compatibility
+            kind_letter = "I" if kind == "irdr" else "G"
+            url = f"{_MWR_BASE_URL}{product_type}/2024/2024{doy}/{fname_stem}.xml"
         logical_id = f"gcsi.mwr.pj62.{kind}.2024{doy}{hour:02d}0000"
 
         # Select appropriate evidence_id based on type and DOY
@@ -453,7 +468,7 @@ def _build_uvs_entries(
 ) -> list[AcquisitionLogicalProductEntry]:
     """Build UVS entries from sidecar normalized extraction rows.
 
-    Each row must have: filename, sensor, sclk, doy_str, obs_type
+    Each row must have: filename, sensor, sclk, doy_str, obs_type, relative_label_path
     """
     entries = []
     for row in sidecar_rows:
@@ -462,8 +477,9 @@ def _build_uvs_entries(
         doy_str = row["doy_str"]
         obs_type = row["obs_type"]
         stem = row["filename"]
+        relative_label_path = row.get("relative_label_path", f"{stem}.xml")
 
-        url = f"{_UVS_BASE_URL}{stem}.xml"
+        url = f"{_UVS_BASE_URL}{relative_label_path}"
         logical_id = (
             f"gcsi.uvs.pj62.{sensor.lower()}_{sclk}_{doy_str}_{obs_type.lower()}"
         )
@@ -512,67 +528,135 @@ def _build_junocam_entries(
     tab_ev: str,
     sidecar_extractions: list[dict],
 ) -> list[AcquisitionLogicalProductEntry]:
-    """Build JunoCam entries from sidecar normalized extraction rows.
+    """Build JunoCam entries from sidecar normalized extraction rows (B2.1.3).
+
+    The sidecar stores individual representation rows (one per EDR or RDR).
+    This function groups them by observation_key and builds logical entries.
 
     Only rows with partition == "ELIGIBLE" are used.
-    Rows with other partitions (PRE, POST) are stored in sidecar for
-    reconciliation proof but not included in the acquisition plan.
+    Supports both legacy paired-row format (edr_product_id/rdr_product_id) and
+    new individual-row format (product_id, representation_kind, observation_key).
     """
-    entries = []
-    for row in sidecar_extractions:
-        # Only eligible rows produce plan entries
-        if row.get("partition") != "ELIGIBLE":
-            continue
+    eligible = [r for r in sidecar_extractions if r.get("partition") == "ELIGIBLE"]
 
-        edr_pid = row["edr_product_id"]
-        edr_file_spec = row["edr_file_specification_name"]
-        rdr_pid = row["rdr_product_id"]
-        rdr_file_spec = row["rdr_file_specification_name"]
-        stop_utc_str = row["stop_time_utc"]
-        obs_key = row["obs_key"]
+    # Detect format: new individual-row format has "representation_kind"
+    has_new_format = eligible and "representation_kind" in eligible[0]
 
-        # Apply JUNOCAM_NONOBSERVATION_ROW_EXCLUSION_V1:
-        # obs_type character is the 7th character of obs_num (after 62)
-        obs_num_part = edr_pid.split("_")[2]  # e.g. 62C00057
-        obs_type_char = obs_num_part[2] if len(obs_num_part) >= 3 else ""
-        if obs_type_char not in _JUNOCAM_SCIENCE_OBS_TYPES:
-            continue  # excluded — not a science imaging obs type
+    if has_new_format:
+        # New format: group by observation_key
+        from collections import defaultdict
+        by_obs: dict = defaultdict(dict)
+        for row in eligible:
+            obs_key = row.get("observation_key") or row.get("obs_key", "")
+            kind = row["representation_kind"]  # "EDR" or "RDR"
+            by_obs[obs_key][kind] = row
 
-        logical_id = f"gcsi.junocam.pj62.obs.{obs_key}"
-        edr_url = f"{_JUNOCAM_BASE_URL}{edr_file_spec}"
-        rdr_url = f"{_JUNOCAM_BASE_URL}{rdr_file_spec}"
-        avail = datetime.fromisoformat(stop_utc_str).replace(tzinfo=timezone.utc)
+        entries = []
+        for obs_key, kind_map in sorted(by_obs.items()):
+            if "EDR" not in kind_map or "RDR" not in kind_map:
+                continue  # skip unpaired rows
+            edr_row = kind_map["EDR"]
+            rdr_row = kind_map["RDR"]
 
-        edr_rep = AcquisitionSourceRepresentation(
-            representation_role=AcquisitionRepresentationRole.EDR,
-            source_standard=AcquisitionSourceStandard.PDS3,
-            label_url=edr_url,
-            normalizer_id="gcsi.generic_pds3_label.v1",
-            profile_id="junocam_pds3",
-            expected_archive_identity=edr_pid,
-            discovery_evidence_id=tab_ev,
-        )
-        rdr_rep = AcquisitionSourceRepresentation(
-            representation_role=AcquisitionRepresentationRole.RDR,
-            source_standard=AcquisitionSourceStandard.PDS3,
-            label_url=rdr_url,
-            normalizer_id="gcsi.generic_pds3_label.v1",
-            profile_id="junocam_pds3",
-            expected_archive_identity=rdr_pid,
-            discovery_evidence_id=tab_ev,
-        )
-        for rep in (edr_rep, rdr_rep):
-            validate_representation_url_trust(rep)
-        entries.append(AcquisitionLogicalProductEntry(
-            logical_product_id=logical_id,
-            instrument="JUNOCAM",
-            semantic_role="visible_imaging",
-            temporal_evidence_status=_EXACT,
-            discovery_availability_time_utc=avail,
-            representations=(edr_rep, rdr_rep),
-            discovery_evidence_id=tab_ev,
-        ))
-    return entries
+            edr_pid = edr_row["product_id"]
+            edr_file_spec = edr_row["file_specification_name"]
+            rdr_pid = rdr_row["product_id"]
+            rdr_file_spec = rdr_row["file_specification_name"]
+            stop_utc_str = edr_row["stop_time_utc"]
+
+            # Apply JUNOCAM_NONOBSERVATION_ROW_EXCLUSION_V1
+            obs_num_part = edr_pid.split("_")[2]  # e.g. 62C00057
+            obs_type_char = obs_num_part[2] if len(obs_num_part) >= 3 else ""
+            if obs_type_char not in _JUNOCAM_SCIENCE_OBS_TYPES:
+                continue
+
+            logical_id = f"gcsi.junocam.pj62.obs.{obs_key}"
+            edr_url = f"{_JUNOCAM_BASE_URL}{edr_file_spec}"
+            rdr_url = f"{_JUNOCAM_BASE_URL}{rdr_file_spec}"
+            avail = datetime.fromisoformat(stop_utc_str).replace(tzinfo=timezone.utc)
+
+            edr_rep = AcquisitionSourceRepresentation(
+                representation_role=AcquisitionRepresentationRole.EDR,
+                source_standard=AcquisitionSourceStandard.PDS3,
+                label_url=edr_url,
+                normalizer_id="gcsi.generic_pds3_label.v1",
+                profile_id="junocam_pds3",
+                expected_archive_identity=edr_pid,
+                discovery_evidence_id=tab_ev,
+            )
+            rdr_rep = AcquisitionSourceRepresentation(
+                representation_role=AcquisitionRepresentationRole.RDR,
+                source_standard=AcquisitionSourceStandard.PDS3,
+                label_url=rdr_url,
+                normalizer_id="gcsi.generic_pds3_label.v1",
+                profile_id="junocam_pds3",
+                expected_archive_identity=rdr_pid,
+                discovery_evidence_id=tab_ev,
+            )
+            for rep in (edr_rep, rdr_rep):
+                validate_representation_url_trust(rep)
+            entries.append(AcquisitionLogicalProductEntry(
+                logical_product_id=logical_id,
+                instrument="JUNOCAM",
+                semantic_role="visible_imaging",
+                temporal_evidence_status=_EXACT,
+                discovery_availability_time_utc=avail,
+                representations=(edr_rep, rdr_rep),
+                discovery_evidence_id=tab_ev,
+            ))
+        return entries
+
+    else:
+        # Legacy format: paired rows (edr_product_id/rdr_product_id)
+        entries = []
+        for row in eligible:
+            edr_pid = row["edr_product_id"]
+            edr_file_spec = row["edr_file_specification_name"]
+            rdr_pid = row["rdr_product_id"]
+            rdr_file_spec = row["rdr_file_specification_name"]
+            stop_utc_str = row["stop_time_utc"]
+            obs_key = row.get("obs_key") or row.get("observation_key", "")
+
+            obs_num_part = edr_pid.split("_")[2]
+            obs_type_char = obs_num_part[2] if len(obs_num_part) >= 3 else ""
+            if obs_type_char not in _JUNOCAM_SCIENCE_OBS_TYPES:
+                continue
+
+            logical_id = f"gcsi.junocam.pj62.obs.{obs_key}"
+            edr_url = f"{_JUNOCAM_BASE_URL}{edr_file_spec}"
+            rdr_url = f"{_JUNOCAM_BASE_URL}{rdr_file_spec}"
+            avail = datetime.fromisoformat(stop_utc_str).replace(tzinfo=timezone.utc)
+
+            edr_rep = AcquisitionSourceRepresentation(
+                representation_role=AcquisitionRepresentationRole.EDR,
+                source_standard=AcquisitionSourceStandard.PDS3,
+                label_url=edr_url,
+                normalizer_id="gcsi.generic_pds3_label.v1",
+                profile_id="junocam_pds3",
+                expected_archive_identity=edr_pid,
+                discovery_evidence_id=tab_ev,
+            )
+            rdr_rep = AcquisitionSourceRepresentation(
+                representation_role=AcquisitionRepresentationRole.RDR,
+                source_standard=AcquisitionSourceStandard.PDS3,
+                label_url=rdr_url,
+                normalizer_id="gcsi.generic_pds3_label.v1",
+                profile_id="junocam_pds3",
+                expected_archive_identity=rdr_pid,
+                discovery_evidence_id=tab_ev,
+            )
+            for rep in (edr_rep, rdr_rep):
+                validate_representation_url_trust(rep)
+            entries.append(AcquisitionLogicalProductEntry(
+                logical_product_id=logical_id,
+                instrument="JUNOCAM",
+                semantic_role="visible_imaging",
+                temporal_evidence_status=_EXACT,
+                discovery_availability_time_utc=avail,
+                representations=(edr_rep, rdr_rep),
+                discovery_evidence_id=tab_ev,
+            ))
+        return entries
 
 
 # ---------------------------------------------------------------------------
@@ -594,7 +678,7 @@ def _build_fgm_entries(
     """Build FGM entries from sidecar normalized extraction rows.
 
     Only rows with selected == True are included in the plan.
-    Each row must have: lbl_filename, product_id, logical_stem, selected
+    Each row must have: lbl_filename, product_id, logical_stem, selected, relative_label_path
     """
     entries = []
     for row in sidecar_rows:
@@ -604,8 +688,9 @@ def _build_fgm_entries(
         lbl_fname = row["lbl_filename"]
         product_id = row["product_id"]
         stem = row["logical_stem"]
+        relative_label_path = row.get("relative_label_path", lbl_fname)
 
-        url = f"{_FGM_BASE_URL}{lbl_fname}"
+        url = f"{_FGM_BASE_URL}{relative_label_path}"
         logical_id = f"gcsi.fgm.pj62.{stem}"
         rep = AcquisitionSourceRepresentation(
             representation_role=AcquisitionRepresentationRole.FULL_RESOLUTION,
@@ -645,10 +730,13 @@ def _build_jade_entries(
     evidence_id: str,
     sidecar_rows: list[dict],
 ) -> list[AcquisitionLogicalProductEntry]:
-    """Build JADE entries from sidecar normalized extraction rows.
+    """Build JADE entries from sidecar normalized extraction rows (B2.1.3).
 
     Only rows with inclusion == "ELIGIBLE" are included in the plan.
-    Each row must have: product_id, path_suffix, doy, inclusion
+    Each row must have: product_id, relative_label_path, doy, inclusion,
+                        start_time_utc, stop_time_utc.
+
+    JADE now has EXACT_DISCOVERY_METADATA temporal status from INDEX.TAB.
     """
     entries = []
     for row in sidecar_rows:
@@ -656,10 +744,14 @@ def _build_jade_entries(
             continue
 
         product_id = row["product_id"]
-        path_suffix = row["path_suffix"]
+        relative_label_path = row["relative_label_path"]
+        stop_utc_str = row["stop_time_utc"]
 
-        url = f"{_JADE_BASE_URL}{path_suffix}"
+        url = f"{_JADE_BASE_URL}{relative_label_path}"
         logical_id = f"gcsi.jade.pj62.{product_id.lower()}"
+        stop_utc = datetime.fromisoformat(stop_utc_str.replace("+00:00", "")).replace(
+            tzinfo=timezone.utc
+        )
         rep = AcquisitionSourceRepresentation(
             representation_role=AcquisitionRepresentationRole.CALIBRATED,
             source_standard=AcquisitionSourceStandard.PDS3,
@@ -674,8 +766,8 @@ def _build_jade_entries(
             logical_product_id=logical_id,
             instrument="JADE",
             semantic_role="plasma_particles",
-            temporal_evidence_status=_PENDING,
-            discovery_availability_time_utc=None,
+            temporal_evidence_status=_EXACT,
+            discovery_availability_time_utc=stop_utc,
             representations=(rep,),
             discovery_evidence_id=evidence_id,
         ))
@@ -704,12 +796,13 @@ def _build_jedi_entries(
 ) -> list[AcquisitionLogicalProductEntry]:
     """Build JEDI entries from sidecar normalized extraction rows.
 
-    Each row must have: product_id, doy
+    Each row must have: product_id, doy, relative_label_path
     """
     entries = []
     for row in sidecar_rows_165:
         product_id = row["product_id"]
-        url = f"{_JEDI_BASE_URL}165/{product_id}.LBL"
+        relative_label_path = row.get("relative_label_path", f"165/{product_id}.LBL")
+        url = f"{_JEDI_BASE_URL}{relative_label_path}"
         logical_id = f"gcsi.jedi.pj62.{product_id.lower()}"
         rep = AcquisitionSourceRepresentation(
             representation_role=AcquisitionRepresentationRole.CALIBRATED,
@@ -733,7 +826,8 @@ def _build_jedi_entries(
 
     for row in sidecar_rows_166:
         product_id = row["product_id"]
-        url = f"{_JEDI_BASE_URL}166/{product_id}.LBL"
+        relative_label_path = row.get("relative_label_path", f"166/{product_id}.LBL")
+        url = f"{_JEDI_BASE_URL}{relative_label_path}"
         logical_id = f"gcsi.jedi.pj62.{product_id.lower()}"
         rep = AcquisitionSourceRepresentation(
             representation_role=AcquisitionRepresentationRole.CALIBRATED,
@@ -783,7 +877,7 @@ def _build_waves_survey_entries(
     """Build WAVES Survey entries from sidecar normalized extraction rows.
 
     Only rows with inclusion == "ELIGIBLE" are included in the plan.
-    Each row must have: stem, band, inclusion
+    Each row must have: stem, band, inclusion, relative_label_path
     """
     entries = []
     for row in sidecar_rows:
@@ -793,8 +887,9 @@ def _build_waves_survey_entries(
         stem = row["stem"]
         band = row["band"].lower()
         role = _WAVES_SURVEY_BAND_ROLES[band]
+        relative_label_path = row.get("relative_label_path", f"{stem}.LBL")
 
-        url = f"{_WAVES_SURVEY_BASE_URL}{stem}.LBL"
+        url = f"{_WAVES_SURVEY_BASE_URL}{relative_label_path}"
         logical_id = f"gcsi.waves.survey.pj62.{band}"
         rep = AcquisitionSourceRepresentation(
             representation_role=role,
@@ -908,8 +1003,8 @@ def build_plan() -> HistoricalReplayV2AcquisitionPlan:
     evidence_list = _make_evidence_from_sidecar(sidecar)
     extractions = sidecar["normalized_extractions"]
 
-    # Get the sidecar artifact_id for plan binding
-    sidecar_artifact_id = sidecar.get("artifact_id")
+    # Get the sidecar artifact_id for plan binding (required in B2.1.3)
+    sidecar_artifact_id = sidecar["artifact_id"]
 
     # Instrument-specific normalized extraction rows from sidecar
     jiram_rows = extractions["jiram_orbit62_filenames"]
@@ -922,6 +1017,12 @@ def build_plan() -> HistoricalReplayV2AcquisitionPlan:
     waves_survey_rows = extractions["waves_survey_orbit62_labels"]
     junocam_rows = extractions["junocam_index_tab_orbit62_all"]
     waves_burst_rows = extractions["waves_burst_index_tab_orbit62_all"]
+
+    # JADE evidence key changed in B2.1.3 to reflect INDEX.TAB source
+    # Try new key first, fall back to legacy key
+    jade_evidence_id = "jade_index_tab" if "jade_index_tab" in {
+        ev["evidence_id"] for ev in sidecar["discovery_evidence"]
+    } else "jade_calibrated_directory_html"
 
     entries: list[AcquisitionLogicalProductEntry] = []
     entries.extend(_build_jiram_entries("jiram_orbit62_directory_html", jiram_rows))
@@ -939,7 +1040,7 @@ def build_plan() -> HistoricalReplayV2AcquisitionPlan:
         junocam_rows,
     ))
     entries.extend(_build_fgm_entries("fgm_jupiter_pl_directory_html", fgm_rows))
-    entries.extend(_build_jade_entries("jade_calibrated_directory_html", jade_rows))
+    entries.extend(_build_jade_entries(jade_evidence_id, jade_rows))
     entries.extend(_build_jedi_entries(
         "jedi_165_directory_html",
         "jedi_166_directory_html",
@@ -1049,6 +1150,88 @@ def main() -> None:
         "  6F_B212_STATUS = ACQUISITION_EVIDENCE_CHAIN_CLOSED (pending test run)",
         file=sys.stderr,
     )
+
+
+# ---------------------------------------------------------------------------
+# Bound plan loader (B2.1.3 §23)
+# ---------------------------------------------------------------------------
+
+
+from typing import NamedTuple
+
+
+class BoundAcquisitionPlan(NamedTuple):
+    """A plan + sidecar pair that has been cryptographically verified as a bound pair."""
+    plan: HistoricalReplayV2AcquisitionPlan
+    sidecar: "dict"  # The validated sidecar dict
+
+
+def load_bound_v2_acquisition_plan() -> BoundAcquisitionPlan:
+    """Load and verify the V2 acquisition plan bound to the discovery evidence sidecar.
+
+    B2.1.3 §23 requirements:
+    1. Loads the sidecar and recomputes + verifies sidecar artifact_id.
+    2. Loads the acquisition plan and verifies plan_id.
+    3. Requires plan.discovery_evidence_artifact_id == sidecar.artifact_id.
+    4. Verifies plan's embedded DiscoveryEvidence records are semantically consistent
+       with sidecar evidence records.
+    5. Returns a BoundAcquisitionPlan(plan, sidecar).
+
+    B2.2 MUST use this helper. Never load plan alone and ignore its evidence artifact.
+
+    Raises:
+        ValueError: if sidecar or plan cannot be loaded/verified.
+        ValueError: if plan.discovery_evidence_artifact_id != sidecar.artifact_id.
+        ValueError: if embedded evidence records are inconsistent with sidecar.
+    """
+    from backend.app.mission_sources.v2_acquisition_plan import load_acquisition_plan
+    from backend.app.mission_sources.v2_sidecar_models import compute_sidecar_artifact_id
+
+    # 1. Load and verify sidecar (artifact_id is recomputed inside _load_sidecar)
+    sidecar = _load_sidecar()
+    sidecar_artifact_id = sidecar["artifact_id"]
+
+    # 2. Load and verify plan (plan_id is recomputed inside load_acquisition_plan)
+    plan_path = str(_PLAN_OUTPUT_PATH)
+    plan = load_acquisition_plan(plan_path)
+
+    # 3. Require plan.discovery_evidence_artifact_id == sidecar.artifact_id
+    if plan.discovery_evidence_artifact_id != sidecar_artifact_id:
+        raise ValueError(
+            f"Plan/sidecar binding mismatch: "
+            f"plan.discovery_evidence_artifact_id={plan.discovery_evidence_artifact_id!r} "
+            f"!= sidecar.artifact_id={sidecar_artifact_id!r}. "
+            "The plan was built against a different sidecar. "
+            "Run v2_acquisition_plan_builder.py to rebuild the plan."
+        )
+
+    # 4. Verify plan's embedded DiscoveryEvidence records are semantically consistent
+    #    with sidecar evidence records (same evidence_ids, same source_urls, same SHAs).
+    sidecar_ev_by_id = {
+        ev["evidence_id"]: ev
+        for ev in sidecar["discovery_evidence"]
+    }
+    for plan_ev in plan.discovery_evidence:
+        sidecar_ev = sidecar_ev_by_id.get(plan_ev.evidence_id)
+        if sidecar_ev is None:
+            raise ValueError(
+                f"Plan evidence_id {plan_ev.evidence_id!r} not found in sidecar "
+                f"discovery_evidence."
+            )
+        if plan_ev.source_url != sidecar_ev["source_url"]:
+            raise ValueError(
+                f"Plan evidence {plan_ev.evidence_id!r} source_url mismatch: "
+                f"plan={plan_ev.source_url!r} sidecar={sidecar_ev['source_url']!r}."
+            )
+        if plan_ev.response_sha256 != sidecar_ev["response_sha256"]:
+            raise ValueError(
+                f"Plan evidence {plan_ev.evidence_id!r} response_sha256 mismatch: "
+                f"plan={plan_ev.response_sha256!r} "
+                f"sidecar={sidecar_ev['response_sha256']!r}."
+            )
+
+    # 5. Return bound pair
+    return BoundAcquisitionPlan(plan=plan, sidecar=sidecar)
 
 
 if __name__ == "__main__":

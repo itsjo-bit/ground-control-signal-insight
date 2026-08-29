@@ -254,48 +254,61 @@ class TestJiramSidecar:
 class TestMwrSidecar:
     """Spec O.3: exact 46 MWR filenames come from sidecar."""
 
-    def test_mwr_sidecar_count_is_46(self, sidecar):
+    def test_mwr_sidecar_total_discovered_is_96(self, sidecar):
+        """Archive provides 24 products per type per DOY (hours 0-23) = 96 total discovered."""
         rows = sidecar["normalized_extractions"]["mwr_orbit62_filenames"]
-        assert len(rows) == 46, f"MWR sidecar rows: {len(rows)}"
+        assert len(rows) == 96, f"MWR sidecar rows: {len(rows)}"
 
-    def test_mwr_irdr_count_is_23(self, sidecar):
+    def test_mwr_sidecar_eligible_is_46(self, sidecar):
+        """Only 46 MWR products are within the accumulation window."""
+        rows = sidecar["normalized_extractions"]["mwr_orbit62_filenames"]
+        eligible = [r for r in rows if r.get("inclusion") == "ELIGIBLE"]
+        assert len(eligible) == 46, f"MWR eligible rows: {len(eligible)}"
+
+    def test_mwr_sidecar_excluded_is_50(self, sidecar):
+        """50 MWR products are outside the accumulation window."""
+        rows = sidecar["normalized_extractions"]["mwr_orbit62_filenames"]
+        excluded = [r for r in rows if r.get("inclusion") == "EXCLUDED"]
+        assert len(excluded) == 50, f"MWR excluded rows: {len(excluded)}"
+
+    def test_mwr_irdr_discovered_count_is_48(self, sidecar):
         rows = sidecar["normalized_extractions"]["mwr_orbit62_filenames"]
         irdr = [r for r in rows if r["product_type"] == "IRDR"]
-        assert len(irdr) == 23, f"MWR IRDR rows: {len(irdr)}"
+        assert len(irdr) == 48, f"MWR IRDR rows: {len(irdr)}"
 
-    def test_mwr_grdr_count_is_23(self, sidecar):
+    def test_mwr_grdr_discovered_count_is_48(self, sidecar):
         rows = sidecar["normalized_extractions"]["mwr_orbit62_filenames"]
         grdr = [r for r in rows if r["product_type"] == "GRDR"]
-        assert len(grdr) == 23, f"MWR GRDR rows: {len(grdr)}"
+        assert len(grdr) == 48, f"MWR GRDR rows: {len(grdr)}"
 
-    def test_mwr_doy165_count_is_14_per_type(self, sidecar):
+    def test_mwr_eligible_doy165_count_is_14_per_type(self, sidecar):
         rows = sidecar["normalized_extractions"]["mwr_orbit62_filenames"]
-        irdr_165 = [r for r in rows if r["product_type"] == "IRDR" and r["doy"] == 165]
-        grdr_165 = [r for r in rows if r["product_type"] == "GRDR" and r["doy"] == 165]
-        assert len(irdr_165) == 14, f"MWR IRDR DOY165: {len(irdr_165)}"
-        assert len(grdr_165) == 14, f"MWR GRDR DOY165: {len(grdr_165)}"
+        irdr_165_elig = [r for r in rows if r["product_type"] == "IRDR" and r["doy"] == 165 and r.get("inclusion") == "ELIGIBLE"]
+        grdr_165_elig = [r for r in rows if r["product_type"] == "GRDR" and r["doy"] == 165 and r.get("inclusion") == "ELIGIBLE"]
+        assert len(irdr_165_elig) == 14, f"MWR IRDR DOY165 eligible: {len(irdr_165_elig)}"
+        assert len(grdr_165_elig) == 14, f"MWR GRDR DOY165 eligible: {len(grdr_165_elig)}"
 
-    def test_mwr_doy166_count_is_9_per_type(self, sidecar):
+    def test_mwr_eligible_doy166_count_is_9_per_type(self, sidecar):
         rows = sidecar["normalized_extractions"]["mwr_orbit62_filenames"]
-        irdr_166 = [r for r in rows if r["product_type"] == "IRDR" and r["doy"] == 166]
-        grdr_166 = [r for r in rows if r["product_type"] == "GRDR" and r["doy"] == 166]
-        assert len(irdr_166) == 9, f"MWR IRDR DOY166: {len(irdr_166)}"
-        assert len(grdr_166) == 9, f"MWR GRDR DOY166: {len(grdr_166)}"
+        irdr_166_elig = [r for r in rows if r["product_type"] == "IRDR" and r["doy"] == 166 and r.get("inclusion") == "ELIGIBLE"]
+        grdr_166_elig = [r for r in rows if r["product_type"] == "GRDR" and r["doy"] == 166 and r.get("inclusion") == "ELIGIBLE"]
+        assert len(irdr_166_elig) == 9, f"MWR IRDR DOY166 eligible: {len(irdr_166_elig)}"
+        assert len(grdr_166_elig) == 9, f"MWR GRDR DOY166 eligible: {len(grdr_166_elig)}"
 
     def test_mwr_sidecar_rows_parse_as_strict_models(self, sidecar):
         rows = sidecar["normalized_extractions"]["mwr_orbit62_filenames"]
         parsed = [MwrDiscoveryLabel.model_validate(r, strict=False) for r in rows]
-        assert len(parsed) == 46
+        assert len(parsed) == 96
 
-    def test_mwr_plan_entries_come_from_sidecar(self, all_entries, sidecar):
-        """The 46 MWR plan entries must match sidecar filenames exactly."""
+    def test_mwr_plan_entries_come_from_eligible_sidecar_rows(self, all_entries, sidecar):
+        """The 46 MWR plan entries must match only eligible sidecar rows."""
         plan_mwr = [e for e in all_entries if e.instrument == "MWR"]
         assert len(plan_mwr) == 46
 
         sidecar_rows = sidecar["normalized_extractions"]["mwr_orbit62_filenames"]
-        # Derive expected logical IDs
+        eligible = [r for r in sidecar_rows if r.get("inclusion") == "ELIGIBLE"]
         expected_lids = set()
-        for r in sidecar_rows:
+        for r in eligible:
             kind = r["product_type"].lower()
             doy = r["doy"]
             hour = r["hour"]
@@ -495,14 +508,20 @@ class TestJunoCamReconciliation:
         assert ps["pre_rows"] + ps["eligible_rows"] + ps["post_rows"] == ps["total_orbit62_rows"]
 
     def test_eligible_rows_in_sidecar_match_partition_summary(self, sidecar):
-        """eligible_rows count (248) = 2 × sidecar observation rows (124)."""
+        """B2.1.3: eligible_rows count (248) = per-representation rows (248).
+
+        B2.1.3 converted JunoCam from paired (124 obs-records) to individual
+        representation rows (248 rows = 124 EDR + 124 RDR). The partition
+        summary eligible_rows=248 now matches the raw row count directly.
+        """
         ps = sidecar["normalized_extractions"]["partition_summaries"]["junocam"]
         observation_rows = sidecar["normalized_extractions"]["junocam_index_tab_orbit62_all"]
-        eligible_obs = [r for r in observation_rows if r.get("partition") == "ELIGIBLE"]
-        # 248 eligible rows (EDR+RDR) = 124 observation records × 2
-        assert len(eligible_obs) * 2 == ps["eligible_rows"], (
-            f"eligible obs records={len(eligible_obs)}, expected 124 (×2=248)"
+        eligible_rows = [r for r in observation_rows if r.get("partition") == "ELIGIBLE"]
+        # 248 eligible rows (124 EDR + 124 RDR individual representation rows)
+        assert len(eligible_rows) == ps["eligible_rows"], (
+            f"eligible rows={len(eligible_rows)}, partition_summary eligible_rows={ps['eligible_rows']}"
         )
+        assert ps["eligible_rows"] == 248
 
 
 # ===========================================================================
@@ -1104,19 +1123,21 @@ class TestExactCounts:
 class TestTemporalContract:
     """Spec O.23: EXACT=215 / PENDING=196."""
 
-    def test_exact_count_is_215(self, all_entries):
+    def test_exact_count_is_223(self, all_entries):
+        """B2.1.3: EXACT=223 (JunoCam=124, WAVES_BURST=91, JADE=8 upgraded to EXACT)."""
         exact = sum(
             1 for e in all_entries
             if e.temporal_evidence_status == TemporalEvidenceStatus.EXACT_DISCOVERY_METADATA
         )
-        assert exact == 215, f"EXACT: expected 215, got {exact}."
+        assert exact == 223, f"EXACT: expected 223, got {exact}."
 
-    def test_pending_count_is_196(self, all_entries):
+    def test_pending_count_is_188(self, all_entries):
+        """B2.1.3: PENDING=188 (JIRAM=102, MWR=46, UVS=8, FGM=2, JEDI=28, WAVES_SURVEY=2)."""
         pending = sum(
             1 for e in all_entries
             if e.temporal_evidence_status == TemporalEvidenceStatus.LABEL_VERIFICATION_PENDING
         )
-        assert pending == 196, f"PENDING: expected 196, got {pending}."
+        assert pending == 188, f"PENDING: expected 188, got {pending}."
 
     def test_exact_plus_pending_is_411(self, all_entries):
         exact = sum(
@@ -1127,7 +1148,7 @@ class TestTemporalContract:
             1 for e in all_entries
             if e.temporal_evidence_status == TemporalEvidenceStatus.LABEL_VERIFICATION_PENDING
         )
-        assert exact + pending == 411
+        assert exact + pending == 411, f"EXACT({exact}) + PENDING({pending}) != 411"
 
     def test_pending_entries_have_no_discovery_time(self, all_entries):
         """All PENDING entries must have discovery_availability_time_utc = None."""

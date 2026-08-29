@@ -4,101 +4,38 @@
   "decision_epoch_utc": "2024-06-14T09:35:17.546000+00:00",
   "discovery_evidence": [
     {
-      "byte_count": 154426,
-      "evidence_id": "jiram_orbit62_directory_html",
-      "relevant_row_count": 102,
-      "response_sha256": "962afaee2eb2f9b2febf5778eda70f44f94166a2d0f605576d8c6083db1342db",
-      "retrieved_at": "2026-08-29T07:45:04.716925Z",
-      "source_kind": "pds4_directory_html",
-      "source_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/"
-    },
-    {
-      "byte_count": 18634,
-      "evidence_id": "mwr_irdr_2024165_directory_html",
-      "relevant_row_count": 14,
-      "response_sha256": "562977c85507e149dfa192f4d6865b3dbb514962369a2cc3a6ebd8642cc813a1",
-      "retrieved_at": "2026-08-29T07:45:06.240689Z",
-      "source_kind": "pds4_directory_html",
-      "source_url": "https://pds-atmospheres.nmsu.edu/PDS/data/jnomwr_1100/DATA/IRDR/2024/2024165/"
-    },
-    {
-      "byte_count": 18634,
-      "evidence_id": "mwr_irdr_2024166_directory_html",
-      "relevant_row_count": 9,
-      "response_sha256": "83da4da6a949146c4b9265ee11b2f42221265d8641478c0ca0dc9283f1cb060a",
-      "retrieved_at": "2026-08-29T07:45:07.460604Z",
-      "source_kind": "pds4_directory_html",
-      "source_url": "https://pds-atmospheres.nmsu.edu/PDS/data/jnomwr_1100/DATA/IRDR/2024/2024166/"
-    },
-    {
-      "byte_count": 18634,
-      "evidence_id": "mwr_grdr_2024165_directory_html",
-      "relevant_row_count": 14,
-      "response_sha256": "2660bd26665036c44afa5149c93e5e1ebb2c7460436515fa0e75866031d10a1a",
-      "retrieved_at": "2026-08-29T07:45:08.499374Z",
-      "source_kind": "pds4_directory_html",
-      "source_url": "https://pds-atmospheres.nmsu.edu/PDS/data/jnomwr_1100/DATA/GRDR/2024/2024165/"
-    },
-    {
-      "byte_count": 18634,
-      "evidence_id": "mwr_grdr_2024166_directory_html",
-      "relevant_row_count": 9,
-      "response_sha256": "7485de7259aa5b39328c47b1430ca304a6c4b8e384fa9b5c4ca4ec5933311407",
-      "retrieved_at": "2026-08-29T07:45:09.752590Z",
-      "source_kind": "pds4_directory_html",
-      "source_url": "https://pds-atmospheres.nmsu.edu/PDS/data/jnomwr_1100/DATA/GRDR/2024/2024166/"
-    },
-    {
-      "byte_count": 20926,
-      "evidence_id": "uvs_orbit62_directory_html",
-      "relevant_row_count": 8,
-      "response_sha256": "533c98393b2ed55f12f2989ff9376b9df70b9edfb5ed9cdcdf402fe7028b338c",
-      "retrieved_at": "2026-08-29T07:45:11.926452Z",
-      "source_kind": "pds4_directory_html",
-      "source_url": "https://atmos.nmsu.edu/PDS/data/jnouvs_3001/DATA/ORBIT-62/"
-    },
-    {
-      "byte_count": 7364,
-      "evidence_id": "junocam_jnojnc_0029_index_lbl",
-      "relevant_row_count": 4782,
-      "response_sha256": "b5132017c896adfd07a81e83c3948746d3270ad379ae4e28e77f18708f99c026",
-      "retrieved_at": "2026-08-29T07:45:12.733831Z",
-      "source_kind": "pds3_index_lbl",
-      "source_url": "https://planetarydata.jpl.nasa.gov/img/data/juno/JNOJNC_0029/INDEX/INDEX.LBL"
-    },
-    {
-      "byte_count": 2400564,
-      "evidence_id": "junocam_jnojnc_0029_index_tab",
-      "relevant_row_count": 4782,
-      "response_sha256": "3eaa77323900cdcf30cb7c896c8ab50b608e414e42f9df539717fa306145c382",
-      "retrieved_at": "2026-08-29T07:45:15.889793Z",
-      "source_kind": "pds3_index_tab",
-      "source_url": "https://planetarydata.jpl.nasa.gov/img/data/juno/JNOJNC_0029/INDEX/INDEX.TAB"
-    },
-    {
       "byte_count": 11208,
       "evidence_id": "fgm_jupiter_pl_directory_html",
       "relevant_row_count": 2,
       "response_sha256": "bb53712b82a2ad57d8362c8c89d5c61109985a3abec9baf1033e70154e4369b0",
-      "retrieved_at": "2026-08-29T07:45:18.618802Z",
+      "retrieved_at": "2026-08-29T10:09:54.014072Z",
       "source_kind": "pds3_directory_html",
       "source_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J-3-FGM-CAL-V1.0/DATA/JUPITER/PL/"
     },
     {
-      "byte_count": 2086,
-      "evidence_id": "jade_calibrated_directory_html",
-      "relevant_row_count": 8,
-      "response_sha256": "99e6a0231122410391afc234e8cddae4be2f6607e370201b7c201e4cf1663664",
-      "retrieved_at": "2026-08-29T07:45:19.561313Z",
-      "source_kind": "pds3_directory_html",
-      "source_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/"
+      "byte_count": 5304,
+      "evidence_id": "jade_index_lbl",
+      "relevant_row_count": 12,
+      "response_sha256": "77e19ebe018352515c3f88a7a27c249f6a5d940f4a7f4934bc24e26dfd8e9320",
+      "retrieved_at": "2026-08-29T10:09:55.081193Z",
+      "source_kind": "pds3_index_lbl",
+      "source_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/INDEX/INDEX.LBL"
+    },
+    {
+      "byte_count": 3660366,
+      "evidence_id": "jade_index_tab",
+      "relevant_row_count": 12,
+      "response_sha256": "248f51479a83c0e418c5f08a9e856ab770583f1ee079fe02417ed16aac92a65d",
+      "retrieved_at": "2026-08-29T10:09:59.043507Z",
+      "source_kind": "pds3_index_tab",
+      "source_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/INDEX/INDEX.TAB"
     },
     {
       "byte_count": 6593,
       "evidence_id": "jedi_165_directory_html",
       "relevant_row_count": 14,
       "response_sha256": "34532293c61d12d4ceaba08000071afd30bd51e8f92e4c1d694a1e31721afe3b",
-      "retrieved_at": "2026-08-29T07:45:20.408396Z",
+      "retrieved_at": "2026-08-29T10:09:59.986592Z",
       "source_kind": "pds3_directory_html",
       "source_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J-JED-3-CDR-V1.0/DATA/2024/165/"
     },
@@ -107,30 +44,102 @@
       "evidence_id": "jedi_166_directory_html",
       "relevant_row_count": 14,
       "response_sha256": "d7de2da7c4d37f1bb73e5d69f1d814d5eab802f3618288d46273957a78efe43d",
-      "retrieved_at": "2026-08-29T07:45:21.258605Z",
+      "retrieved_at": "2026-08-29T10:10:01.113924Z",
       "source_kind": "pds3_directory_html",
       "source_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J-JED-3-CDR-V1.0/DATA/2024/166/"
     },
     {
-      "byte_count": 17565,
-      "evidence_id": "waves_survey_orbit62_directory_html",
-      "relevant_row_count": 2,
-      "response_sha256": "ae470a6e931b7997ce803f416cdcf59cfcfc7ad7b299b0d8f97c8dc4f8bb0f28",
-      "retrieved_at": "2026-08-29T07:45:22.324011Z",
-      "source_kind": "pds3_directory_html",
-      "source_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-E_J_SS-WAV-3-CDR-SRVFULL-V2.0/DATA/WAVES_SURVEY/2024149_ORBIT_62/"
+      "byte_count": 154426,
+      "evidence_id": "jiram_orbit62_directory_html",
+      "relevant_row_count": 102,
+      "response_sha256": "962afaee2eb2f9b2febf5778eda70f44f94166a2d0f605576d8c6083db1342db",
+      "retrieved_at": "2026-08-29T10:09:40.032539Z",
+      "source_kind": "pds4_directory_html",
+      "source_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/"
+    },
+    {
+      "byte_count": 7364,
+      "evidence_id": "junocam_jnojnc_0029_index_lbl",
+      "relevant_row_count": 426,
+      "response_sha256": "b5132017c896adfd07a81e83c3948746d3270ad379ae4e28e77f18708f99c026",
+      "retrieved_at": "2026-08-29T10:09:46.905275Z",
+      "source_kind": "pds3_index_lbl",
+      "source_url": "https://planetarydata.jpl.nasa.gov/img/data/juno/JNOJNC_0029/INDEX/INDEX.LBL"
+    },
+    {
+      "byte_count": 2400564,
+      "evidence_id": "junocam_jnojnc_0029_index_tab",
+      "relevant_row_count": 426,
+      "response_sha256": "3eaa77323900cdcf30cb7c896c8ab50b608e414e42f9df539717fa306145c382",
+      "retrieved_at": "2026-08-29T10:09:51.318742Z",
+      "source_kind": "pds3_index_tab",
+      "source_url": "https://planetarydata.jpl.nasa.gov/img/data/juno/JNOJNC_0029/INDEX/INDEX.TAB"
+    },
+    {
+      "byte_count": 18634,
+      "evidence_id": "mwr_grdr_2024165_directory_html",
+      "relevant_row_count": 24,
+      "response_sha256": "2660bd26665036c44afa5149c93e5e1ebb2c7460436515fa0e75866031d10a1a",
+      "retrieved_at": "2026-08-29T10:09:43.613407Z",
+      "source_kind": "pds4_directory_html",
+      "source_url": "https://pds-atmospheres.nmsu.edu/PDS/data/jnomwr_1100/DATA/GRDR/2024/2024165/"
+    },
+    {
+      "byte_count": 18634,
+      "evidence_id": "mwr_grdr_2024166_directory_html",
+      "relevant_row_count": 24,
+      "response_sha256": "7485de7259aa5b39328c47b1430ca304a6c4b8e384fa9b5c4ca4ec5933311407",
+      "retrieved_at": "2026-08-29T10:09:44.888539Z",
+      "source_kind": "pds4_directory_html",
+      "source_url": "https://pds-atmospheres.nmsu.edu/PDS/data/jnomwr_1100/DATA/GRDR/2024/2024166/"
+    },
+    {
+      "byte_count": 18634,
+      "evidence_id": "mwr_irdr_2024165_directory_html",
+      "relevant_row_count": 24,
+      "response_sha256": "562977c85507e149dfa192f4d6865b3dbb514962369a2cc3a6ebd8642cc813a1",
+      "retrieved_at": "2026-08-29T10:09:41.243441Z",
+      "source_kind": "pds4_directory_html",
+      "source_url": "https://pds-atmospheres.nmsu.edu/PDS/data/jnomwr_1100/DATA/IRDR/2024/2024165/"
+    },
+    {
+      "byte_count": 18634,
+      "evidence_id": "mwr_irdr_2024166_directory_html",
+      "relevant_row_count": 24,
+      "response_sha256": "83da4da6a949146c4b9265ee11b2f42221265d8641478c0ca0dc9283f1cb060a",
+      "retrieved_at": "2026-08-29T10:09:42.425762Z",
+      "source_kind": "pds4_directory_html",
+      "source_url": "https://pds-atmospheres.nmsu.edu/PDS/data/jnomwr_1100/DATA/IRDR/2024/2024166/"
+    },
+    {
+      "byte_count": 20926,
+      "evidence_id": "uvs_orbit62_directory_html",
+      "relevant_row_count": 8,
+      "response_sha256": "533c98393b2ed55f12f2989ff9376b9df70b9edfb5ed9cdcdf402fe7028b338c",
+      "retrieved_at": "2026-08-29T10:09:46.296282Z",
+      "source_kind": "pds4_directory_html",
+      "source_url": "https://atmos.nmsu.edu/PDS/data/jnouvs_3001/DATA/ORBIT-62/"
     },
     {
       "byte_count": 8197264,
       "evidence_id": "waves_burst_bstfull_index_tab",
-      "relevant_row_count": 30137,
+      "relevant_row_count": 282,
       "response_sha256": "b01bba8fb6264621f0b99d453b2ea3764f8c74de3084957c6e1ca59a0b33d0e3",
-      "retrieved_at": "2026-08-29T07:45:25.846424Z",
+      "retrieved_at": "2026-08-29T10:10:06.341620Z",
       "source_kind": "pds3_index_tab",
       "source_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-E_J_SS-WAV-3-CDR-BSTFULL-V2.0/INDEX/INDEX.TAB"
+    },
+    {
+      "byte_count": 17565,
+      "evidence_id": "waves_survey_orbit62_directory_html",
+      "relevant_row_count": 4,
+      "response_sha256": "ae470a6e931b7997ce803f416cdcf59cfcfc7ad7b299b0d8f97c8dc4f8bb0f28",
+      "retrieved_at": "2026-08-29T10:10:02.150559Z",
+      "source_kind": "pds3_directory_html",
+      "source_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-E_J_SS-WAV-3-CDR-SRVFULL-V2.0/DATA/WAVES_SURVEY/2024149_ORBIT_62/"
     }
   ],
-  "discovery_evidence_artifact_id": "ded2d9a7ed309410cea7f07992323efeffbfeda6e50ea8c5fa249eb99230235b",
+  "discovery_evidence_artifact_id": "3a6ee02651b84a3e00125c87d7fc09a563d3a5d2b49a27da2064b2d07907b243",
   "final_temporal_eligibility": "LABEL_VERIFICATION_REQUIRED",
   "logical_entries": [
     {
@@ -141,7 +150,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t090046_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T090046_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -160,7 +169,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t090117_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T090117_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -179,7 +188,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t090147_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T090147_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -198,7 +207,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t090218_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T090218_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -217,7 +226,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t090248_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T090248_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -236,7 +245,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t090319_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T090319_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -255,7 +264,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t090349_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T090349_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -274,7 +283,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t090420_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T090420_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -293,7 +302,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t090450_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T090450_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -312,7 +321,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t090652_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T090652_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -331,7 +340,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t090722_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T090722_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -350,7 +359,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t090753_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T090753_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -369,7 +378,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t090823_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T090823_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -388,7 +397,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t090854_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T090854_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -407,7 +416,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t090924_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T090924_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -426,7 +435,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t090955_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T090955_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -445,7 +454,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t091156_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T091156_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -464,7 +473,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t091227_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T091227_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -483,7 +492,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t091257_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T091257_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -502,7 +511,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t091328_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T091328_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -521,7 +530,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t091359_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T091359_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -540,7 +549,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t091429_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T091429_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -559,7 +568,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t091500_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T091500_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -578,7 +587,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t091701_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T091701_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -597,7 +606,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t091732_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T091732_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -616,7 +625,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t091802_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T091802_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -635,7 +644,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t091833_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T091833_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -654,7 +663,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t091903_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T091903_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -673,7 +682,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t091934_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T091934_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -692,7 +701,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t092004_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T092004_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -711,7 +720,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t092206_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T092206_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -730,7 +739,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t092236_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T092236_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -749,7 +758,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t092307_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T092307_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -768,7 +777,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t092337_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T092337_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -787,7 +796,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t092408_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T092408_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -806,7 +815,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t092438_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T092438_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -825,7 +834,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t092509_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T092509_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -844,7 +853,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t092711_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T092711_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -863,7 +872,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t092741_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T092741_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -882,7 +891,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t092812_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T092812_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -901,7 +910,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t092842_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T092842_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -920,7 +929,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t092913_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T092913_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -939,7 +948,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t092943_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T092943_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -958,7 +967,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t093014_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T093014_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -977,7 +986,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t093215_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T093215_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -996,7 +1005,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t093246_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T093246_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1015,7 +1024,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t093316_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T093316_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1034,7 +1043,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t093347_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T093347_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1053,7 +1062,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t093417_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T093417_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1072,7 +1081,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t093448_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T093448_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1091,7 +1100,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_img_rdr_2024166t093518_v01::2.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_IMG_RDR_2024166T093518_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1110,7 +1119,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t090048_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090048_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1125,12 +1134,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.090119",
+      "logical_product_id": "gcsi.jiram.pj62.spe.090118",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t090119_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090119_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090118_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -1148,7 +1157,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t090149_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090149_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1163,12 +1172,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.090220",
+      "logical_product_id": "gcsi.jiram.pj62.spe.090219",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t090220_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090220_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090219_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -1186,7 +1195,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t090250_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090250_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1201,12 +1210,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.090321",
+      "logical_product_id": "gcsi.jiram.pj62.spe.090320",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t090321_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090321_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090320_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -1224,7 +1233,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t090351_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090351_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1239,12 +1248,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.090422",
+      "logical_product_id": "gcsi.jiram.pj62.spe.090421",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t090422_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090422_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090421_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -1262,7 +1271,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t090452_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090452_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1277,12 +1286,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.090654",
+      "logical_product_id": "gcsi.jiram.pj62.spe.090653",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t090654_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090654_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090653_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -1300,7 +1309,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t090724_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090724_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1315,12 +1324,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.090755",
+      "logical_product_id": "gcsi.jiram.pj62.spe.090754",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t090755_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090755_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090754_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -1338,7 +1347,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t090825_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090825_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1353,12 +1362,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.090856",
+      "logical_product_id": "gcsi.jiram.pj62.spe.090855",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t090856_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090856_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090855_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -1376,7 +1385,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t090926_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090926_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1391,12 +1400,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.090957",
+      "logical_product_id": "gcsi.jiram.pj62.spe.090956",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t090957_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090957_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T090956_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -1414,7 +1423,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t091158_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T091158_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1433,7 +1442,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t091229_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T091229_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1452,7 +1461,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t091259_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T091259_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1471,7 +1480,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t091330_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T091330_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1486,12 +1495,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.091401",
+      "logical_product_id": "gcsi.jiram.pj62.spe.091400",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t091401_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T091401_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T091400_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -1509,7 +1518,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t091431_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T091431_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1524,12 +1533,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.091502",
+      "logical_product_id": "gcsi.jiram.pj62.spe.091501",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t091502_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T091502_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T091501_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -1547,7 +1556,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t091703_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T091703_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1562,12 +1571,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.091734",
+      "logical_product_id": "gcsi.jiram.pj62.spe.091733",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t091734_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T091734_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T091733_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -1585,7 +1594,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t091804_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T091804_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1600,12 +1609,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.091835",
+      "logical_product_id": "gcsi.jiram.pj62.spe.091834",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t091835_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T091835_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T091834_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -1623,7 +1632,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t091905_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T091905_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1638,12 +1647,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.091936",
+      "logical_product_id": "gcsi.jiram.pj62.spe.091935",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t091936_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T091936_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T091935_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -1661,7 +1670,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t092006_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T092006_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1676,12 +1685,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.092208",
+      "logical_product_id": "gcsi.jiram.pj62.spe.092207",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t092208_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T092208_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T092207_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -1699,7 +1708,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t092238_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T092238_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1714,12 +1723,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.092309",
+      "logical_product_id": "gcsi.jiram.pj62.spe.092308",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t092309_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T092309_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T092308_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -1737,7 +1746,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t092339_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T092339_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1752,12 +1761,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.092410",
+      "logical_product_id": "gcsi.jiram.pj62.spe.092409",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t092410_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T092410_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T092409_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -1775,7 +1784,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t092440_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T092440_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1794,7 +1803,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t092511_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T092511_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1809,12 +1818,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.092713",
+      "logical_product_id": "gcsi.jiram.pj62.spe.092712",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t092713_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T092713_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T092712_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -1832,7 +1841,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t092743_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T092743_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1847,12 +1856,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.092814",
+      "logical_product_id": "gcsi.jiram.pj62.spe.092813",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t092814_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T092814_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T092813_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -1870,7 +1879,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t092844_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T092844_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1885,12 +1894,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.092915",
+      "logical_product_id": "gcsi.jiram.pj62.spe.092914",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t092915_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T092915_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T092914_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -1908,7 +1917,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t092945_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T092945_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1923,12 +1932,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.093016",
+      "logical_product_id": "gcsi.jiram.pj62.spe.093015",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t093016_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T093016_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T093015_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -1946,7 +1955,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t093217_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T093217_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1961,12 +1970,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.093248",
+      "logical_product_id": "gcsi.jiram.pj62.spe.093247",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t093248_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T093248_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T093247_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -1984,7 +1993,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t093318_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T093318_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -1999,12 +2008,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.093349",
+      "logical_product_id": "gcsi.jiram.pj62.spe.093348",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t093349_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T093349_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T093348_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -2022,7 +2031,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t093419_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T093419_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -2037,12 +2046,12 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jiram_orbit62_directory_html",
       "instrument": "JIRAM",
-      "logical_product_id": "gcsi.jiram.pj62.spe.093450",
+      "logical_product_id": "gcsi.jiram.pj62.spe.093449",
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t093450_v01::1.0",
-          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T093450_V01.xml",
+          "expected_archive_identity": null,
+          "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T093449_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
           "representation_role": "calibrated",
@@ -2060,7 +2069,7 @@
       "representations": [
         {
           "discovery_evidence_id": "jiram_orbit62_directory_html",
-          "expected_archive_identity": "urn:nasa:pds:juno_jiram:data_calibrated:jir_spe_rdr_2024166t093520_v01::1.0",
+          "expected_archive_identity": null,
           "label_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/JIR_SPE_RDR_2024166T093520_V01.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "jiram_pds4",
@@ -2573,8 +2582,8 @@
       "representations": [
         {
           "discovery_evidence_id": "mwr_grdr_2024165_directory_html",
-          "expected_archive_identity": "MWR62RG2024165130000_R30000_V04",
-          "label_url": "https://pds-atmospheres.nmsu.edu/PDS/data/jnomwr_1100/DATA/GRDR/2024/2024165/MWR62RG2024165130000_R30000_V04.xml",
+          "expected_archive_identity": "MWR62RG2024165130000_R30008_V04",
+          "label_url": "https://pds-atmospheres.nmsu.edu/PDS/data/jnomwr_1100/DATA/GRDR/2024/2024165/MWR62RG2024165130000_R30008_V04.xml",
           "normalizer_id": "gcsi.generic_pds4_label.v1",
           "profile_id": "mwr_generic_pds4",
           "representation_role": "calibrated",
@@ -6608,15 +6617,15 @@
       "temporal_evidence_status": "LABEL_VERIFICATION_PENDING"
     },
     {
-      "discovery_availability_time_utc": null,
-      "discovery_evidence_id": "jade_calibrated_directory_html",
+      "discovery_availability_time_utc": "2024-06-14T00:00:01.764000Z",
+      "discovery_evidence_id": "jade_index_tab",
       "instrument": "JADE",
-      "logical_product_id": "gcsi.jade.pj62.jad_l30_lrs_ion_2024165_v01",
+      "logical_product_id": "gcsi.jade.pj62.jad_l30_hls_ion_log_cnt_2024165",
       "representations": [
         {
-          "discovery_evidence_id": "jade_calibrated_directory_html",
-          "expected_archive_identity": "JAD_L30_LRS_ION_2024165_V01",
-          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/2024/165/JAD_L30_LRS_ION_2024165_V01.LBL",
+          "discovery_evidence_id": "jade_index_tab",
+          "expected_archive_identity": "JAD_L30_HLS_ION_LOG_CNT_2024165",
+          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/DATA/2024/2024165/ION_LOGICALS/JAD_L30_HLS_ION_LOG_CNT_2024165_V04.LBL",
           "normalizer_id": "gcsi.generic_pds3_label.v1",
           "profile_id": "jade_pds3",
           "representation_role": "calibrated",
@@ -6624,18 +6633,18 @@
         }
       ],
       "semantic_role": "plasma_particles",
-      "temporal_evidence_status": "LABEL_VERIFICATION_PENDING"
+      "temporal_evidence_status": "EXACT_DISCOVERY_METADATA"
     },
     {
-      "discovery_availability_time_utc": null,
-      "discovery_evidence_id": "jade_calibrated_directory_html",
+      "discovery_availability_time_utc": "2024-06-14T00:00:01.764000Z",
+      "discovery_evidence_id": "jade_index_tab",
       "instrument": "JADE",
-      "logical_product_id": "gcsi.jade.pj62.jad_l30_lrs_elc_2024165_v01",
+      "logical_product_id": "gcsi.jade.pj62.jad_l30_hls_ion_tof_cnt_2024165",
       "representations": [
         {
-          "discovery_evidence_id": "jade_calibrated_directory_html",
-          "expected_archive_identity": "JAD_L30_LRS_ELC_2024165_V01",
-          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/2024/165/JAD_L30_LRS_ELC_2024165_V01.LBL",
+          "discovery_evidence_id": "jade_index_tab",
+          "expected_archive_identity": "JAD_L30_HLS_ION_TOF_CNT_2024165",
+          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/DATA/2024/2024165/ION_TOF/JAD_L30_HLS_ION_TOF_CNT_2024165_V04.LBL",
           "normalizer_id": "gcsi.generic_pds3_label.v1",
           "profile_id": "jade_pds3",
           "representation_role": "calibrated",
@@ -6643,18 +6652,18 @@
         }
       ],
       "semantic_role": "plasma_particles",
-      "temporal_evidence_status": "LABEL_VERIFICATION_PENDING"
+      "temporal_evidence_status": "EXACT_DISCOVERY_METADATA"
     },
     {
-      "discovery_availability_time_utc": null,
-      "discovery_evidence_id": "jade_calibrated_directory_html",
+      "discovery_availability_time_utc": "2024-06-14T00:00:00.764000Z",
+      "discovery_evidence_id": "jade_index_tab",
       "instrument": "JADE",
-      "logical_product_id": "gcsi.jade.pj62.jad_l30_hrs_ion_2024165_v01",
+      "logical_product_id": "gcsi.jade.pj62.jad_l30_hrs_elc_two_cnt_2024165",
       "representations": [
         {
-          "discovery_evidence_id": "jade_calibrated_directory_html",
-          "expected_archive_identity": "JAD_L30_HRS_ION_2024165_V01",
-          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/2024/165/JAD_L30_HRS_ION_2024165_V01.LBL",
+          "discovery_evidence_id": "jade_index_tab",
+          "expected_archive_identity": "JAD_L30_HRS_ELC_TWO_CNT_2024165",
+          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/DATA/2024/2024165/ELECTRONS/JAD_L30_HRS_ELC_TWO_CNT_2024165_V04.LBL",
           "normalizer_id": "gcsi.generic_pds3_label.v1",
           "profile_id": "jade_pds3",
           "representation_role": "calibrated",
@@ -6662,18 +6671,18 @@
         }
       ],
       "semantic_role": "plasma_particles",
-      "temporal_evidence_status": "LABEL_VERIFICATION_PENDING"
+      "temporal_evidence_status": "EXACT_DISCOVERY_METADATA"
     },
     {
-      "discovery_availability_time_utc": null,
-      "discovery_evidence_id": "jade_calibrated_directory_html",
+      "discovery_availability_time_utc": "2024-06-14T00:00:01.764000Z",
+      "discovery_evidence_id": "jade_index_tab",
       "instrument": "JADE",
-      "logical_product_id": "gcsi.jade.pj62.jad_l30_hrs_elc_2024165_v01",
+      "logical_product_id": "gcsi.jade.pj62.jad_l30_hrs_ion_any_cnt_2024165",
       "representations": [
         {
-          "discovery_evidence_id": "jade_calibrated_directory_html",
-          "expected_archive_identity": "JAD_L30_HRS_ELC_2024165_V01",
-          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/2024/165/JAD_L30_HRS_ELC_2024165_V01.LBL",
+          "discovery_evidence_id": "jade_index_tab",
+          "expected_archive_identity": "JAD_L30_HRS_ION_ANY_CNT_2024165",
+          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/DATA/2024/2024165/ION_SPECIES/JAD_L30_HRS_ION_ANY_CNT_2024165_V04.LBL",
           "normalizer_id": "gcsi.generic_pds3_label.v1",
           "profile_id": "jade_pds3",
           "representation_role": "calibrated",
@@ -6681,18 +6690,18 @@
         }
       ],
       "semantic_role": "plasma_particles",
-      "temporal_evidence_status": "LABEL_VERIFICATION_PENDING"
+      "temporal_evidence_status": "EXACT_DISCOVERY_METADATA"
     },
     {
-      "discovery_availability_time_utc": null,
-      "discovery_evidence_id": "jade_calibrated_directory_html",
+      "discovery_availability_time_utc": "2024-06-13T23:57:52.761000Z",
+      "discovery_evidence_id": "jade_index_tab",
       "instrument": "JADE",
-      "logical_product_id": "gcsi.jade.pj62.jad_l30_lrs_ion_2024166_v01",
+      "logical_product_id": "gcsi.jade.pj62.jad_l30_lrs_elc_any_cnt_2024165",
       "representations": [
         {
-          "discovery_evidence_id": "jade_calibrated_directory_html",
-          "expected_archive_identity": "JAD_L30_LRS_ION_2024166_V01",
-          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/2024/166/JAD_L30_LRS_ION_2024166_V01.LBL",
+          "discovery_evidence_id": "jade_index_tab",
+          "expected_archive_identity": "JAD_L30_LRS_ELC_ANY_CNT_2024165",
+          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/DATA/2024/2024165/ELECTRONS/JAD_L30_LRS_ELC_ANY_CNT_2024165_V04.LBL",
           "normalizer_id": "gcsi.generic_pds3_label.v1",
           "profile_id": "jade_pds3",
           "representation_role": "calibrated",
@@ -6700,18 +6709,18 @@
         }
       ],
       "semantic_role": "plasma_particles",
-      "temporal_evidence_status": "LABEL_VERIFICATION_PENDING"
+      "temporal_evidence_status": "EXACT_DISCOVERY_METADATA"
     },
     {
-      "discovery_availability_time_utc": null,
-      "discovery_evidence_id": "jade_calibrated_directory_html",
+      "discovery_availability_time_utc": "2024-06-13T23:57:52.761000Z",
+      "discovery_evidence_id": "jade_index_tab",
       "instrument": "JADE",
-      "logical_product_id": "gcsi.jade.pj62.jad_l30_lrs_elc_2024166_v01",
+      "logical_product_id": "gcsi.jade.pj62.jad_l30_lrs_ion_any_cnt_2024165",
       "representations": [
         {
-          "discovery_evidence_id": "jade_calibrated_directory_html",
-          "expected_archive_identity": "JAD_L30_LRS_ELC_2024166_V01",
-          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/2024/166/JAD_L30_LRS_ELC_2024166_V01.LBL",
+          "discovery_evidence_id": "jade_index_tab",
+          "expected_archive_identity": "JAD_L30_LRS_ION_ANY_CNT_2024165",
+          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/DATA/2024/2024165/ION_SPECIES/JAD_L30_LRS_ION_ANY_CNT_2024165_V04.LBL",
           "normalizer_id": "gcsi.generic_pds3_label.v1",
           "profile_id": "jade_pds3",
           "representation_role": "calibrated",
@@ -6719,18 +6728,18 @@
         }
       ],
       "semantic_role": "plasma_particles",
-      "temporal_evidence_status": "LABEL_VERIFICATION_PENDING"
+      "temporal_evidence_status": "EXACT_DISCOVERY_METADATA"
     },
     {
-      "discovery_availability_time_utc": null,
-      "discovery_evidence_id": "jade_calibrated_directory_html",
+      "discovery_availability_time_utc": "2024-06-14T09:30:05.216000Z",
+      "discovery_evidence_id": "jade_index_tab",
       "instrument": "JADE",
-      "logical_product_id": "gcsi.jade.pj62.jad_l30_hrs_ion_2024166_v01",
+      "logical_product_id": "gcsi.jade.pj62.jad_l30_hrs_elc_two_cnt_2024166",
       "representations": [
         {
-          "discovery_evidence_id": "jade_calibrated_directory_html",
-          "expected_archive_identity": "JAD_L30_HRS_ION_2024166_V01",
-          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/2024/166/JAD_L30_HRS_ION_2024166_V01.LBL",
+          "discovery_evidence_id": "jade_index_tab",
+          "expected_archive_identity": "JAD_L30_HRS_ELC_TWO_CNT_2024166",
+          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/DATA/2024/2024166/ELECTRONS/JAD_L30_HRS_ELC_TWO_CNT_2024166_V04.LBL",
           "normalizer_id": "gcsi.generic_pds3_label.v1",
           "profile_id": "jade_pds3",
           "representation_role": "calibrated",
@@ -6738,18 +6747,18 @@
         }
       ],
       "semantic_role": "plasma_particles",
-      "temporal_evidence_status": "LABEL_VERIFICATION_PENDING"
+      "temporal_evidence_status": "EXACT_DISCOVERY_METADATA"
     },
     {
-      "discovery_availability_time_utc": null,
-      "discovery_evidence_id": "jade_calibrated_directory_html",
+      "discovery_availability_time_utc": "2024-06-14T09:30:01.216000Z",
+      "discovery_evidence_id": "jade_index_tab",
       "instrument": "JADE",
-      "logical_product_id": "gcsi.jade.pj62.jad_l30_hrs_elc_2024166_v01",
+      "logical_product_id": "gcsi.jade.pj62.jad_l30_hrs_ion_any_cnt_2024166",
       "representations": [
         {
-          "discovery_evidence_id": "jade_calibrated_directory_html",
-          "expected_archive_identity": "JAD_L30_HRS_ELC_2024166_V01",
-          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/2024/166/JAD_L30_HRS_ELC_2024166_V01.LBL",
+          "discovery_evidence_id": "jade_index_tab",
+          "expected_archive_identity": "JAD_L30_HRS_ION_ANY_CNT_2024166",
+          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/DATA/2024/2024166/ION_SPECIES/JAD_L30_HRS_ION_ANY_CNT_2024166_V04.LBL",
           "normalizer_id": "gcsi.generic_pds3_label.v1",
           "profile_id": "jade_pds3",
           "representation_role": "calibrated",
@@ -6757,7 +6766,7 @@
         }
       ],
       "semantic_role": "plasma_particles",
-      "temporal_evidence_status": "LABEL_VERIFICATION_PENDING"
+      "temporal_evidence_status": "EXACT_DISCOVERY_METADATA"
     },
     {
       "discovery_availability_time_utc": null,
@@ -9059,7 +9068,7 @@
       "temporal_evidence_status": "EXACT_DISCOVERY_METADATA"
     }
   ],
-  "plan_id": "5239a650b4c62b54af038e2e0e2c7440d905d82de21145e489faf424d71b4ced",
+  "plan_id": "6c05fc585653e8f6a068757851ef249f6714890a1cc50a671421bb4cf3f18e99",
   "replay_id": "juno_pj62_large_replay_v2",
   "schema": "gcsi.historical_replay_v2_acquisition_plan",
   "schema_version": 1

@@ -500,7 +500,7 @@ def _compute_plan_id(
     decision_epoch_policy: str,
     logical_entries: tuple[AcquisitionLogicalProductEntry, ...],
     discovery_evidence: tuple[DiscoveryEvidence, ...],
-    discovery_evidence_artifact_id: Optional[str] = None,
+    discovery_evidence_artifact_id: Optional[str] = None,  # None only for test mutation proofs
 ) -> str:
     """Compute a deterministic plan_id over canonical semantic content.
 
@@ -662,24 +662,35 @@ class HistoricalReplayV2AcquisitionPlan(BaseModel):
     discovery_evidence: tuple[DiscoveryEvidence, ...] = Field(
         description="Discovery evidence used for enumeration."
     )
-    discovery_evidence_artifact_id: Optional[str] = Field(
-        default=None,
+    discovery_evidence_artifact_id: str = Field(
         description=(
             "SHA-256 artifact_id of the discovery evidence sidecar. "
             "Binds this plan to the exact sidecar content. "
-            "Sidecar mutation changes artifact_id and therefore plan_id."
+            "Sidecar mutation changes artifact_id and therefore plan_id. "
+            "REQUIRED: plans without a sidecar binding are rejected."
         ),
     )
 
     @field_validator(
         "schema", "plan_id", "replay_id", "accumulation_start_utc",
         "decision_epoch_utc", "decision_epoch_policy",
+        "discovery_evidence_artifact_id",
         mode="after",
     )
     @classmethod
     def _non_empty(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("Field must not be empty.")
+        return v
+
+    @field_validator("discovery_evidence_artifact_id", mode="after")
+    @classmethod
+    def _artifact_id_format(cls, v: str) -> str:
+        import re as _re
+        if not _re.fullmatch(r"[0-9a-f]{64}", v):
+            raise ValueError(
+                f"discovery_evidence_artifact_id must be exactly 64 lowercase hex characters: {v!r}."
+            )
         return v
 
     @field_validator("final_temporal_eligibility", mode="after")
@@ -1015,3 +1026,105 @@ def _load_acquisition_plan_any_path(path: str) -> HistoricalReplayV2AcquisitionP
         ) from exc
 
     return HistoricalReplayV2AcquisitionPlan.model_validate(data, strict=False)
+
+
+# ---------------------------------------------------------------------------
+# H. Bound plan loader
+# ---------------------------------------------------------------------------
+
+
+_BoundPair = tuple["HistoricalReplayV2AcquisitionPlan", dict]
+
+
+def load_bound_v2_acquisition_plan(
+    plan_path: str,
+    sidecar_path: Optional[str] = None,
+) -> _BoundPair:
+    """Load and cross-validate an acquisition plan against its discovery evidence sidecar.
+
+    Performs the following checks (B2.1.3 bound loader contract):
+    1. Load and verify the discovery evidence sidecar (artifact_id recomputed).
+    2. Load and verify the acquisition plan (plan_id recomputed).
+    3. Require plan.discovery_evidence_artifact_id == sidecar.artifact_id.
+    4. Verify embedded DiscoveryEvidence records are consistent with sidecar evidence.
+    5. Return (plan, sidecar_dict) pair.
+
+    Parameters
+    ----------
+    plan_path:
+        Path to the acquisition plan JSON file (must be inside data/replays/).
+    sidecar_path:
+        Optional path to the sidecar JSON file. If None, the production sidecar
+        path is used (data/replays/juno_pj62_large_replay_v2_discovery_evidence.json).
+
+    Returns
+    -------
+    tuple[HistoricalReplayV2AcquisitionPlan, dict]
+        Bound (plan, sidecar) pair.
+
+    Raises
+    ------
+    ValueError
+        If any integrity check fails.
+    """
+    from backend.app.mission_sources.v2_acquisition_plan_builder import (  # noqa: PLC0415
+        _load_sidecar as _load_production_sidecar,
+        _SIDECAR_PATH,
+        _SIDECAR_ALLOWED_DIR,
+    )
+    from backend.app.mission_sources.v2_sidecar_models import compute_sidecar_artifact_id  # noqa: PLC0415
+
+    # Step 1: Load and verify sidecar
+    if sidecar_path is None:
+        sidecar = _load_production_sidecar()
+    else:
+        # Load sidecar from given path (for test/utility use)
+        sp = pathlib.Path(sidecar_path)
+        raw_sc = sp.read_text(encoding="utf-8")
+        sc_data = json.loads(raw_sc)
+        if "artifact_id" not in sc_data:
+            raise ValueError("Sidecar is missing required field: 'artifact_id'.")
+        expected_sc_id = compute_sidecar_artifact_id(sc_data)
+        if sc_data["artifact_id"] != expected_sc_id:
+            raise ValueError(
+                f"Sidecar artifact_id mismatch: "
+                f"stored {sc_data['artifact_id']!r} != computed {expected_sc_id!r}."
+            )
+        sidecar = sc_data
+
+    sidecar_artifact_id = sidecar["artifact_id"]
+
+    # Step 2: Load and verify plan
+    plan = load_acquisition_plan(plan_path)
+
+    # Step 3: Require plan artifact ID matches sidecar
+    if plan.discovery_evidence_artifact_id != sidecar_artifact_id:
+        raise ValueError(
+            f"Plan discovery_evidence_artifact_id "
+            f"{plan.discovery_evidence_artifact_id!r} does not match "
+            f"sidecar artifact_id {sidecar_artifact_id!r}. "
+            "Plan was built against a different sidecar version."
+        )
+
+    # Step 4: Verify embedded evidence is consistent
+    sidecar_ev_by_id = {
+        ev["evidence_id"]: ev for ev in sidecar["discovery_evidence"]
+    }
+    for plan_ev in plan.discovery_evidence:
+        sc_ev = sidecar_ev_by_id.get(plan_ev.evidence_id)
+        if sc_ev is None:
+            raise ValueError(
+                f"Plan evidence_id {plan_ev.evidence_id!r} not found in sidecar."
+            )
+        if plan_ev.response_sha256 != sc_ev.get("response_sha256", ""):
+            raise ValueError(
+                f"Plan evidence {plan_ev.evidence_id!r} SHA-256 mismatch: "
+                f"plan={plan_ev.response_sha256!r} sidecar={sc_ev.get('response_sha256')!r}."
+            )
+        if plan_ev.source_url != sc_ev.get("source_url", ""):
+            raise ValueError(
+                f"Plan evidence {plan_ev.evidence_id!r} source_url mismatch: "
+                f"plan={plan_ev.source_url!r} sidecar={sc_ev.get('source_url')!r}."
+            )
+
+    return plan, sidecar
