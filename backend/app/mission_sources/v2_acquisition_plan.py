@@ -1,68 +1,35 @@
-"""GCSI Phase 6F-B2.1.1 — Historical Replay V2 Acquisition Plan Model.
+"""GCSI Phase 6F-B2.1.2 — Historical Replay V2 Acquisition Plan Model.
+
+Supersedes B2.1.1 with acquisition evidence chain closure:
+
+B2.1.2 additions:
+- HistoricalReplayV2AcquisitionPlan now carries discovery_evidence_artifact_id
+  (the SHA-256 of the discovery sidecar). plan_id canonical content includes it.
+- DiscoveryEvidence.capture() no longer accepts caller-supplied byte_count;
+  byte_count is always len(response_bytes).
+- load_acquisition_plan() enforces repository confinement: the resolved path
+  must be inside data/replays/, must be a .json regular file, and must not
+  escape via symlink.
 
 This module defines the additive strict model that freezes the deterministic
 mapping from 411 logical replay products to exact authoritative source
 representations (label URLs + production profiles) for Juno PJ62.
 
-Architecture
-------------
-This model is ADDITIVE.  It does NOT modify or replace:
-- V1 replay infrastructure (juno_pj62_mwr_v1.json / ReplayDescriptor)
-- ArchiveScienceProduct, VerifiedInventoryManifest
-- Any existing adapter or snapshot infrastructure
-
-It captures the PRE-VERIFICATION acquisition intent:
-
-    "These are the exact source labels GCSI intends to verify"
-
-NOT:
-
-    "These source records have already been verified."
-
-VerifiedInventoryManifest belongs after successful B2.2 label capture.
-
-Plan-ID formula
----------------
-SHA-256 over canonical semantic plan content (plan_id itself excluded):
-
-    "gcsi.v2_acquisition_plan:v1:"
-    + JSON-canonical-repr of sorted entries + discovery evidence
-
-Logical-ID formula
-------------------
-For each instrument family the logical_product_id is deterministic
-and derived from authoritative archive observation identity plus GCSI
-logical grouping.  Formulas are documented per instrument in the
-builder module (v2_acquisition_plan_builder.py).
-
-All models
-----------
-frozen=True, extra="forbid", strict where Pydantic allows.
+All models: frozen=True, extra="forbid", strict where Pydantic allows.
 All datetime fields are timezone-aware UTC.
 
-Temporal evidence contract
---------------------------
-B2.1.1 is an ACQUISITION PLAN, not final verified inventory.
-
-FINAL_TEMPORAL_ELIGIBILITY = LABEL_VERIFICATION_REQUIRED
-
-for all entries whose temporal_evidence_status is LABEL_VERIFICATION_PENDING.
-
-If any B2.2 authoritative label later violates the window, STOP B2.2
-reconciliation. Do not silently keep it.
-
-Instruments with EXACT_DISCOVERY_METADATA (per-product stop from index):
-  JunoCam (JNOJNC_0029 INDEX.TAB), WAVES Burst (BSTFULL INDEX.TAB)
-
-Instruments with LABEL_VERIFICATION_PENDING (directory HTML only):
-  JIRAM, MWR, UVS, FGM, JADE, JEDI, WAVES Survey
-  → discovery_availability_time_utc is None for all pending entries.
+Temporal evidence contract:
+  FINAL_TEMPORAL_ELIGIBILITY = LABEL_VERIFICATION_REQUIRED
+  EXACT instruments: JunoCam (JNOJNC_0029 INDEX.TAB), WAVES Burst (BSTFULL INDEX.TAB)
+  PENDING instruments: JIRAM, MWR, UVS, FGM, JADE, JEDI, WAVES Survey
+    => discovery_availability_time_utc = None for all pending entries.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import pathlib
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
@@ -250,17 +217,30 @@ class DiscoveryEvidence(BaseModel):
         response_bytes: bytes,
         source_kind: str,
         relevant_row_count: Optional[int] = None,
-        byte_count: Optional[int] = None,
     ) -> "DiscoveryEvidence":
-        """Production factory: computes response_sha256 from actual bytes.
+        """Production factory: computes response_sha256 and byte_count from actual bytes.
 
-        This is the preferred construction path for production acquisition-plan
-        artifacts.  It ensures the SHA-256 is computed from real response bytes
-        rather than accepted as arbitrary caller text.
+        The byte_count parameter has been removed (B2.1.2 hardening).
+        byte_count is ALWAYS len(response_bytes); no caller override is permitted.
+        This eliminates the possibility of a byte_count that disagrees with
+        the actual response body length.
+
+        Parameters
+        ----------
+        evidence_id : str
+            Stable human-readable identifier for this evidence source.
+        source_url : str
+            Official archive URL of the metadata resource fetched.
+        retrieved_at : datetime
+            Timezone-aware UTC timestamp of the actual fetch.
+        response_bytes : bytes
+            Exact response body bytes (used for SHA-256 and byte_count).
+        source_kind : str
+            Kind of discovery resource.
+        relevant_row_count : int | None
+            Number of index rows or product entries relevant to this plan.
         """
-        import hashlib
         sha256 = hashlib.sha256(response_bytes).hexdigest()
-        actual_byte_count = byte_count if byte_count is not None else len(response_bytes)
         return cls(
             evidence_id=evidence_id,
             source_url=source_url,
@@ -268,7 +248,7 @@ class DiscoveryEvidence(BaseModel):
             response_sha256=sha256,
             source_kind=source_kind,
             relevant_row_count=relevant_row_count,
-            byte_count=actual_byte_count,
+            byte_count=len(response_bytes),
         )
 
 
@@ -520,6 +500,7 @@ def _compute_plan_id(
     decision_epoch_policy: str,
     logical_entries: tuple[AcquisitionLogicalProductEntry, ...],
     discovery_evidence: tuple[DiscoveryEvidence, ...],
+    discovery_evidence_artifact_id: Optional[str] = None,
 ) -> str:
     """Compute a deterministic plan_id over canonical semantic content.
 
@@ -534,6 +515,8 @@ def _compute_plan_id(
     - instrument/role
     - discovery evidence binding (including sha256, retrieved_at, byte_count)
     - frozen replay window/policy
+    - discovery_evidence_artifact_id (B2.1.2: sidecar mutation → new artifact_id
+      → new plan_id)
 
     Formula::
 
@@ -593,6 +576,7 @@ def _compute_plan_id(
             "decision_epoch_policy": decision_epoch_policy,
             "decision_epoch_utc": decision_epoch_utc,
             "discovery_evidence": canonical_evidence,
+            "discovery_evidence_artifact_id": discovery_evidence_artifact_id,
             "logical_entries": canonical_entries,
             "replay_id": replay_id,
         },
@@ -614,13 +598,18 @@ FINAL_TEMPORAL_ELIGIBILITY: str = "LABEL_VERIFICATION_REQUIRED"
 class HistoricalReplayV2AcquisitionPlan(BaseModel):
     """Frozen acquisition plan for one GCSI V2 historical replay.
 
-    This is the B2.1.1 artifact: a deterministic mapping from 411 logical
+    This is the B2.1.2 artifact: a deterministic mapping from 411 logical
     replay products to exact authoritative source representations (label
     URLs + production profiles) BEFORE product-label bulk acquisition.
 
+    B2.1.2 additions:
+    - discovery_evidence_artifact_id: binds this plan to a specific sidecar
+      artifact. Sidecar mutation → new sidecar artifact_id → new plan_id.
+
     Integrity rules enforced
     ------------------------
-    1. plan_id is a deterministic SHA-256 over all semantic content.
+    1. plan_id is a deterministic SHA-256 over all semantic content
+       (including discovery_evidence_artifact_id).
     2. logical_product_id values are unique across all entries.
     3. No duplicate label_url values across all representations
        (a source label may not be planned for two logical products).
@@ -631,6 +620,8 @@ class HistoricalReplayV2AcquisitionPlan(BaseModel):
     6. Serialized plan must not exceed _MAX_PLAN_BYTES (32 MiB).
     7. No placeholder SHA-256 values in discovery_evidence.
     8. final_temporal_eligibility == FINAL_TEMPORAL_ELIGIBILITY contract.
+    9. discovery_evidence_artifact_id matches sidecar SHA-256 (verified
+       by builder at build time; loader verifies plan_id integrity).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
@@ -670,6 +661,14 @@ class HistoricalReplayV2AcquisitionPlan(BaseModel):
     )
     discovery_evidence: tuple[DiscoveryEvidence, ...] = Field(
         description="Discovery evidence used for enumeration."
+    )
+    discovery_evidence_artifact_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "SHA-256 artifact_id of the discovery evidence sidecar. "
+            "Binds this plan to the exact sidecar content. "
+            "Sidecar mutation changes artifact_id and therefore plan_id."
+        ),
     )
 
     @field_validator(
@@ -752,7 +751,7 @@ class HistoricalReplayV2AcquisitionPlan(BaseModel):
                             "which is not present in discovery_evidence."
                         )
 
-        # 6. Verify plan_id.
+        # 6. Verify plan_id (includes discovery_evidence_artifact_id).
         expected_id = _compute_plan_id(
             plan_id_placeholder=self.plan_id,
             replay_id=self.replay_id,
@@ -761,6 +760,7 @@ class HistoricalReplayV2AcquisitionPlan(BaseModel):
             decision_epoch_policy=self.decision_epoch_policy,
             logical_entries=entries,
             discovery_evidence=evidence,
+            discovery_evidence_artifact_id=self.discovery_evidence_artifact_id,
         )
         if self.plan_id != expected_id:
             raise ValueError(
@@ -871,14 +871,26 @@ def validate_representation_url_trust(
 # ---------------------------------------------------------------------------
 
 
+# Production allowed directory for plan files (set at module load time).
+_PLAN_ALLOWED_DIR: pathlib.Path = (
+    pathlib.Path(__file__).resolve().parents[3] / "data" / "replays"
+).resolve()
+
+
 def load_acquisition_plan(path: str) -> HistoricalReplayV2AcquisitionPlan:
     """Load and validate an acquisition plan from a JSON file.
+
+    Enforces repository confinement (B2.1.2):
+    - The path must resolve inside data/replays/ (no traversal, no symlink escape).
+    - The path must end with .json.
+    - The file must be a regular file (not a symlink, directory, etc.).
+    - Bounded read: reject files > 32 MiB.
 
     Parameters
     ----------
     path:
         Filesystem path to the acquisition plan JSON file.
-        Must be a regular file; path traversal is checked by caller.
+        Must be inside the production data/replays/ directory.
 
     Returns
     -------
@@ -888,18 +900,103 @@ def load_acquisition_plan(path: str) -> HistoricalReplayV2AcquisitionPlan:
     Raises
     ------
     ValueError
-        If the file is too large, JSON is invalid, or plan fails validation.
+        If the path is outside the allowed directory, is not a .json file,
+        is a symlink, the file is too large, JSON is invalid, or plan fails
+        validation.
     FileNotFoundError
         If the file does not exist.
     """
-    import os
+    import pathlib as _pathlib
+
+    p = _pathlib.Path(path)
+
+    # Must end in .json
+    if p.suffix.lower() != ".json":
+        raise ValueError(
+            f"Acquisition plan path must end with .json, got {p.suffix!r}: {path!r}."
+        )
+
+    # Check for traversal in the original path before resolving.
+    # Any '..' component in the original path is a traversal attempt.
+    try:
+        p_parts = p.parts
+    except Exception:
+        p_parts = ()
+    if any(part == ".." for part in p_parts):
+        raise ValueError(
+            f"Acquisition plan path must not contain path traversal sequences: {path!r}."
+        )
+
+    # Resolve the path.
+    try:
+        resolved = p.resolve()
+    except Exception as exc:
+        raise ValueError(
+            f"Acquisition plan path could not be resolved: {path!r}: {exc}"
+        ) from exc
+
+    # Must not be a symlink (resolved target of symlink could be outside boundary).
+    if resolved.is_symlink():
+        raise ValueError(
+            f"Acquisition plan path must not be a symlink: {path!r}."
+        )
+
+    # Must resolve inside the allowed directory.
+    try:
+        resolved.relative_to(_PLAN_ALLOWED_DIR)
+    except ValueError as exc:
+        raise ValueError(
+            f"Acquisition plan path {path!r} resolves outside allowed directory "
+            f"{_PLAN_ALLOWED_DIR!r}."
+        ) from exc
+
+    # Must be a regular file.
+    if not resolved.is_file():
+        raise FileNotFoundError(
+            f"Acquisition plan path is not a regular file: {path!r}."
+        )
 
     # Bounded read: reject files > 32 MiB before parsing.
-    size = os.path.getsize(path)
+    size = resolved.stat().st_size
     if size > _MAX_PLAN_BYTES:
         raise ValueError(
             f"Acquisition plan file exceeds maximum size ({_MAX_PLAN_BYTES} bytes): "
             f"{path!r} is {size} bytes."
+        )
+
+    raw = resolved.read_text(encoding="utf-8")
+
+    if len(raw.encode("utf-8")) > _MAX_PLAN_BYTES:
+        raise ValueError(
+            f"Acquisition plan file exceeds maximum size ({_MAX_PLAN_BYTES} bytes)."
+        )
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Acquisition plan file is not valid JSON: {exc}"
+        ) from exc
+
+    # strict=False is required because JSON deserializes arrays as lists,
+    # not tuples.  The plan model uses tuple fields; Pydantic strict mode
+    # rejects list→tuple coercion.  All other semantic validation remains.
+    return HistoricalReplayV2AcquisitionPlan.model_validate(data, strict=False)
+
+
+def _load_acquisition_plan_any_path(path: str) -> HistoricalReplayV2AcquisitionPlan:
+    """Private test helper: load a plan from any path without confinement checks.
+
+    NOT for production use. Use load_acquisition_plan() in production code.
+    This is a private utility only for test fixtures that need to load plans
+    from temporary directories.
+    """
+    import os
+
+    size = os.path.getsize(path)
+    if size > _MAX_PLAN_BYTES:
+        raise ValueError(
+            f"Acquisition plan file exceeds maximum size ({_MAX_PLAN_BYTES} bytes)."
         )
 
     with open(path, "r", encoding="utf-8") as f:
@@ -917,7 +1014,4 @@ def load_acquisition_plan(path: str) -> HistoricalReplayV2AcquisitionPlan:
             f"Acquisition plan file is not valid JSON: {exc}"
         ) from exc
 
-    # strict=False is required because JSON deserializes arrays as lists,
-    # not tuples.  The plan model uses tuple fields; Pydantic strict mode
-    # rejects list→tuple coercion.  All other semantic validation remains.
     return HistoricalReplayV2AcquisitionPlan.model_validate(data, strict=False)

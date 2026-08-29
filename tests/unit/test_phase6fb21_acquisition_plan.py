@@ -68,6 +68,7 @@ from backend.app.mission_sources.v2_acquisition_plan import (
     _PLACEHOLDER_SHA_PATTERNS,
     _compute_plan_id,
     _TRUSTED_PAIRS,
+    _load_acquisition_plan_any_path,
     load_acquisition_plan,
     validate_representation_url_trust,
 )
@@ -676,7 +677,7 @@ class TestUrlTrustValidation:
 
 
 class TestPlanId:
-    EXPECTED_PLAN_ID = "1f8999929167d0bfb27f39fe96a6b76be4a0f2c45e8b9af06f8c6f05d29bacd3"
+    EXPECTED_PLAN_ID = "5239a650b4c62b54af038e2e0e2c7440d905d82de21145e489faf424d71b4ced"
 
     def test_plan_id_matches_expected(self, plan):
         assert plan.plan_id == self.EXPECTED_PLAN_ID, (
@@ -767,6 +768,7 @@ class TestPlanId:
             decision_epoch_policy=plan.decision_epoch_policy,
             logical_entries=reversed_entries,
             discovery_evidence=plan.discovery_evidence,
+            discovery_evidence_artifact_id=plan.discovery_evidence_artifact_id,
         )
         assert reordered_id == plan.plan_id, (
             "plan_id should not change when entries are reordered."
@@ -784,6 +786,7 @@ class TestPlanId:
             decision_epoch_policy=plan.decision_epoch_policy,
             logical_entries=plan.logical_entries,
             discovery_evidence=reversed_evidence,
+            discovery_evidence_artifact_id=plan.discovery_evidence_artifact_id,
         )
         assert reordered_id == plan.plan_id
 
@@ -820,19 +823,20 @@ class TestBoundedPlanLoader:
         big = tmp_path / "big.json"
         # Write a file larger than 32 MiB
         big.write_bytes(b"x" * (32 * 1024 * 1024 + 1))
+        # Use the any-path helper since tmp_path is outside data/replays/
         with pytest.raises(ValueError, match="exceeds maximum size"):
-            load_acquisition_plan(str(big))
+            _load_acquisition_plan_any_path(str(big))
 
     def test_loader_rejects_invalid_json(self, tmp_path):
         bad = tmp_path / "bad.json"
         bad.write_text("not json {{{", encoding="utf-8")
         with pytest.raises(ValueError, match="not valid JSON"):
-            load_acquisition_plan(str(bad))
+            _load_acquisition_plan_any_path(str(bad))
 
     def test_loader_raises_file_not_found(self, tmp_path):
         missing = tmp_path / "does_not_exist.json"
         with pytest.raises((FileNotFoundError, OSError)):
-            load_acquisition_plan(str(missing))
+            _load_acquisition_plan_any_path(str(missing))
 
     def test_loader_rejects_wrong_plan_path(self, tmp_path):
         """A valid JSON file that is not a plan schema is rejected."""
@@ -840,7 +844,7 @@ class TestBoundedPlanLoader:
         wrong.write_text('{"schema": "something_else", "schema_version": 1}',
                          encoding="utf-8")
         with pytest.raises(Exception):  # ValidationError or ValueError
-            load_acquisition_plan(str(wrong))
+            _load_acquisition_plan_any_path(str(wrong))
 
 
 # ===========================================================================

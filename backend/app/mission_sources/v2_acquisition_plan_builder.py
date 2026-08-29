@@ -1,4 +1,26 @@
-"""GCSI Phase 6F-B2.1.1 — Acquisition Plan Builder.
+"""GCSI Phase 6F-B2.1.2 — Acquisition Plan Builder.
+
+Supersedes B2.1.1 builder with acquisition evidence chain closure.
+
+Changes from B2.1.1:
+- ALL hard-coded NASA archive identity arrays have been REMOVED:
+    _JIRAM_IMG_TIMES, _JIRAM_SPE_TIMES
+    _MWR_IRDR_165_CODES, _MWR_IRDR_166_CODES
+    _MWR_GRDR_165_CODES, _MWR_GRDR_166_CODES
+    _UVS_PRODUCTS
+    _FGM_PRODUCTS
+    _JADE_PRODUCTS
+    _JEDI_165_PRODUCTS, _JEDI_166_PRODUCTS
+    _WAVES_SURVEY_PRODUCTS
+
+- The builder now consumes all NASA identity arrays from the normalized
+  discovery sidecar (normalized_extractions section).
+
+- Hard-coded constants remain ONLY for frozen GCSI policy values:
+    _REPLAY_ID, _JUNOCAM_SCIENCE_OBS_TYPES
+
+- The plan now carries discovery_evidence_artifact_id (sidecar SHA-256),
+  and plan_id canonical content includes it.
 
 Enumerates all 411 logical PJ62 replay products and builds the frozen
 HistoricalReplayV2AcquisitionPlan JSON artifact.
@@ -15,7 +37,7 @@ The sidecar contains:
   - discovery_evidence: 14 fetched metadata resource records (real SHA-256,
     real retrieved_at, byte_count per resource)
   - normalized_extractions: per-instrument extracted product identity rows
-    used to enumerate the plan (JunoCam INDEX rows, WAVES Burst INDEX rows)
+    used to enumerate the plan.  ALL identity facts come from here.
 
 The builder consumes the sidecar rather than containing hard-coded
 NASA identity arrays that claim to represent fetched archive rows.
@@ -82,7 +104,7 @@ PAIRED_EDR_ROWS       = 124
 PAIRED_RDR_ROWS       = 124
 UNPAIRED_OR_EXCLUDED  =   0  (all eligible rows are fully paired science obs)
 
-OLD_JUNOCAM_LEDGER_SUPERSEDED = YES
+B21_RAW_ROW_LEDGER_SUPERSEDED = YES
 Reason: The prior B2.1 builder comment stated "346 orbit-62 rows" and
 "250 eligible raw rows / 2 excluded rows (62H00000/62P00000)".
 The actual JNOJNC_0029 INDEX.TAB (SHA-256
@@ -90,6 +112,11 @@ The actual JNOJNC_0029 INDEX.TAB (SHA-256
 contains 426 ORBIT_62 rows (more approach/departure rows than the old ledger
 assumed) and 248 eligible rows (all science imaging types C/G/M/R/T,
 fully EDR+RDR paired). The old 213-obs ledger counted only EDR rows.
+
+HISTORICAL_213_LOGICAL_OBSERVATION_LEDGER = CONFIRMED
+426 raw rows = 213 EDR + 213 RDR representations.
+Logical partition: PRE=56, ELIGIBLE=124, POST=33.
+56 + 124 + 33 = 213 logical observations.
 
 Policy: JUNOCAM_NONOBSERVATION_ROW_EXCLUSION_V1
 Applied during B2.1.1 INDEX.TAB parse: exclude any row whose obs-type
@@ -136,6 +163,7 @@ from backend.app.mission_sources.v2_acquisition_plan import (
     _compute_plan_id,
     validate_representation_url_trust,
 )
+from backend.app.mission_sources.v2_sidecar_models import compute_sidecar_artifact_id
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -148,7 +176,7 @@ _PLAN_OUTPUT_PATH = _DATA_REPLAYS / "juno_pj62_large_replay_v2_acquisition_plan.
 _SIDECAR_PATH = _DATA_REPLAYS / "juno_pj62_large_replay_v2_discovery_evidence.json"
 
 # ---------------------------------------------------------------------------
-# Frozen constants (GCSI policy, not NASA archive identities)
+# Frozen constants (GCSI policy ONLY — no NASA archive identities)
 # ---------------------------------------------------------------------------
 
 _REPLAY_ID = "juno_pj62_large_replay_v2"
@@ -170,13 +198,24 @@ _SIDECAR_MAX_BYTES = 32 * 1024 * 1024  # 32 MiB
 def _load_sidecar() -> dict[str, Any]:
     """Load and validate the discovery evidence sidecar.
 
-    Enforces:
-    - Path must resolve to data/replays/ (no traversal, no symlink escape)
+    Enforces (B2.1.2 hardened):
+    - Original path must not contain '..' traversal sequences
+    - Path must resolve to data/replays/ (no traversal, no symlink escape at target)
     - JSON only, bounded read
     - Schema and version check
     - extra fields forbidden
+    - artifact_id cryptographic verification
     """
+    # Check for traversal in original path before resolving.
+    original_parts = _SIDECAR_PATH.parts
+    if any(part == ".." for part in original_parts):
+        raise ValueError(
+            f"Sidecar path contains traversal sequences: {_SIDECAR_PATH!r}."
+        )
+
     resolved = _SIDECAR_PATH.resolve()
+
+    # Boundary check: resolved target must be inside allowed directory.
     try:
         resolved.relative_to(_SIDECAR_ALLOWED_DIR)
     except ValueError as exc:
@@ -184,8 +223,13 @@ def _load_sidecar() -> dict[str, Any]:
             f"Sidecar path {_SIDECAR_PATH!r} resolves outside allowed directory "
             f"{_SIDECAR_ALLOWED_DIR!r}."
         ) from exc
-    if resolved.is_symlink():
+
+    # The original path must also not be a symlink itself (defense in depth).
+    if _SIDECAR_PATH.is_symlink():
         raise ValueError(f"Sidecar path must not be a symlink: {_SIDECAR_PATH!r}.")
+    # And the resolved target must not be a symlink.
+    if resolved.is_symlink():
+        raise ValueError(f"Sidecar resolved path must not be a symlink: {resolved!r}.")
 
     size = resolved.stat().st_size
     if size > _SIDECAR_MAX_BYTES:
@@ -225,6 +269,17 @@ def _load_sidecar() -> dict[str, Any]:
         raise ValueError(
             f"Sidecar replay_id {data['replay_id']!r} != expected {_REPLAY_ID!r}."
         )
+
+    # Verify artifact_id if present
+    if "artifact_id" in data:
+        expected_artifact_id = compute_sidecar_artifact_id(data)
+        if data["artifact_id"] != expected_artifact_id:
+            raise ValueError(
+                f"Sidecar artifact_id mismatch: "
+                f"stored {data['artifact_id']!r} != "
+                f"computed {expected_artifact_id!r}. "
+                "Sidecar has been mutated since artifact_id was set."
+            )
 
     return data
 
@@ -268,44 +323,40 @@ _JIRAM_BASE_URL = (
     "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/"
 )
 
-# HHMMSS timestamps extracted from jiram_orbit62_dir_full.html
-_JIRAM_IMG_TIMES = [
-    "090046", "090117", "090147", "090218", "090248", "090319", "090349",
-    "090420", "090450", "090652", "090722", "090753", "090823", "090854",
-    "090924", "090955", "091156", "091227", "091257", "091328", "091359",
-    "091429", "091500", "091701", "091732", "091802", "091833", "091903",
-    "091934", "092004", "092206", "092236", "092307", "092337", "092408",
-    "092438", "092509", "092711", "092741", "092812", "092842", "092913",
-    "092943", "093014", "093215", "093246", "093316", "093347", "093417",
-    "093448", "093518",
-]  # 51 entries
 
-_JIRAM_SPE_TIMES = [
-    "090048", "090119", "090149", "090220", "090250", "090321", "090351",
-    "090422", "090452", "090654", "090724", "090755", "090825", "090856",
-    "090926", "090957", "091158", "091229", "091259", "091330", "091401",
-    "091431", "091502", "091703", "091734", "091804", "091835", "091905",
-    "091936", "092006", "092208", "092238", "092309", "092339", "092410",
-    "092440", "092511", "092713", "092743", "092814", "092844", "092915",
-    "092945", "093016", "093217", "093248", "093318", "093349", "093419",
-    "093450", "093520",
-]  # 51 entries
+def _build_jiram_entries(
+    evidence_id: str,
+    sidecar_rows: list[dict],
+) -> list[AcquisitionLogicalProductEntry]:
+    """Build JIRAM entries from sidecar normalized extraction rows.
 
-
-def _build_jiram_entries(evidence_id: str) -> list[AcquisitionLogicalProductEntry]:
+    Each row must have: filename, family, hhmmss
+    """
     entries = []
-    for ts in _JIRAM_IMG_TIMES:
-        stem = f"JIR_IMG_RDR_2024166T{ts}_V01"
-        lid = f"urn:nasa:pds:juno_jiram:data_calibrated:{stem.lower()}"
-        url = f"{_JIRAM_BASE_URL}{stem}.xml"
-        logical_id = f"gcsi.jiram.pj62.img.{ts}"
+    for row in sidecar_rows:
+        filename = row["filename"]
+        family = row["family"]  # "IMG" or "SPE"
+        ts = row["hhmmss"]
+
+        stem = filename[:-4] if filename.endswith(".xml") else filename
+        family_lower = family.lower()
+        if family_lower == "img":
+            lid_prefix = f"urn:nasa:pds:juno_jiram:data_calibrated:{stem.lower()}"
+            archive_identity = f"{lid_prefix}::2.0"
+        else:
+            lid_prefix = f"urn:nasa:pds:juno_jiram:data_calibrated:{stem.lower()}"
+            archive_identity = f"{lid_prefix}::1.0"
+
+        url = f"{_JIRAM_BASE_URL}{filename}"
+        logical_id = f"gcsi.jiram.pj62.{family_lower}.{ts}"
+
         rep = AcquisitionSourceRepresentation(
             representation_role=AcquisitionRepresentationRole.CALIBRATED,
             source_standard=AcquisitionSourceStandard.PDS4,
             label_url=url,
             normalizer_id="gcsi.generic_pds4_label.v1",
             profile_id="jiram_pds4",
-            expected_archive_identity=f"{lid}::2.0",
+            expected_archive_identity=archive_identity,
             discovery_evidence_id=evidence_id,
         )
         validate_representation_url_trust(rep)
@@ -318,32 +369,6 @@ def _build_jiram_entries(evidence_id: str) -> list[AcquisitionLogicalProductEntr
             representations=(rep,),
             discovery_evidence_id=evidence_id,
         ))
-
-    for ts in _JIRAM_SPE_TIMES:
-        stem = f"JIR_SPE_RDR_2024166T{ts}_V01"
-        lid = f"urn:nasa:pds:juno_jiram:data_calibrated:{stem.lower()}"
-        url = f"{_JIRAM_BASE_URL}{stem}.xml"
-        logical_id = f"gcsi.jiram.pj62.spe.{ts}"
-        rep = AcquisitionSourceRepresentation(
-            representation_role=AcquisitionRepresentationRole.CALIBRATED,
-            source_standard=AcquisitionSourceStandard.PDS4,
-            label_url=url,
-            normalizer_id="gcsi.generic_pds4_label.v1",
-            profile_id="jiram_pds4",
-            expected_archive_identity=f"{lid}::1.0",
-            discovery_evidence_id=evidence_id,
-        )
-        validate_representation_url_trust(rep)
-        entries.append(AcquisitionLogicalProductEntry(
-            logical_product_id=logical_id,
-            instrument="JIRAM",
-            semantic_role="instrument_diagnostic",
-            temporal_evidence_status=_PENDING,
-            discovery_availability_time_utc=None,
-            representations=(rep,),
-            discovery_evidence_id=evidence_id,
-        ))
-
     return entries
 
 
@@ -359,37 +384,37 @@ def _build_jiram_entries(evidence_id: str) -> list[AcquisitionLogicalProductEntr
 
 _MWR_BASE_URL = "https://pds-atmospheres.nmsu.edu/PDS/data/jnomwr_1100/DATA/"
 
-_MWR_IRDR_165_CODES = {
-    10: "R04120", 11: "R06672", 12: "R30000", 13: "R30008", 14: "R30000",
-    15: "R30000", 16: "R30000", 17: "R30000", 18: "R30000", 19: "R30000",
-    20: "R30000", 21: "R27308", 22: "R04112", 23: "R03944",
-}
-_MWR_IRDR_166_CODES = {
-    0: "R04112", 1: "R04120", 2: "R04112", 3: "R04112", 4: "R04120",
-    5: "R04112", 6: "R04112", 7: "R04112", 8: "R04120",
-}
-_MWR_GRDR_165_CODES = {
-    10: "R04120", 11: "R06672", 12: "R30000", 13: "R30000", 14: "R30000",
-    15: "R30000", 16: "R30000", 17: "R30000", 18: "R30000", 19: "R30000",
-    20: "R30000", 21: "R27308", 22: "R04112", 23: "R03944",
-}
-_MWR_GRDR_166_CODES = {
-    0: "R04112", 1: "R04120", 2: "R04112", 3: "R04112", 4: "R04120",
-    5: "R04112", 6: "R04112", 7: "R04112", 8: "R04120",
-}
-
 
 def _build_mwr_entries(
-    irdr_ev_165: str, irdr_ev_166: str, grdr_ev_165: str, grdr_ev_166: str
+    sidecar_rows: list[dict],
+    ev_irdr_165: str,
+    ev_irdr_166: str,
+    ev_grdr_165: str,
+    ev_grdr_166: str,
 ) -> list[AcquisitionLogicalProductEntry]:
-    entries = []
+    """Build MWR entries from sidecar normalized extraction rows.
 
-    def _add(kind: str, doy: int, hour: int, code: str, ev_id: str) -> None:
-        kind_upper = kind.upper()
+    Each row must have: filename, product_type, doy, hour, code
+    """
+    entries = []
+    for row in sidecar_rows:
+        product_type = row["product_type"]  # "IRDR" or "GRDR"
+        doy = row["doy"]
+        hour = row["hour"]
+        code = row["code"]
+
+        kind = product_type.lower()  # "irdr" or "grdr"
         kind_letter = "I" if kind == "irdr" else "G"
         fname_stem = f"MWR62R{kind_letter}2024{doy}{hour:02d}0000_{code}_V04"
-        url = f"{_MWR_BASE_URL}{kind_upper}/2024/2024{doy}/{fname_stem}.xml"
+        url = f"{_MWR_BASE_URL}{product_type}/2024/2024{doy}/{fname_stem}.xml"
         logical_id = f"gcsi.mwr.pj62.{kind}.2024{doy}{hour:02d}0000"
+
+        # Select appropriate evidence_id based on type and DOY
+        if kind == "irdr":
+            ev_id = ev_irdr_165 if doy == 165 else ev_irdr_166
+        else:
+            ev_id = ev_grdr_165 if doy == 165 else ev_grdr_166
+
         rep = AcquisitionSourceRepresentation(
             representation_role=AcquisitionRepresentationRole.CALIBRATED,
             source_standard=AcquisitionSourceStandard.PDS4,
@@ -409,16 +434,6 @@ def _build_mwr_entries(
             representations=(rep,),
             discovery_evidence_id=ev_id,
         ))
-
-    for hour, code in sorted(_MWR_IRDR_165_CODES.items()):
-        _add("irdr", 165, hour, code, irdr_ev_165)
-    for hour, code in sorted(_MWR_IRDR_166_CODES.items()):
-        _add("irdr", 166, hour, code, irdr_ev_166)
-    for hour, code in sorted(_MWR_GRDR_165_CODES.items()):
-        _add("grdr", 165, hour, code, grdr_ev_165)
-    for hour, code in sorted(_MWR_GRDR_166_CODES.items()):
-        _add("grdr", 166, hour, code, grdr_ev_166)
-
     return entries
 
 
@@ -431,22 +446,23 @@ def _build_mwr_entries(
 
 _UVS_BASE_URL = "https://atmos.nmsu.edu/PDS/data/jnouvs_3001/DATA/ORBIT-62/"
 
-_UVS_PRODUCTS = [
-    ("S01", "771573735", "2024165", "P62OBS"),
-    ("S02", "771573735", "2024165", "P62OBS"),
-    ("S03", "771573735", "2024165", "P62OBS"),
-    ("S04", "771573735", "2024165", "P62OBS"),
-    ("S05", "771573735", "2024165", "P62OBS"),
-    ("S01", "771613347", "2024166", "P62SY1"),
-    ("S02", "771613347", "2024166", "P62SY1"),
-    ("S03", "771613347", "2024166", "P62SY1"),
-]  # 5 P62OBS + 3 P62SY1 = 8
 
+def _build_uvs_entries(
+    evidence_id: str,
+    sidecar_rows: list[dict],
+) -> list[AcquisitionLogicalProductEntry]:
+    """Build UVS entries from sidecar normalized extraction rows.
 
-def _build_uvs_entries(evidence_id: str) -> list[AcquisitionLogicalProductEntry]:
+    Each row must have: filename, sensor, sclk, doy_str, obs_type
+    """
     entries = []
-    for sensor, sclk, doy_str, obs_type in _UVS_PRODUCTS:
-        stem = f"UVS_{sensor}_{sclk}_{doy_str}_{obs_type}_V01"
+    for row in sidecar_rows:
+        sensor = row["sensor"]
+        sclk = row["sclk"]
+        doy_str = row["doy_str"]
+        obs_type = row["obs_type"]
+        stem = row["filename"]
+
         url = f"{_UVS_BASE_URL}{stem}.xml"
         logical_id = (
             f"gcsi.uvs.pj62.{sensor.lower()}_{sclk}_{doy_str}_{obs_type.lower()}"
@@ -485,9 +501,8 @@ def _build_uvs_entries(evidence_id: str) -> list[AcquisitionLogicalProductEntry]
 #   PRE  = 112, ELIGIBLE = 248, POST = 66
 #   PAIRED_EDR = 124, PAIRED_RDR = 124, EXCLUDED = 0
 #
-# Tuple format: (edr_product_id, edr_file_spec, rdr_product_id, rdr_file_spec,
-#                stop_utc_str)  — stop_utc_str from INDEX.TAB STOP_TIME column.
 # All 124 observations loaded from normalized_extractions in sidecar.
+# Partition "ELIGIBLE" rows only are used here.
 
 _JUNOCAM_BASE_URL = "https://planetarydata.jpl.nasa.gov/img/data/juno/JNOJNC_0029/"
 
@@ -497,8 +512,18 @@ def _build_junocam_entries(
     tab_ev: str,
     sidecar_extractions: list[dict],
 ) -> list[AcquisitionLogicalProductEntry]:
+    """Build JunoCam entries from sidecar normalized extraction rows.
+
+    Only rows with partition == "ELIGIBLE" are used.
+    Rows with other partitions (PRE, POST) are stored in sidecar for
+    reconciliation proof but not included in the acquisition plan.
+    """
     entries = []
     for row in sidecar_extractions:
+        # Only eligible rows produce plan entries
+        if row.get("partition") != "ELIGIBLE":
+            continue
+
         edr_pid = row["edr_product_id"]
         edr_file_spec = row["edr_file_specification_name"]
         rdr_pid = row["rdr_product_id"]
@@ -551,7 +576,7 @@ def _build_junocam_entries(
 
 
 # ---------------------------------------------------------------------------
-# FGM (2)
+# FGM (2 selected)
 # ---------------------------------------------------------------------------
 # Discovery source: directory HTML only.
 # DISCOVERY_TIME_AUTHORITY = LABEL_PENDING
@@ -561,20 +586,25 @@ _FGM_BASE_URL = (
     "https://pds-ppi.igpp.ucla.edu/data/JNO-J-3-FGM-CAL-V1.0/DATA/JUPITER/PL/PERI-62/"
 )
 
-# (logical_stem, product_id, lbl_filename)
-_FGM_PRODUCTS = [
-    ("fgm_jno_l3_2024165pl", "FGM_JNO_L3_2024165PL", "fgm_jno_l3_2024165pl_v02.lbl"),
-    (
-        "fgm_jno_l3_2024165pl_pj62",
-        "FGM_JNO_L3_2024165PL_PJ62",
-        "fgm_jno_l3_2024165pl_pj62_v02.lbl",
-    ),
-]
 
+def _build_fgm_entries(
+    evidence_id: str,
+    sidecar_rows: list[dict],
+) -> list[AcquisitionLogicalProductEntry]:
+    """Build FGM entries from sidecar normalized extraction rows.
 
-def _build_fgm_entries(evidence_id: str) -> list[AcquisitionLogicalProductEntry]:
+    Only rows with selected == True are included in the plan.
+    Each row must have: lbl_filename, product_id, logical_stem, selected
+    """
     entries = []
-    for stem, product_id, lbl_fname in _FGM_PRODUCTS:
+    for row in sidecar_rows:
+        if not row.get("selected", False):
+            continue
+
+        lbl_fname = row["lbl_filename"]
+        product_id = row["product_id"]
+        stem = row["logical_stem"]
+
         url = f"{_FGM_BASE_URL}{lbl_fname}"
         logical_id = f"gcsi.fgm.pj62.{stem}"
         rep = AcquisitionSourceRepresentation(
@@ -600,7 +630,7 @@ def _build_fgm_entries(evidence_id: str) -> list[AcquisitionLogicalProductEntry]
 
 
 # ---------------------------------------------------------------------------
-# JADE (8 eligible)
+# JADE (8 eligible from 12 discovered)
 # ---------------------------------------------------------------------------
 # Discovery source: directory HTML only.
 # DISCOVERY_TIME_AUTHORITY = LABEL_PENDING
@@ -610,21 +640,24 @@ _JADE_BASE_URL = (
     "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/"
 )
 
-_JADE_PRODUCTS = [
-    ("JAD_L30_LRS_ION_2024165_V01", "2024/165/JAD_L30_LRS_ION_2024165_V01.LBL"),
-    ("JAD_L30_LRS_ELC_2024165_V01", "2024/165/JAD_L30_LRS_ELC_2024165_V01.LBL"),
-    ("JAD_L30_HRS_ION_2024165_V01", "2024/165/JAD_L30_HRS_ION_2024165_V01.LBL"),
-    ("JAD_L30_HRS_ELC_2024165_V01", "2024/165/JAD_L30_HRS_ELC_2024165_V01.LBL"),
-    ("JAD_L30_LRS_ION_2024166_V01", "2024/166/JAD_L30_LRS_ION_2024166_V01.LBL"),
-    ("JAD_L30_LRS_ELC_2024166_V01", "2024/166/JAD_L30_LRS_ELC_2024166_V01.LBL"),
-    ("JAD_L30_HRS_ION_2024166_V01", "2024/166/JAD_L30_HRS_ION_2024166_V01.LBL"),
-    ("JAD_L30_HRS_ELC_2024166_V01", "2024/166/JAD_L30_HRS_ELC_2024166_V01.LBL"),
-]
 
+def _build_jade_entries(
+    evidence_id: str,
+    sidecar_rows: list[dict],
+) -> list[AcquisitionLogicalProductEntry]:
+    """Build JADE entries from sidecar normalized extraction rows.
 
-def _build_jade_entries(evidence_id: str) -> list[AcquisitionLogicalProductEntry]:
+    Only rows with inclusion == "ELIGIBLE" are included in the plan.
+    Each row must have: product_id, path_suffix, doy, inclusion
+    """
     entries = []
-    for product_id, path_suffix in _JADE_PRODUCTS:
+    for row in sidecar_rows:
+        if row.get("inclusion") != "ELIGIBLE":
+            continue
+
+        product_id = row["product_id"]
+        path_suffix = row["path_suffix"]
+
         url = f"{_JADE_BASE_URL}{path_suffix}"
         logical_id = f"gcsi.jade.pj62.{product_id.lower()}"
         rep = AcquisitionSourceRepresentation(
@@ -662,44 +695,20 @@ _JEDI_BASE_URL = (
     "https://pds-ppi.igpp.ucla.edu/data/JNO-J-JED-3-CDR-V1.0/DATA/2024/"
 )
 
-_JEDI_165_PRODUCTS = [
-    "JED_090_HIERSESP_CDR_2024165_V04",
-    "JED_090_HIERSISP_CDR_2024165_V04",
-    "JED_090_LOERSESP_CDR_2024165_V04",
-    "JED_180_HIERSESP_CDR_2024165_V04",
-    "JED_180_HIERSISP_CDR_2024165_V04",
-    "JED_180_LOERSESP_CDR_2024165_V04",
-    "JED_270_HIERSESP_CDR_2024165_V04",
-    "JED_270_HIERSISP_CDR_2024165_V04",
-    "JED_270_HIERSTOFXER_CDR_2024165_V04",
-    "JED_270_HIERSTOFXPHR_CDR_2024165_V04",
-    "JED_270_LOERSESP_CDR_2024165_V04",
-    "JED_270_LOERSISP_CDR_2024165_V04",
-    "JED_270_NONPTOFXER_CDR_2024165_V04",
-    "JED_270_NONPTOFXPHR_CDR_2024165_V04",
-]  # 14 products
 
-_JEDI_166_PRODUCTS = [
-    "JED_090_HIERSESP_CDR_2024166_V04",
-    "JED_090_HIERSISP_CDR_2024166_V04",
-    "JED_090_LOERSESP_CDR_2024166_V04",
-    "JED_090_LOERSISP_CDR_2024166_V04",
-    "JED_180_HIERSESP_CDR_2024166_V04",
-    "JED_180_HIERSISP_CDR_2024166_V04",
-    "JED_180_LOERSESP_CDR_2024166_V04",
-    "JED_180_LOERSISP_CDR_2024166_V04",
-    "JED_270_HIERSESP_CDR_2024166_V04",
-    "JED_270_HIERSTOFXER_CDR_2024166_V04",
-    "JED_270_HIERSTOFXPHR_CDR_2024166_V04",
-    "JED_270_LOERSESP_CDR_2024166_V04",
-    "JED_270_NONPTOFXER_CDR_2024166_V04",
-    "JED_270_NONPTOFXPHR_CDR_2024166_V04",
-]  # 14 products
+def _build_jedi_entries(
+    ev_165: str,
+    ev_166: str,
+    sidecar_rows_165: list[dict],
+    sidecar_rows_166: list[dict],
+) -> list[AcquisitionLogicalProductEntry]:
+    """Build JEDI entries from sidecar normalized extraction rows.
 
-
-def _build_jedi_entries(ev_165: str, ev_166: str) -> list[AcquisitionLogicalProductEntry]:
+    Each row must have: product_id, doy
+    """
     entries = []
-    for product_id in _JEDI_165_PRODUCTS:
+    for row in sidecar_rows_165:
+        product_id = row["product_id"]
         url = f"{_JEDI_BASE_URL}165/{product_id}.LBL"
         logical_id = f"gcsi.jedi.pj62.{product_id.lower()}"
         rep = AcquisitionSourceRepresentation(
@@ -722,7 +731,8 @@ def _build_jedi_entries(ev_165: str, ev_166: str) -> list[AcquisitionLogicalProd
             discovery_evidence_id=ev_165,
         ))
 
-    for product_id in _JEDI_166_PRODUCTS:
+    for row in sidecar_rows_166:
+        product_id = row["product_id"]
         url = f"{_JEDI_BASE_URL}166/{product_id}.LBL"
         logical_id = f"gcsi.jedi.pj62.{product_id.lower()}"
         rep = AcquisitionSourceRepresentation(
@@ -749,7 +759,7 @@ def _build_jedi_entries(ev_165: str, ev_166: str) -> list[AcquisitionLogicalProd
 
 
 # ---------------------------------------------------------------------------
-# WAVES Survey (2)
+# WAVES Survey (2 eligible from 4 discovered)
 # ---------------------------------------------------------------------------
 # Discovery source: directory HTML only.
 # DISCOVERY_TIME_AUTHORITY = LABEL_PENDING
@@ -760,17 +770,31 @@ _WAVES_SURVEY_BASE_URL = (
     "DATA/WAVES_SURVEY/2024149_ORBIT_62/"
 )
 
-_WAVES_SURVEY_PRODUCTS = [
-    ("WAV_2024165T000000_B_V01", AcquisitionRepresentationRole.SURVEY_B),
-    ("WAV_2024165T000000_E_V01", AcquisitionRepresentationRole.SURVEY_E),
-]
+_WAVES_SURVEY_BAND_ROLES: dict[str, AcquisitionRepresentationRole] = {
+    "b": AcquisitionRepresentationRole.SURVEY_B,
+    "e": AcquisitionRepresentationRole.SURVEY_E,
+}
 
 
-def _build_waves_survey_entries(evidence_id: str) -> list[AcquisitionLogicalProductEntry]:
+def _build_waves_survey_entries(
+    evidence_id: str,
+    sidecar_rows: list[dict],
+) -> list[AcquisitionLogicalProductEntry]:
+    """Build WAVES Survey entries from sidecar normalized extraction rows.
+
+    Only rows with inclusion == "ELIGIBLE" are included in the plan.
+    Each row must have: stem, band, inclusion
+    """
     entries = []
-    for stem, role in _WAVES_SURVEY_PRODUCTS:
+    for row in sidecar_rows:
+        if row.get("inclusion") != "ELIGIBLE":
+            continue
+
+        stem = row["stem"]
+        band = row["band"].lower()
+        role = _WAVES_SURVEY_BAND_ROLES[band]
+
         url = f"{_WAVES_SURVEY_BASE_URL}{stem}.LBL"
-        band = "b" if role == AcquisitionRepresentationRole.SURVEY_B else "e"
         logical_id = f"gcsi.waves.survey.pj62.{band}"
         rep = AcquisitionSourceRepresentation(
             representation_role=role,
@@ -804,6 +828,8 @@ def _build_waves_survey_entries(evidence_id: str) -> list[AcquisitionLogicalProd
 # Row reconciliation (see module docstring):
 #   ORBIT_62 total=282, PRE=175, ELIGIBLE=91, POST=16
 #   B_BIN=41, E_BIN=41, B_REC=3, E_REC=3, NBS_REC=3 = 91
+#
+# Only rows with partition == "ELIGIBLE" produce plan entries.
 
 _WAVES_BURST_BASE_URL = (
     "https://pds-ppi.igpp.ucla.edu/data/JNO-E_J_SS-WAV-3-CDR-BSTFULL-V2.0/"
@@ -822,18 +848,23 @@ def _build_waves_burst_entries(
     evidence_id: str,
     sidecar_extractions: list[dict],
 ) -> list[AcquisitionLogicalProductEntry]:
+    """Build WAVES Burst entries from sidecar normalized extraction rows.
+
+    Only rows with partition == "ELIGIBLE" are included in the plan.
+    """
     entries = []
     for row in sidecar_extractions:
+        # Only eligible rows produce plan entries
+        if row.get("partition") != "ELIGIBLE":
+            continue
+
         product_id = row["product_id"]
         file_spec = row["file_specification_name"]
         stop_utc_str = row["stop_time"]
         family = row["family"]
 
         role = _FAMILY_ROLE_MAP[family]
-        # The label URL is the file_specification_name relative to the volume root
         url = f"{_WAVES_BURST_BASE_URL}{file_spec}"
-        # Logical ID from the file spec stem (already _V01 from index)
-        # product_id does not include version; file spec stem does
         stem = pathlib.Path(file_spec).stem  # e.g. WAV_2024165T145507_B_REC_V01
         logical_id = f"gcsi.waves.burst.pj62.{stem.lower()}"
         stop_utc = datetime.fromisoformat(stop_utc_str).replace(tzinfo=timezone.utc)
@@ -869,35 +900,53 @@ def build_plan() -> HistoricalReplayV2AcquisitionPlan:
 
     Loads the discovery evidence sidecar, then enumerates all instruments.
     The sidecar must exist at data/replays/juno_pj62_large_replay_v2_discovery_evidence.json.
+
+    ALL instrument identity (product IDs, filenames, codes) comes from the sidecar.
+    No NASA identity arrays are hard-coded in this builder.
     """
     sidecar = _load_sidecar()
     evidence_list = _make_evidence_from_sidecar(sidecar)
     extractions = sidecar["normalized_extractions"]
 
-    junocam_rows = extractions["junocam_index_tab_orbit62_eligible"]
-    waves_burst_rows = extractions["waves_burst_index_tab_orbit62_eligible"]
+    # Get the sidecar artifact_id for plan binding
+    sidecar_artifact_id = sidecar.get("artifact_id")
+
+    # Instrument-specific normalized extraction rows from sidecar
+    jiram_rows = extractions["jiram_orbit62_filenames"]
+    mwr_rows = extractions["mwr_orbit62_filenames"]
+    uvs_rows = extractions["uvs_orbit62_filenames"]
+    fgm_rows = extractions["fgm_peri62_filenames"]
+    jade_rows = extractions["jade_orbit62_labels"]
+    jedi_165_rows = extractions["jedi_165_labels"]
+    jedi_166_rows = extractions["jedi_166_labels"]
+    waves_survey_rows = extractions["waves_survey_orbit62_labels"]
+    junocam_rows = extractions["junocam_index_tab_orbit62_all"]
+    waves_burst_rows = extractions["waves_burst_index_tab_orbit62_all"]
 
     entries: list[AcquisitionLogicalProductEntry] = []
-    entries.extend(_build_jiram_entries("jiram_orbit62_directory_html"))
+    entries.extend(_build_jiram_entries("jiram_orbit62_directory_html", jiram_rows))
     entries.extend(_build_mwr_entries(
+        mwr_rows,
         "mwr_irdr_2024165_directory_html",
         "mwr_irdr_2024166_directory_html",
         "mwr_grdr_2024165_directory_html",
         "mwr_grdr_2024166_directory_html",
     ))
-    entries.extend(_build_uvs_entries("uvs_orbit62_directory_html"))
+    entries.extend(_build_uvs_entries("uvs_orbit62_directory_html", uvs_rows))
     entries.extend(_build_junocam_entries(
         "junocam_jnojnc_0029_index_lbl",
         "junocam_jnojnc_0029_index_tab",
         junocam_rows,
     ))
-    entries.extend(_build_fgm_entries("fgm_jupiter_pl_directory_html"))
-    entries.extend(_build_jade_entries("jade_calibrated_directory_html"))
+    entries.extend(_build_fgm_entries("fgm_jupiter_pl_directory_html", fgm_rows))
+    entries.extend(_build_jade_entries("jade_calibrated_directory_html", jade_rows))
     entries.extend(_build_jedi_entries(
         "jedi_165_directory_html",
         "jedi_166_directory_html",
+        jedi_165_rows,
+        jedi_166_rows,
     ))
-    entries.extend(_build_waves_survey_entries("waves_survey_orbit62_directory_html"))
+    entries.extend(_build_waves_survey_entries("waves_survey_orbit62_directory_html", waves_survey_rows))
     entries.extend(_build_waves_burst_entries(
         "waves_burst_bstfull_index_tab",
         waves_burst_rows,
@@ -908,14 +957,14 @@ def build_plan() -> HistoricalReplayV2AcquisitionPlan:
     if total != 411:
         raise RuntimeError(
             f"SOURCE_ENUMERATION_CHANGED: expected 411 logical entries, got {total}. "
-            f"6F_B211_STATUS = INVENTORY_PLAN_RECONCILIATION_REQUIRED"
+            f"6F_B212_STATUS = INVENTORY_PLAN_RECONCILIATION_REQUIRED"
         )
 
     total_refs = sum(len(e.representations) for e in entries)
     if total_refs != 535:
         raise RuntimeError(
             f"SOURCE_ENUMERATION_CHANGED: expected 535 source refs, got {total_refs}. "
-            f"6F_B211_STATUS = INVENTORY_PLAN_RECONCILIATION_REQUIRED"
+            f"6F_B212_STATUS = INVENTORY_PLAN_RECONCILIATION_REQUIRED"
         )
 
     plan_id = _compute_plan_id(
@@ -926,6 +975,7 @@ def build_plan() -> HistoricalReplayV2AcquisitionPlan:
         decision_epoch_policy=DECISION_EPOCH_POLICY,
         logical_entries=tuple(entries),
         discovery_evidence=tuple(evidence_list),
+        discovery_evidence_artifact_id=sidecar_artifact_id,
     )
 
     plan = HistoricalReplayV2AcquisitionPlan(
@@ -939,6 +989,7 @@ def build_plan() -> HistoricalReplayV2AcquisitionPlan:
         final_temporal_eligibility=FINAL_TEMPORAL_ELIGIBILITY,
         logical_entries=tuple(entries),
         discovery_evidence=tuple(evidence_list),
+        discovery_evidence_artifact_id=sidecar_artifact_id,
     )
     return plan
 
@@ -981,6 +1032,10 @@ def main() -> None:
             f"    {inst:15s}: {inst_counts[inst]:3d} logical, {ref_count:3d} refs",
             file=sys.stderr,
         )
+    print(
+        f"  discovery_evidence_artifact_id: {plan.discovery_evidence_artifact_id}",
+        file=sys.stderr,
+    )
 
     _PLAN_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     plan_dict = plan.model_dump(mode="json")
@@ -991,7 +1046,7 @@ def main() -> None:
     print(f"  Written: {_PLAN_OUTPUT_PATH}", file=sys.stderr)
     print(f"  plan_id: {plan.plan_id}", file=sys.stderr)
     print(
-        "  6F_B211_STATUS = ACQUISITION_PLAN_EVIDENCE_FROZEN (pending test run)",
+        "  6F_B212_STATUS = ACQUISITION_EVIDENCE_CHAIN_CLOSED (pending test run)",
         file=sys.stderr,
     )
 

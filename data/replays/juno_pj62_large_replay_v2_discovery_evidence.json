@@ -1,5 +1,5 @@
 {
-  "artifact_id": "3687be0926a164bcaebf65c2da3a94f10135d06acf9e0262f6b03886713d75a8",
+  "artifact_id": "ded2d9a7ed309410cea7f07992323efeffbfeda6e50ea8c5fa249eb99230235b",
   "discovery_evidence": [
     {
       "byte_count": 154426,
@@ -143,11 +143,728 @@
     }
   ],
   "normalized_extractions": {
-    "junocam_index_tab_orbit62_eligible": [
+    "fgm_peri62_filenames": [
+      {
+        "lbl_filename": "fgm_jno_l3_2024165pl_v02.lbl",
+        "logical_stem": "fgm_jno_l3_2024165pl",
+        "product_id": "FGM_JNO_L3_2024165PL",
+        "selected": true
+      },
+      {
+        "lbl_filename": "fgm_jno_l3_2024165pl_pj62_v02.lbl",
+        "logical_stem": "fgm_jno_l3_2024165pl_pj62",
+        "product_id": "FGM_JNO_L3_2024165PL_PJ62",
+        "selected": true
+      }
+    ],
+    "jade_orbit62_labels": [
+      {
+        "doy": 165,
+        "inclusion": "ELIGIBLE",
+        "path_suffix": "2024/165/JAD_L30_LRS_ION_2024165_V01.LBL",
+        "product_id": "JAD_L30_LRS_ION_2024165_V01"
+      },
+      {
+        "doy": 165,
+        "inclusion": "ELIGIBLE",
+        "path_suffix": "2024/165/JAD_L30_LRS_ELC_2024165_V01.LBL",
+        "product_id": "JAD_L30_LRS_ELC_2024165_V01"
+      },
+      {
+        "doy": 165,
+        "inclusion": "ELIGIBLE",
+        "path_suffix": "2024/165/JAD_L30_HRS_ION_2024165_V01.LBL",
+        "product_id": "JAD_L30_HRS_ION_2024165_V01"
+      },
+      {
+        "doy": 165,
+        "inclusion": "ELIGIBLE",
+        "path_suffix": "2024/165/JAD_L30_HRS_ELC_2024165_V01.LBL",
+        "product_id": "JAD_L30_HRS_ELC_2024165_V01"
+      },
+      {
+        "doy": 166,
+        "inclusion": "ELIGIBLE",
+        "path_suffix": "2024/166/JAD_L30_LRS_ION_2024166_V01.LBL",
+        "product_id": "JAD_L30_LRS_ION_2024166_V01"
+      },
+      {
+        "doy": 166,
+        "inclusion": "ELIGIBLE",
+        "path_suffix": "2024/166/JAD_L30_LRS_ELC_2024166_V01.LBL",
+        "product_id": "JAD_L30_LRS_ELC_2024166_V01"
+      },
+      {
+        "doy": 166,
+        "inclusion": "ELIGIBLE",
+        "path_suffix": "2024/166/JAD_L30_HRS_ION_2024166_V01.LBL",
+        "product_id": "JAD_L30_HRS_ION_2024166_V01"
+      },
+      {
+        "doy": 166,
+        "inclusion": "ELIGIBLE",
+        "path_suffix": "2024/166/JAD_L30_HRS_ELC_2024166_V01.LBL",
+        "product_id": "JAD_L30_HRS_ELC_2024166_V01"
+      },
+      {
+        "doy": 165,
+        "inclusion": "EXCLUDED",
+        "path_suffix": "2024/165/JAD_L30_LRS_ION_PRI_2024165_V01.LBL",
+        "product_id": "JAD_L30_LRS_ION_PRI_2024165_V01"
+      },
+      {
+        "doy": 165,
+        "inclusion": "EXCLUDED",
+        "path_suffix": "2024/165/JAD_L30_LRS_ELC_PRI_2024165_V01.LBL",
+        "product_id": "JAD_L30_LRS_ELC_PRI_2024165_V01"
+      },
+      {
+        "doy": 166,
+        "inclusion": "EXCLUDED",
+        "path_suffix": "2024/166/JAD_L30_LRS_ION_PRI_2024166_V01.LBL",
+        "product_id": "JAD_L30_LRS_ION_PRI_2024166_V01"
+      },
+      {
+        "doy": 166,
+        "inclusion": "EXCLUDED",
+        "path_suffix": "2024/166/JAD_L30_LRS_ELC_PRI_2024166_V01.LBL",
+        "product_id": "JAD_L30_LRS_ELC_PRI_2024166_V01"
+      }
+    ],
+    "jedi_165_labels": [
+      {
+        "doy": 165,
+        "product_id": "JED_090_HIERSESP_CDR_2024165_V04"
+      },
+      {
+        "doy": 165,
+        "product_id": "JED_090_HIERSISP_CDR_2024165_V04"
+      },
+      {
+        "doy": 165,
+        "product_id": "JED_090_LOERSESP_CDR_2024165_V04"
+      },
+      {
+        "doy": 165,
+        "product_id": "JED_180_HIERSESP_CDR_2024165_V04"
+      },
+      {
+        "doy": 165,
+        "product_id": "JED_180_HIERSISP_CDR_2024165_V04"
+      },
+      {
+        "doy": 165,
+        "product_id": "JED_180_LOERSESP_CDR_2024165_V04"
+      },
+      {
+        "doy": 165,
+        "product_id": "JED_270_HIERSESP_CDR_2024165_V04"
+      },
+      {
+        "doy": 165,
+        "product_id": "JED_270_HIERSISP_CDR_2024165_V04"
+      },
+      {
+        "doy": 165,
+        "product_id": "JED_270_HIERSTOFXER_CDR_2024165_V04"
+      },
+      {
+        "doy": 165,
+        "product_id": "JED_270_HIERSTOFXPHR_CDR_2024165_V04"
+      },
+      {
+        "doy": 165,
+        "product_id": "JED_270_LOERSESP_CDR_2024165_V04"
+      },
+      {
+        "doy": 165,
+        "product_id": "JED_270_LOERSISP_CDR_2024165_V04"
+      },
+      {
+        "doy": 165,
+        "product_id": "JED_270_NONPTOFXER_CDR_2024165_V04"
+      },
+      {
+        "doy": 165,
+        "product_id": "JED_270_NONPTOFXPHR_CDR_2024165_V04"
+      }
+    ],
+    "jedi_166_labels": [
+      {
+        "doy": 166,
+        "product_id": "JED_090_HIERSESP_CDR_2024166_V04"
+      },
+      {
+        "doy": 166,
+        "product_id": "JED_090_HIERSISP_CDR_2024166_V04"
+      },
+      {
+        "doy": 166,
+        "product_id": "JED_090_LOERSESP_CDR_2024166_V04"
+      },
+      {
+        "doy": 166,
+        "product_id": "JED_090_LOERSISP_CDR_2024166_V04"
+      },
+      {
+        "doy": 166,
+        "product_id": "JED_180_HIERSESP_CDR_2024166_V04"
+      },
+      {
+        "doy": 166,
+        "product_id": "JED_180_HIERSISP_CDR_2024166_V04"
+      },
+      {
+        "doy": 166,
+        "product_id": "JED_180_LOERSESP_CDR_2024166_V04"
+      },
+      {
+        "doy": 166,
+        "product_id": "JED_180_LOERSISP_CDR_2024166_V04"
+      },
+      {
+        "doy": 166,
+        "product_id": "JED_270_HIERSESP_CDR_2024166_V04"
+      },
+      {
+        "doy": 166,
+        "product_id": "JED_270_HIERSTOFXER_CDR_2024166_V04"
+      },
+      {
+        "doy": 166,
+        "product_id": "JED_270_HIERSTOFXPHR_CDR_2024166_V04"
+      },
+      {
+        "doy": 166,
+        "product_id": "JED_270_LOERSESP_CDR_2024166_V04"
+      },
+      {
+        "doy": 166,
+        "product_id": "JED_270_NONPTOFXER_CDR_2024166_V04"
+      },
+      {
+        "doy": 166,
+        "product_id": "JED_270_NONPTOFXPHR_CDR_2024166_V04"
+      }
+    ],
+    "jiram_orbit62_filenames": [
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T090046_V01.xml",
+        "hhmmss": "090046"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T090117_V01.xml",
+        "hhmmss": "090117"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T090147_V01.xml",
+        "hhmmss": "090147"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T090218_V01.xml",
+        "hhmmss": "090218"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T090248_V01.xml",
+        "hhmmss": "090248"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T090319_V01.xml",
+        "hhmmss": "090319"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T090349_V01.xml",
+        "hhmmss": "090349"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T090420_V01.xml",
+        "hhmmss": "090420"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T090450_V01.xml",
+        "hhmmss": "090450"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T090652_V01.xml",
+        "hhmmss": "090652"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T090722_V01.xml",
+        "hhmmss": "090722"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T090753_V01.xml",
+        "hhmmss": "090753"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T090823_V01.xml",
+        "hhmmss": "090823"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T090854_V01.xml",
+        "hhmmss": "090854"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T090924_V01.xml",
+        "hhmmss": "090924"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T090955_V01.xml",
+        "hhmmss": "090955"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T091156_V01.xml",
+        "hhmmss": "091156"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T091227_V01.xml",
+        "hhmmss": "091227"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T091257_V01.xml",
+        "hhmmss": "091257"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T091328_V01.xml",
+        "hhmmss": "091328"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T091359_V01.xml",
+        "hhmmss": "091359"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T091429_V01.xml",
+        "hhmmss": "091429"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T091500_V01.xml",
+        "hhmmss": "091500"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T091701_V01.xml",
+        "hhmmss": "091701"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T091732_V01.xml",
+        "hhmmss": "091732"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T091802_V01.xml",
+        "hhmmss": "091802"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T091833_V01.xml",
+        "hhmmss": "091833"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T091903_V01.xml",
+        "hhmmss": "091903"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T091934_V01.xml",
+        "hhmmss": "091934"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T092004_V01.xml",
+        "hhmmss": "092004"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T092206_V01.xml",
+        "hhmmss": "092206"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T092236_V01.xml",
+        "hhmmss": "092236"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T092307_V01.xml",
+        "hhmmss": "092307"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T092337_V01.xml",
+        "hhmmss": "092337"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T092408_V01.xml",
+        "hhmmss": "092408"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T092438_V01.xml",
+        "hhmmss": "092438"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T092509_V01.xml",
+        "hhmmss": "092509"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T092711_V01.xml",
+        "hhmmss": "092711"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T092741_V01.xml",
+        "hhmmss": "092741"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T092812_V01.xml",
+        "hhmmss": "092812"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T092842_V01.xml",
+        "hhmmss": "092842"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T092913_V01.xml",
+        "hhmmss": "092913"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T092943_V01.xml",
+        "hhmmss": "092943"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T093014_V01.xml",
+        "hhmmss": "093014"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T093215_V01.xml",
+        "hhmmss": "093215"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T093246_V01.xml",
+        "hhmmss": "093246"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T093316_V01.xml",
+        "hhmmss": "093316"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T093347_V01.xml",
+        "hhmmss": "093347"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T093417_V01.xml",
+        "hhmmss": "093417"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T093448_V01.xml",
+        "hhmmss": "093448"
+      },
+      {
+        "family": "IMG",
+        "filename": "JIR_IMG_RDR_2024166T093518_V01.xml",
+        "hhmmss": "093518"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T090048_V01.xml",
+        "hhmmss": "090048"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T090119_V01.xml",
+        "hhmmss": "090119"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T090149_V01.xml",
+        "hhmmss": "090149"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T090220_V01.xml",
+        "hhmmss": "090220"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T090250_V01.xml",
+        "hhmmss": "090250"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T090321_V01.xml",
+        "hhmmss": "090321"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T090351_V01.xml",
+        "hhmmss": "090351"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T090422_V01.xml",
+        "hhmmss": "090422"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T090452_V01.xml",
+        "hhmmss": "090452"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T090654_V01.xml",
+        "hhmmss": "090654"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T090724_V01.xml",
+        "hhmmss": "090724"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T090755_V01.xml",
+        "hhmmss": "090755"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T090825_V01.xml",
+        "hhmmss": "090825"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T090856_V01.xml",
+        "hhmmss": "090856"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T090926_V01.xml",
+        "hhmmss": "090926"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T090957_V01.xml",
+        "hhmmss": "090957"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T091158_V01.xml",
+        "hhmmss": "091158"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T091229_V01.xml",
+        "hhmmss": "091229"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T091259_V01.xml",
+        "hhmmss": "091259"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T091330_V01.xml",
+        "hhmmss": "091330"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T091401_V01.xml",
+        "hhmmss": "091401"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T091431_V01.xml",
+        "hhmmss": "091431"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T091502_V01.xml",
+        "hhmmss": "091502"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T091703_V01.xml",
+        "hhmmss": "091703"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T091734_V01.xml",
+        "hhmmss": "091734"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T091804_V01.xml",
+        "hhmmss": "091804"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T091835_V01.xml",
+        "hhmmss": "091835"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T091905_V01.xml",
+        "hhmmss": "091905"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T091936_V01.xml",
+        "hhmmss": "091936"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T092006_V01.xml",
+        "hhmmss": "092006"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T092208_V01.xml",
+        "hhmmss": "092208"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T092238_V01.xml",
+        "hhmmss": "092238"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T092309_V01.xml",
+        "hhmmss": "092309"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T092339_V01.xml",
+        "hhmmss": "092339"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T092410_V01.xml",
+        "hhmmss": "092410"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T092440_V01.xml",
+        "hhmmss": "092440"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T092511_V01.xml",
+        "hhmmss": "092511"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T092713_V01.xml",
+        "hhmmss": "092713"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T092743_V01.xml",
+        "hhmmss": "092743"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T092814_V01.xml",
+        "hhmmss": "092814"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T092844_V01.xml",
+        "hhmmss": "092844"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T092915_V01.xml",
+        "hhmmss": "092915"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T092945_V01.xml",
+        "hhmmss": "092945"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T093016_V01.xml",
+        "hhmmss": "093016"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T093217_V01.xml",
+        "hhmmss": "093217"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T093248_V01.xml",
+        "hhmmss": "093248"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T093318_V01.xml",
+        "hhmmss": "093318"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T093349_V01.xml",
+        "hhmmss": "093349"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T093419_V01.xml",
+        "hhmmss": "093419"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T093450_V01.xml",
+        "hhmmss": "093450"
+      },
+      {
+        "family": "SPE",
+        "filename": "JIR_SPE_RDR_2024166T093520_V01.xml",
+        "hhmmss": "093520"
+      }
+    ],
+    "junocam_index_tab_orbit62_all": [
       {
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00057_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00057_V01",
         "obs_key": "2024165_62c00057",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00057_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00057_V01",
         "start_time_utc": "2024-06-13T10:00:04.955",
@@ -157,6 +874,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00059_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00059_V01",
         "obs_key": "2024165_62c00059",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00059_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00059_V01",
         "start_time_utc": "2024-06-13T10:15:18.102",
@@ -166,6 +884,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00061_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00061_V01",
         "obs_key": "2024165_62c00061",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00061_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00061_V01",
         "start_time_utc": "2024-06-13T10:30:31.242",
@@ -175,6 +894,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00063_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00063_V01",
         "obs_key": "2024165_62c00063",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00063_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00063_V01",
         "start_time_utc": "2024-06-13T10:45:14.034",
@@ -184,6 +904,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00065_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00065_V01",
         "obs_key": "2024165_62c00065",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00065_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00065_V01",
         "start_time_utc": "2024-06-13T11:00:27.150",
@@ -193,6 +914,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00067_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00067_V01",
         "obs_key": "2024165_62c00067",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00067_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00067_V01",
         "start_time_utc": "2024-06-13T11:15:09.871",
@@ -202,6 +924,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00069_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00069_V01",
         "obs_key": "2024165_62c00069",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00069_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00069_V01",
         "start_time_utc": "2024-06-13T11:30:23.135",
@@ -211,6 +934,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00071_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00071_V01",
         "obs_key": "2024165_62c00071",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00071_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00071_V01",
         "start_time_utc": "2024-06-13T11:45:05.806",
@@ -220,6 +944,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00073_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00073_V01",
         "obs_key": "2024165_62c00073",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00073_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00073_V01",
         "start_time_utc": "2024-06-13T12:00:19.000",
@@ -229,6 +954,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00075_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00075_V01",
         "obs_key": "2024165_62c00075",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00075_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00075_V01",
         "start_time_utc": "2024-06-13T12:15:32.167",
@@ -238,6 +964,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00077_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00077_V01",
         "obs_key": "2024165_62c00077",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00077_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00077_V01",
         "start_time_utc": "2024-06-13T12:30:14.849",
@@ -247,6 +974,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00079_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00079_V01",
         "obs_key": "2024165_62c00079",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00079_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00079_V01",
         "start_time_utc": "2024-06-13T12:45:28.133",
@@ -256,6 +984,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00081_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00081_V01",
         "obs_key": "2024165_62c00081",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00081_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00081_V01",
         "start_time_utc": "2024-06-13T13:00:10.874",
@@ -265,6 +994,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00083_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00083_V01",
         "obs_key": "2024165_62c00083",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00083_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00083_V01",
         "start_time_utc": "2024-06-13T13:15:23.967",
@@ -274,6 +1004,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00085_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00085_V01",
         "obs_key": "2024165_62c00085",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00085_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00085_V01",
         "start_time_utc": "2024-06-13T13:30:06.829",
@@ -283,6 +1014,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00087_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00087_V01",
         "obs_key": "2024165_62c00087",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00087_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00087_V01",
         "start_time_utc": "2024-06-13T13:45:19.964",
@@ -292,6 +1024,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00089_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00089_V01",
         "obs_key": "2024165_62c00089",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00089_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00089_V01",
         "start_time_utc": "2024-06-13T14:00:33.166",
@@ -301,6 +1034,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00091_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00091_V01",
         "obs_key": "2024165_62c00091",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00091_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00091_V01",
         "start_time_utc": "2024-06-13T14:15:15.950",
@@ -310,6 +1044,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00093_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00093_V01",
         "obs_key": "2024165_62c00093",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00093_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00093_V01",
         "start_time_utc": "2024-06-13T14:30:29.183",
@@ -319,6 +1054,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00095_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00095_V01",
         "obs_key": "2024165_62c00095",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00095_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00095_V01",
         "start_time_utc": "2024-06-13T14:45:11.897",
@@ -328,6 +1064,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00097_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00097_V01",
         "obs_key": "2024165_62c00097",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00097_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00097_V01",
         "start_time_utc": "2024-06-13T15:00:25.220",
@@ -337,6 +1074,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00099_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00099_V01",
         "obs_key": "2024165_62c00099",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00099_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00099_V01",
         "start_time_utc": "2024-06-13T15:23:12.034",
@@ -346,6 +1084,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00100_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00100_V01",
         "obs_key": "2024165_62c00100",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00100_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00100_V01",
         "start_time_utc": "2024-06-13T15:39:24.932",
@@ -355,6 +1094,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00101_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00101_V01",
         "obs_key": "2024165_62c00101",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00101_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00101_V01",
         "start_time_utc": "2024-06-13T15:44:59.001",
@@ -364,6 +1104,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00102_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00102_V01",
         "obs_key": "2024165_62c00102",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00102_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00102_V01",
         "start_time_utc": "2024-06-13T15:54:05.094",
@@ -373,6 +1114,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00103_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00103_V01",
         "obs_key": "2024165_62c00103",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00103_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00103_V01",
         "start_time_utc": "2024-06-13T15:55:06.083",
@@ -382,6 +1124,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00104_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00104_V01",
         "obs_key": "2024165_62c00104",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00104_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00104_V01",
         "start_time_utc": "2024-06-13T16:01:09.473",
@@ -391,6 +1134,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00105_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00105_V01",
         "obs_key": "2024165_62c00105",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00105_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00105_V01",
         "start_time_utc": "2024-06-13T16:02:10.406",
@@ -400,6 +1144,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00106_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00106_V01",
         "obs_key": "2024165_62c00106",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00106_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00106_V01",
         "start_time_utc": "2024-06-13T16:04:11.211",
@@ -409,6 +1154,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00107_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00107_V01",
         "obs_key": "2024165_62c00107",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00107_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00107_V01",
         "start_time_utc": "2024-06-13T16:10:14.956",
@@ -418,6 +1164,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00108_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00108_V01",
         "obs_key": "2024165_62c00108",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00108_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00108_V01",
         "start_time_utc": "2024-06-13T16:11:15.980",
@@ -427,6 +1174,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00109_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00109_V01",
         "obs_key": "2024165_62c00109",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00109_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00109_V01",
         "start_time_utc": "2024-06-13T16:19:21.217",
@@ -436,6 +1184,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00110_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00110_V01",
         "obs_key": "2024165_62c00110",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00110_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00110_V01",
         "start_time_utc": "2024-06-13T16:39:06.677",
@@ -445,6 +1194,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00111_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00111_V01",
         "obs_key": "2024165_62c00111",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00111_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00111_V01",
         "start_time_utc": "2024-06-13T17:00:08.987",
@@ -454,6 +1204,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00113_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00113_V01",
         "obs_key": "2024165_62c00113",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00113_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00113_V01",
         "start_time_utc": "2024-06-13T17:30:05.372",
@@ -463,6 +1214,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00115_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00115_V01",
         "obs_key": "2024165_62c00115",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00115_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00115_V01",
         "start_time_utc": "2024-06-13T18:00:31.990",
@@ -472,6 +1224,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00117_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00117_V01",
         "obs_key": "2024165_62c00117",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00117_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00117_V01",
         "start_time_utc": "2024-06-13T18:30:28.312",
@@ -481,6 +1234,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00119_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00119_V01",
         "obs_key": "2024165_62c00119",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00119_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00119_V01",
         "start_time_utc": "2024-06-13T18:57:52.712",
@@ -490,6 +1244,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00120_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00120_V01",
         "obs_key": "2024165_62c00120",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00120_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00120_V01",
         "start_time_utc": "2024-06-13T19:04:28.536",
@@ -499,6 +1254,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00121_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00121_V01",
         "obs_key": "2024165_62c00121",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00121_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00121_V01",
         "start_time_utc": "2024-06-13T19:10:33.946",
@@ -508,6 +1264,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00122_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00122_V01",
         "obs_key": "2024165_62c00122",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00122_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00122_V01",
         "start_time_utc": "2024-06-13T19:15:38.293",
@@ -517,6 +1274,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00123_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00123_V01",
         "obs_key": "2024165_62c00123",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00123_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00123_V01",
         "start_time_utc": "2024-06-13T19:20:12.378",
@@ -526,6 +1284,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00124_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00124_V01",
         "obs_key": "2024165_62c00124",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00124_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00124_V01",
         "start_time_utc": "2024-06-13T19:24:16.234",
@@ -535,6 +1294,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00125_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00125_V01",
         "obs_key": "2024165_62c00125",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00125_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00125_V01",
         "start_time_utc": "2024-06-13T19:27:49.335",
@@ -544,6 +1304,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00126_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00126_V01",
         "obs_key": "2024165_62c00126",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00126_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00126_V01",
         "start_time_utc": "2024-06-13T19:30:51.854",
@@ -553,6 +1314,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00127_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00127_V01",
         "obs_key": "2024165_62c00127",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00127_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00127_V01",
         "start_time_utc": "2024-06-13T19:34:25.420",
@@ -562,6 +1324,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00128_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00128_V01",
         "obs_key": "2024165_62c00128",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00128_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00128_V01",
         "start_time_utc": "2024-06-13T19:36:57.475",
@@ -571,6 +1334,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00129_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00129_V01",
         "obs_key": "2024165_62c00129",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00129_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00129_V01",
         "start_time_utc": "2024-06-13T19:39:30.053",
@@ -580,6 +1344,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00131_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00131_V01",
         "obs_key": "2024165_62c00131",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00131_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00131_V01",
         "start_time_utc": "2024-06-13T19:47:07.290",
@@ -589,6 +1354,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00135_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00135_V01",
         "obs_key": "2024165_62c00135",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00135_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00135_V01",
         "start_time_utc": "2024-06-13T21:53:19.967",
@@ -598,6 +1364,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00136_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00136_V01",
         "obs_key": "2024165_62c00136",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00136_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00136_V01",
         "start_time_utc": "2024-06-13T22:03:29.947",
@@ -607,6 +1374,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00137_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00137_V01",
         "obs_key": "2024165_62c00137",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00137_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00137_V01",
         "start_time_utc": "2024-06-13T22:13:08.935",
@@ -616,6 +1384,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00138_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00138_V01",
         "obs_key": "2024165_62c00138",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00138_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00138_V01",
         "start_time_utc": "2024-06-13T22:30:25.175",
@@ -625,6 +1394,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00140_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00140_V01",
         "obs_key": "2024165_62c00140",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00140_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00140_V01",
         "start_time_utc": "2024-06-13T22:53:11.259",
@@ -634,6 +1404,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00141_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00141_V01",
         "obs_key": "2024165_62c00141",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00141_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00141_V01",
         "start_time_utc": "2024-06-13T23:00:23.536",
@@ -643,6 +1414,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00143_V01.LBL",
         "edr_product_id": "JNCE_2024165_62C00143_V01",
         "obs_key": "2024165_62c00143",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00143_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62C00143_V01",
         "start_time_utc": "2024-06-13T23:30:21.420",
@@ -652,6 +1424,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62G00132_V01.LBL",
         "edr_product_id": "JNCE_2024165_62G00132_V01",
         "obs_key": "2024165_62g00132",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62G00132_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62G00132_V01",
         "start_time_utc": "2024-06-13T19:59:19.746",
@@ -661,6 +1434,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62G00133_V01.LBL",
         "edr_product_id": "JNCE_2024165_62G00133_V01",
         "obs_key": "2024165_62g00133",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62G00133_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62G00133_V01",
         "start_time_utc": "2024-06-13T20:09:01.160",
@@ -670,6 +1444,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62G00134_V01.LBL",
         "edr_product_id": "JNCE_2024165_62G00134_V01",
         "obs_key": "2024165_62g00134",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62G00134_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62G00134_V01",
         "start_time_utc": "2024-06-13T20:19:13.499",
@@ -679,6 +1454,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00058_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00058_V01",
         "obs_key": "2024165_62m00058",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00058_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00058_V01",
         "start_time_utc": "2024-06-13T10:00:35.404",
@@ -688,6 +1464,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00060_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00060_V01",
         "obs_key": "2024165_62m00060",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00060_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00060_V01",
         "start_time_utc": "2024-06-13T10:15:48.559",
@@ -697,6 +1474,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00062_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00062_V01",
         "obs_key": "2024165_62m00062",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00062_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00062_V01",
         "start_time_utc": "2024-06-13T10:31:01.742",
@@ -706,6 +1484,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00064_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00064_V01",
         "obs_key": "2024165_62m00064",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00064_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00064_V01",
         "start_time_utc": "2024-06-13T10:45:44.487",
@@ -715,6 +1494,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00066_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00066_V01",
         "obs_key": "2024165_62m00066",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00066_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00066_V01",
         "start_time_utc": "2024-06-13T11:00:57.575",
@@ -724,6 +1504,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00068_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00068_V01",
         "obs_key": "2024165_62m00068",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00068_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00068_V01",
         "start_time_utc": "2024-06-13T11:15:40.336",
@@ -733,6 +1514,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00070_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00070_V01",
         "obs_key": "2024165_62m00070",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00070_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00070_V01",
         "start_time_utc": "2024-06-13T11:30:53.518",
@@ -742,6 +1524,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00072_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00072_V01",
         "obs_key": "2024165_62m00072",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00072_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00072_V01",
         "start_time_utc": "2024-06-13T11:45:36.204",
@@ -751,6 +1534,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00074_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00074_V01",
         "obs_key": "2024165_62m00074",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00074_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00074_V01",
         "start_time_utc": "2024-06-13T12:00:49.352",
@@ -760,6 +1544,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00076_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00076_V01",
         "obs_key": "2024165_62m00076",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00076_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00076_V01",
         "start_time_utc": "2024-06-13T12:16:02.694",
@@ -769,6 +1554,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00078_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00078_V01",
         "obs_key": "2024165_62m00078",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00078_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00078_V01",
         "start_time_utc": "2024-06-13T12:30:45.345",
@@ -778,6 +1564,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00080_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00080_V01",
         "obs_key": "2024165_62m00080",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00080_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00080_V01",
         "start_time_utc": "2024-06-13T12:45:58.500",
@@ -787,6 +1574,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00082_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00082_V01",
         "obs_key": "2024165_62m00082",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00082_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00082_V01",
         "start_time_utc": "2024-06-13T13:00:41.230",
@@ -796,6 +1584,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00084_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00084_V01",
         "obs_key": "2024165_62m00084",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00084_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00084_V01",
         "start_time_utc": "2024-06-13T13:15:54.482",
@@ -805,6 +1594,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00086_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00086_V01",
         "obs_key": "2024165_62m00086",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00086_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00086_V01",
         "start_time_utc": "2024-06-13T13:30:37.208",
@@ -814,6 +1604,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00088_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00088_V01",
         "obs_key": "2024165_62m00088",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00088_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00088_V01",
         "start_time_utc": "2024-06-13T13:45:50.425",
@@ -823,6 +1614,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00090_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00090_V01",
         "obs_key": "2024165_62m00090",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00090_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00090_V01",
         "start_time_utc": "2024-06-13T14:01:03.604",
@@ -832,6 +1624,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00092_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00092_V01",
         "obs_key": "2024165_62m00092",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00092_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00092_V01",
         "start_time_utc": "2024-06-13T14:15:46.341",
@@ -841,6 +1634,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00094_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00094_V01",
         "obs_key": "2024165_62m00094",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00094_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00094_V01",
         "start_time_utc": "2024-06-13T14:30:59.691",
@@ -850,6 +1644,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00096_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00096_V01",
         "obs_key": "2024165_62m00096",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00096_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00096_V01",
         "start_time_utc": "2024-06-13T14:45:42.428",
@@ -859,6 +1654,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00098_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00098_V01",
         "obs_key": "2024165_62m00098",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00098_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00098_V01",
         "start_time_utc": "2024-06-13T15:00:55.579",
@@ -868,6 +1664,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00112_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00112_V01",
         "obs_key": "2024165_62m00112",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00112_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00112_V01",
         "start_time_utc": "2024-06-13T17:01:09.870",
@@ -877,6 +1674,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00114_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00114_V01",
         "obs_key": "2024165_62m00114",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00114_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00114_V01",
         "start_time_utc": "2024-06-13T17:31:06.274",
@@ -886,6 +1684,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00116_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00116_V01",
         "obs_key": "2024165_62m00116",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00116_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00116_V01",
         "start_time_utc": "2024-06-13T18:01:32.943",
@@ -895,6 +1694,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00118_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00118_V01",
         "obs_key": "2024165_62m00118",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00118_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00118_V01",
         "start_time_utc": "2024-06-13T18:31:29.195",
@@ -904,6 +1704,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00130_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00130_V01",
         "obs_key": "2024165_62m00130",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00130_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00130_V01",
         "start_time_utc": "2024-06-13T19:41:01.470",
@@ -913,6 +1714,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00139_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00139_V01",
         "obs_key": "2024165_62m00139",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00139_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00139_V01",
         "start_time_utc": "2024-06-13T22:31:26.148",
@@ -922,6 +1724,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00142_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00142_V01",
         "obs_key": "2024165_62m00142",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00142_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00142_V01",
         "start_time_utc": "2024-06-13T23:00:54.017",
@@ -931,6 +1734,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00144_V01.LBL",
         "edr_product_id": "JNCE_2024165_62M00144_V01",
         "obs_key": "2024165_62m00144",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00144_V01.LBL",
         "rdr_product_id": "JNCR_2024165_62M00144_V01",
         "start_time_utc": "2024-06-13T23:30:51.905",
@@ -940,6 +1744,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00145_V01.LBL",
         "edr_product_id": "JNCE_2024166_62C00145_V01",
         "obs_key": "2024166_62c00145",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00145_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62C00145_V01",
         "start_time_utc": "2024-06-14T00:00:19.289",
@@ -949,6 +1754,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00147_V01.LBL",
         "edr_product_id": "JNCE_2024166_62C00147_V01",
         "obs_key": "2024166_62c00147",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00147_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62C00147_V01",
         "start_time_utc": "2024-06-14T00:30:17.127",
@@ -958,6 +1764,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00149_V01.LBL",
         "edr_product_id": "JNCE_2024166_62C00149_V01",
         "obs_key": "2024166_62c00149",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00149_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62C00149_V01",
         "start_time_utc": "2024-06-14T01:00:15.413",
@@ -967,6 +1774,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00151_V01.LBL",
         "edr_product_id": "JNCE_2024166_62C00151_V01",
         "obs_key": "2024166_62c00151",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00151_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62C00151_V01",
         "start_time_utc": "2024-06-14T01:30:13.176",
@@ -976,6 +1784,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00153_V01.LBL",
         "edr_product_id": "JNCE_2024166_62C00153_V01",
         "obs_key": "2024166_62c00153",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00153_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62C00153_V01",
         "start_time_utc": "2024-06-14T02:00:11.014",
@@ -985,6 +1794,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00155_V01.LBL",
         "edr_product_id": "JNCE_2024166_62C00155_V01",
         "obs_key": "2024166_62c00155",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00155_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62C00155_V01",
         "start_time_utc": "2024-06-14T02:30:08.851",
@@ -994,6 +1804,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00157_V01.LBL",
         "edr_product_id": "JNCE_2024166_62C00157_V01",
         "obs_key": "2024166_62c00157",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00157_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62C00157_V01",
         "start_time_utc": "2024-06-14T03:00:06.567",
@@ -1003,6 +1814,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00159_V01.LBL",
         "edr_product_id": "JNCE_2024166_62C00159_V01",
         "obs_key": "2024166_62c00159",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00159_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62C00159_V01",
         "start_time_utc": "2024-06-14T03:30:04.456",
@@ -1012,6 +1824,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00161_V01.LBL",
         "edr_product_id": "JNCE_2024166_62C00161_V01",
         "obs_key": "2024166_62c00161",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00161_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62C00161_V01",
         "start_time_utc": "2024-06-14T04:00:32.598",
@@ -1021,6 +1834,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00163_V01.LBL",
         "edr_product_id": "JNCE_2024166_62C00163_V01",
         "obs_key": "2024166_62c00163",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00163_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62C00163_V01",
         "start_time_utc": "2024-06-14T04:30:30.443",
@@ -1030,6 +1844,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00165_V01.LBL",
         "edr_product_id": "JNCE_2024166_62C00165_V01",
         "obs_key": "2024166_62c00165",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00165_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62C00165_V01",
         "start_time_utc": "2024-06-14T05:00:28.194",
@@ -1039,6 +1854,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00167_V01.LBL",
         "edr_product_id": "JNCE_2024166_62C00167_V01",
         "obs_key": "2024166_62c00167",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00167_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62C00167_V01",
         "start_time_utc": "2024-06-14T05:30:26.020",
@@ -1048,6 +1864,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00169_V01.LBL",
         "edr_product_id": "JNCE_2024166_62C00169_V01",
         "obs_key": "2024166_62c00169",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00169_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62C00169_V01",
         "start_time_utc": "2024-06-14T06:00:23.771",
@@ -1057,6 +1874,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00171_V01.LBL",
         "edr_product_id": "JNCE_2024166_62C00171_V01",
         "obs_key": "2024166_62c00171",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00171_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62C00171_V01",
         "start_time_utc": "2024-06-14T06:30:21.492",
@@ -1066,6 +1884,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00173_V01.LBL",
         "edr_product_id": "JNCE_2024166_62C00173_V01",
         "obs_key": "2024166_62c00173",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00173_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62C00173_V01",
         "start_time_utc": "2024-06-14T07:00:19.228",
@@ -1075,6 +1894,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00175_V01.LBL",
         "edr_product_id": "JNCE_2024166_62C00175_V01",
         "obs_key": "2024166_62c00175",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00175_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62C00175_V01",
         "start_time_utc": "2024-06-14T07:30:17.366",
@@ -1084,6 +1904,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00177_V01.LBL",
         "edr_product_id": "JNCE_2024166_62C00177_V01",
         "obs_key": "2024166_62c00177",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00177_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62C00177_V01",
         "start_time_utc": "2024-06-14T08:00:15.160",
@@ -1093,6 +1914,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00146_V01.LBL",
         "edr_product_id": "JNCE_2024166_62M00146_V01",
         "obs_key": "2024166_62m00146",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00146_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62M00146_V01",
         "start_time_utc": "2024-06-14T00:00:49.793",
@@ -1102,6 +1924,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00148_V01.LBL",
         "edr_product_id": "JNCE_2024166_62M00148_V01",
         "obs_key": "2024166_62m00148",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00148_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62M00148_V01",
         "start_time_utc": "2024-06-14T00:30:47.626",
@@ -1111,6 +1934,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00150_V01.LBL",
         "edr_product_id": "JNCE_2024166_62M00150_V01",
         "obs_key": "2024166_62m00150",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00150_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62M00150_V01",
         "start_time_utc": "2024-06-14T01:00:45.925",
@@ -1120,6 +1944,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00152_V01.LBL",
         "edr_product_id": "JNCE_2024166_62M00152_V01",
         "obs_key": "2024166_62m00152",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00152_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62M00152_V01",
         "start_time_utc": "2024-06-14T01:30:43.719",
@@ -1129,6 +1954,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00154_V01.LBL",
         "edr_product_id": "JNCE_2024166_62M00154_V01",
         "obs_key": "2024166_62m00154",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00154_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62M00154_V01",
         "start_time_utc": "2024-06-14T02:00:41.502",
@@ -1138,6 +1964,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00156_V01.LBL",
         "edr_product_id": "JNCE_2024166_62M00156_V01",
         "obs_key": "2024166_62m00156",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00156_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62M00156_V01",
         "start_time_utc": "2024-06-14T02:30:39.281",
@@ -1147,6 +1974,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00158_V01.LBL",
         "edr_product_id": "JNCE_2024166_62M00158_V01",
         "obs_key": "2024166_62m00158",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00158_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62M00158_V01",
         "start_time_utc": "2024-06-14T03:00:37.099",
@@ -1156,6 +1984,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00160_V01.LBL",
         "edr_product_id": "JNCE_2024166_62M00160_V01",
         "obs_key": "2024166_62m00160",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00160_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62M00160_V01",
         "start_time_utc": "2024-06-14T03:30:34.928",
@@ -1165,6 +1994,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00162_V01.LBL",
         "edr_product_id": "JNCE_2024166_62M00162_V01",
         "obs_key": "2024166_62m00162",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00162_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62M00162_V01",
         "start_time_utc": "2024-06-14T04:01:03.047",
@@ -1174,6 +2004,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00164_V01.LBL",
         "edr_product_id": "JNCE_2024166_62M00164_V01",
         "obs_key": "2024166_62m00164",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00164_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62M00164_V01",
         "start_time_utc": "2024-06-14T04:31:00.943",
@@ -1183,6 +2014,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00166_V01.LBL",
         "edr_product_id": "JNCE_2024166_62M00166_V01",
         "obs_key": "2024166_62m00166",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00166_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62M00166_V01",
         "start_time_utc": "2024-06-14T05:00:58.753",
@@ -1192,6 +2024,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00168_V01.LBL",
         "edr_product_id": "JNCE_2024166_62M00168_V01",
         "obs_key": "2024166_62m00168",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00168_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62M00168_V01",
         "start_time_utc": "2024-06-14T05:30:56.383",
@@ -1201,6 +2034,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00170_V01.LBL",
         "edr_product_id": "JNCE_2024166_62M00170_V01",
         "obs_key": "2024166_62m00170",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00170_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62M00170_V01",
         "start_time_utc": "2024-06-14T06:00:54.205",
@@ -1210,6 +2044,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00172_V01.LBL",
         "edr_product_id": "JNCE_2024166_62M00172_V01",
         "obs_key": "2024166_62m00172",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00172_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62M00172_V01",
         "start_time_utc": "2024-06-14T06:30:51.941",
@@ -1219,6 +2054,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00174_V01.LBL",
         "edr_product_id": "JNCE_2024166_62M00174_V01",
         "obs_key": "2024166_62m00174",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00174_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62M00174_V01",
         "start_time_utc": "2024-06-14T07:00:49.649",
@@ -1228,6 +2064,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00176_V01.LBL",
         "edr_product_id": "JNCE_2024166_62M00176_V01",
         "obs_key": "2024166_62m00176",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00176_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62M00176_V01",
         "start_time_utc": "2024-06-14T07:30:47.780",
@@ -1237,6 +2074,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00178_V01.LBL",
         "edr_product_id": "JNCE_2024166_62M00178_V01",
         "obs_key": "2024166_62m00178",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00178_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62M00178_V01",
         "start_time_utc": "2024-06-14T08:00:45.586",
@@ -1246,6 +2084,7 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62R00180_V01.LBL",
         "edr_product_id": "JNCE_2024166_62R00180_V01",
         "obs_key": "2024166_62r00180",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62R00180_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62R00180_V01",
         "start_time_utc": "2024-06-14T08:30:31.912",
@@ -1255,16 +2094,426 @@
         "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62T00179_V01.LBL",
         "edr_product_id": "JNCE_2024166_62T00179_V01",
         "obs_key": "2024166_62t00179",
+        "partition": "ELIGIBLE",
         "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62T00179_V01.LBL",
         "rdr_product_id": "JNCR_2024166_62T00179_V01",
         "start_time_utc": "2024-06-14T08:30:12.849",
         "stop_time_utc": "2024-06-14T08:30:15.849"
       }
     ],
-    "waves_burst_index_tab_orbit62_eligible": [
+    "mwr_orbit62_filenames": [
+      {
+        "code": "R04120",
+        "doy": 165,
+        "filename": "MWR62RI2024165100000_R04120_V04",
+        "hour": 10,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R06672",
+        "doy": 165,
+        "filename": "MWR62RI2024165110000_R06672_V04",
+        "hour": 11,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R30000",
+        "doy": 165,
+        "filename": "MWR62RI2024165120000_R30000_V04",
+        "hour": 12,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R30008",
+        "doy": 165,
+        "filename": "MWR62RI2024165130000_R30008_V04",
+        "hour": 13,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R30000",
+        "doy": 165,
+        "filename": "MWR62RI2024165140000_R30000_V04",
+        "hour": 14,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R30000",
+        "doy": 165,
+        "filename": "MWR62RI2024165150000_R30000_V04",
+        "hour": 15,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R30000",
+        "doy": 165,
+        "filename": "MWR62RI2024165160000_R30000_V04",
+        "hour": 16,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R30000",
+        "doy": 165,
+        "filename": "MWR62RI2024165170000_R30000_V04",
+        "hour": 17,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R30000",
+        "doy": 165,
+        "filename": "MWR62RI2024165180000_R30000_V04",
+        "hour": 18,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R30000",
+        "doy": 165,
+        "filename": "MWR62RI2024165190000_R30000_V04",
+        "hour": 19,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R30000",
+        "doy": 165,
+        "filename": "MWR62RI2024165200000_R30000_V04",
+        "hour": 20,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R27308",
+        "doy": 165,
+        "filename": "MWR62RI2024165210000_R27308_V04",
+        "hour": 21,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R04112",
+        "doy": 165,
+        "filename": "MWR62RI2024165220000_R04112_V04",
+        "hour": 22,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R03944",
+        "doy": 165,
+        "filename": "MWR62RI2024165230000_R03944_V04",
+        "hour": 23,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R04112",
+        "doy": 166,
+        "filename": "MWR62RI2024166000000_R04112_V04",
+        "hour": 0,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R04120",
+        "doy": 166,
+        "filename": "MWR62RI2024166010000_R04120_V04",
+        "hour": 1,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R04112",
+        "doy": 166,
+        "filename": "MWR62RI2024166020000_R04112_V04",
+        "hour": 2,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R04112",
+        "doy": 166,
+        "filename": "MWR62RI2024166030000_R04112_V04",
+        "hour": 3,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R04120",
+        "doy": 166,
+        "filename": "MWR62RI2024166040000_R04120_V04",
+        "hour": 4,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R04112",
+        "doy": 166,
+        "filename": "MWR62RI2024166050000_R04112_V04",
+        "hour": 5,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R04112",
+        "doy": 166,
+        "filename": "MWR62RI2024166060000_R04112_V04",
+        "hour": 6,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R04112",
+        "doy": 166,
+        "filename": "MWR62RI2024166070000_R04112_V04",
+        "hour": 7,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R04120",
+        "doy": 166,
+        "filename": "MWR62RI2024166080000_R04120_V04",
+        "hour": 8,
+        "product_type": "IRDR"
+      },
+      {
+        "code": "R04120",
+        "doy": 165,
+        "filename": "MWR62RG2024165100000_R04120_V04",
+        "hour": 10,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R06672",
+        "doy": 165,
+        "filename": "MWR62RG2024165110000_R06672_V04",
+        "hour": 11,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R30000",
+        "doy": 165,
+        "filename": "MWR62RG2024165120000_R30000_V04",
+        "hour": 12,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R30000",
+        "doy": 165,
+        "filename": "MWR62RG2024165130000_R30000_V04",
+        "hour": 13,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R30000",
+        "doy": 165,
+        "filename": "MWR62RG2024165140000_R30000_V04",
+        "hour": 14,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R30000",
+        "doy": 165,
+        "filename": "MWR62RG2024165150000_R30000_V04",
+        "hour": 15,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R30000",
+        "doy": 165,
+        "filename": "MWR62RG2024165160000_R30000_V04",
+        "hour": 16,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R30000",
+        "doy": 165,
+        "filename": "MWR62RG2024165170000_R30000_V04",
+        "hour": 17,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R30000",
+        "doy": 165,
+        "filename": "MWR62RG2024165180000_R30000_V04",
+        "hour": 18,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R30000",
+        "doy": 165,
+        "filename": "MWR62RG2024165190000_R30000_V04",
+        "hour": 19,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R30000",
+        "doy": 165,
+        "filename": "MWR62RG2024165200000_R30000_V04",
+        "hour": 20,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R27308",
+        "doy": 165,
+        "filename": "MWR62RG2024165210000_R27308_V04",
+        "hour": 21,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R04112",
+        "doy": 165,
+        "filename": "MWR62RG2024165220000_R04112_V04",
+        "hour": 22,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R03944",
+        "doy": 165,
+        "filename": "MWR62RG2024165230000_R03944_V04",
+        "hour": 23,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R04112",
+        "doy": 166,
+        "filename": "MWR62RG2024166000000_R04112_V04",
+        "hour": 0,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R04120",
+        "doy": 166,
+        "filename": "MWR62RG2024166010000_R04120_V04",
+        "hour": 1,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R04112",
+        "doy": 166,
+        "filename": "MWR62RG2024166020000_R04112_V04",
+        "hour": 2,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R04112",
+        "doy": 166,
+        "filename": "MWR62RG2024166030000_R04112_V04",
+        "hour": 3,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R04120",
+        "doy": 166,
+        "filename": "MWR62RG2024166040000_R04120_V04",
+        "hour": 4,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R04112",
+        "doy": 166,
+        "filename": "MWR62RG2024166050000_R04112_V04",
+        "hour": 5,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R04112",
+        "doy": 166,
+        "filename": "MWR62RG2024166060000_R04112_V04",
+        "hour": 6,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R04112",
+        "doy": 166,
+        "filename": "MWR62RG2024166070000_R04112_V04",
+        "hour": 7,
+        "product_type": "GRDR"
+      },
+      {
+        "code": "R04120",
+        "doy": 166,
+        "filename": "MWR62RG2024166080000_R04120_V04",
+        "hour": 8,
+        "product_type": "GRDR"
+      }
+    ],
+    "partition_summaries": {
+      "junocam": {
+        "eligible_rows": 248,
+        "instrument": "JUNOCAM",
+        "note": "eligible_rows=248 = 124 EDR + 124 RDR = 124 logical observations. PRE_LOGICAL=56 ELIGIBLE_LOGICAL=124 POST_LOGICAL=33. B21_RAW_ROW_LEDGER_SUPERSEDED=YES HISTORICAL_213_LOGICAL_OBSERVATION_LEDGER=CONFIRMED.",
+        "post_rows": 66,
+        "pre_rows": 112,
+        "source_evidence_id": "junocam_jnojnc_0029_index_tab",
+        "total_orbit62_rows": 426
+      },
+      "waves_burst": {
+        "eligible_families": {
+          "B_BIN": 41,
+          "B_REC": 3,
+          "E_BIN": 41,
+          "E_REC": 3,
+          "NBS_REC": 3
+        },
+        "eligible_rows": 91,
+        "instrument": "WAVES_BURST",
+        "post_rows": 16,
+        "pre_rows": 175,
+        "source_evidence_id": "waves_burst_bstfull_index_tab",
+        "total_orbit62_rows": 282
+      }
+    },
+    "uvs_orbit62_filenames": [
+      {
+        "doy_str": "2024165",
+        "filename": "UVS_S01_771573735_2024165_P62OBS_V01",
+        "obs_type": "P62OBS",
+        "sclk": "771573735",
+        "sensor": "S01"
+      },
+      {
+        "doy_str": "2024165",
+        "filename": "UVS_S02_771573735_2024165_P62OBS_V01",
+        "obs_type": "P62OBS",
+        "sclk": "771573735",
+        "sensor": "S02"
+      },
+      {
+        "doy_str": "2024165",
+        "filename": "UVS_S03_771573735_2024165_P62OBS_V01",
+        "obs_type": "P62OBS",
+        "sclk": "771573735",
+        "sensor": "S03"
+      },
+      {
+        "doy_str": "2024165",
+        "filename": "UVS_S04_771573735_2024165_P62OBS_V01",
+        "obs_type": "P62OBS",
+        "sclk": "771573735",
+        "sensor": "S04"
+      },
+      {
+        "doy_str": "2024165",
+        "filename": "UVS_S05_771573735_2024165_P62OBS_V01",
+        "obs_type": "P62OBS",
+        "sclk": "771573735",
+        "sensor": "S05"
+      },
+      {
+        "doy_str": "2024166",
+        "filename": "UVS_S01_771613347_2024166_P62SY1_V01",
+        "obs_type": "P62SY1",
+        "sclk": "771613347",
+        "sensor": "S01"
+      },
+      {
+        "doy_str": "2024166",
+        "filename": "UVS_S02_771613347_2024166_P62SY1_V01",
+        "obs_type": "P62SY1",
+        "sclk": "771613347",
+        "sensor": "S02"
+      },
+      {
+        "doy_str": "2024166",
+        "filename": "UVS_S03_771613347_2024166_P62SY1_V01",
+        "obs_type": "P62SY1",
+        "sclk": "771613347",
+        "sensor": "S03"
+      }
+    ],
+    "waves_burst_index_tab_orbit62_all": [
       {
         "family": "B_REC",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T145507_B_REC_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T145507_B_REC",
         "start_time": "2024-06-13T14:55:07.565",
         "stop_time": "2024-06-13T15:14:01.339"
@@ -1272,6 +2521,7 @@
       {
         "family": "E_REC",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T145507_E_REC_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T145507_E_REC",
         "start_time": "2024-06-13T14:55:07.565",
         "stop_time": "2024-06-13T15:14:01.339"
@@ -1279,6 +2529,7 @@
       {
         "family": "NBS_REC",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T145507_NBS_REC_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T145507_NBS_REC",
         "start_time": "2024-06-13T14:55:07.565",
         "stop_time": "2024-06-13T15:14:01.339"
@@ -1286,6 +2537,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T153754_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T153754_B_BIN",
         "start_time": "2024-06-13T15:37:54.312",
         "stop_time": "2024-06-13T15:40:33.337"
@@ -1293,6 +2545,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T153754_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T153754_E_BIN",
         "start_time": "2024-06-13T15:37:54.312",
         "stop_time": "2024-06-13T15:40:33.337"
@@ -1300,6 +2553,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T154038_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T154038_B_BIN",
         "start_time": "2024-06-13T15:40:38.312",
         "stop_time": "2024-06-13T15:43:16.211"
@@ -1307,6 +2561,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T154038_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T154038_E_BIN",
         "start_time": "2024-06-13T15:40:38.312",
         "stop_time": "2024-06-13T15:43:16.211"
@@ -1314,6 +2569,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T154509_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T154509_B_BIN",
         "start_time": "2024-06-13T15:45:09.211",
         "stop_time": "2024-06-13T15:47:45.336"
@@ -1321,6 +2577,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T154509_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T154509_E_BIN",
         "start_time": "2024-06-13T15:45:09.211",
         "stop_time": "2024-06-13T15:47:45.336"
@@ -1328,6 +2585,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T154745_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T154745_B_BIN",
         "start_time": "2024-06-13T15:47:45.636",
         "stop_time": "2024-06-13T15:50:19.336"
@@ -1335,6 +2593,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T154745_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T154745_E_BIN",
         "start_time": "2024-06-13T15:47:45.636",
         "stop_time": "2024-06-13T15:50:19.336"
@@ -1342,6 +2601,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T155136_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T155136_B_BIN",
         "start_time": "2024-06-13T15:51:36.636",
         "stop_time": "2024-06-13T15:54:09.211"
@@ -1349,6 +2609,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T155136_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T155136_E_BIN",
         "start_time": "2024-06-13T15:51:36.636",
         "stop_time": "2024-06-13T15:54:09.211"
@@ -1356,6 +2617,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T155409_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T155409_B_BIN",
         "start_time": "2024-06-13T15:54:09.311",
         "stop_time": "2024-06-13T15:56:40.335"
@@ -1363,6 +2625,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T155409_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T155409_E_BIN",
         "start_time": "2024-06-13T15:54:09.311",
         "stop_time": "2024-06-13T15:56:40.335"
@@ -1370,6 +2633,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T155737_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T155737_B_BIN",
         "start_time": "2024-06-13T15:57:37.335",
         "stop_time": "2024-06-13T16:00:16.660"
@@ -1377,6 +2641,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T155737_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T155737_E_BIN",
         "start_time": "2024-06-13T15:57:37.335",
         "stop_time": "2024-06-13T16:00:16.660"
@@ -1384,6 +2649,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T160113_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T160113_B_BIN",
         "start_time": "2024-06-13T16:01:13.660",
         "stop_time": "2024-06-13T16:04:02.335"
@@ -1391,6 +2657,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T160113_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T160113_E_BIN",
         "start_time": "2024-06-13T16:01:13.660",
         "stop_time": "2024-06-13T16:04:02.335"
@@ -1398,6 +2665,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T160405_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T160405_B_BIN",
         "start_time": "2024-06-13T16:04:05.635",
         "stop_time": "2024-06-13T16:07:05.235"
@@ -1405,6 +2673,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T160405_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T160405_E_BIN",
         "start_time": "2024-06-13T16:04:05.635",
         "stop_time": "2024-06-13T16:07:05.235"
@@ -1412,6 +2681,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T160826_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T160826_B_BIN",
         "start_time": "2024-06-13T16:08:26.309",
         "stop_time": "2024-06-13T16:11:28.659"
@@ -1419,6 +2689,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T160826_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T160826_E_BIN",
         "start_time": "2024-06-13T16:08:26.309",
         "stop_time": "2024-06-13T16:11:28.659"
@@ -1426,6 +2697,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T161129_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T161129_B_BIN",
         "start_time": "2024-06-13T16:11:29.309",
         "stop_time": "2024-06-13T16:14:30.209"
@@ -1433,6 +2705,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T161129_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T161129_E_BIN",
         "start_time": "2024-06-13T16:11:29.309",
         "stop_time": "2024-06-13T16:14:30.209"
@@ -1440,6 +2713,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T161430_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T161430_B_BIN",
         "start_time": "2024-06-13T16:14:30.309",
         "stop_time": "2024-06-13T16:17:25.359"
@@ -1447,6 +2721,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T161430_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T161430_E_BIN",
         "start_time": "2024-06-13T16:14:30.309",
         "stop_time": "2024-06-13T16:17:25.359"
@@ -1454,6 +2729,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T161726_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T161726_B_BIN",
         "start_time": "2024-06-13T16:17:26.184",
         "stop_time": "2024-06-13T16:20:29.333"
@@ -1461,6 +2737,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T161726_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T161726_E_BIN",
         "start_time": "2024-06-13T16:17:26.184",
         "stop_time": "2024-06-13T16:20:29.333"
@@ -1468,6 +2745,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T162102_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T162102_B_BIN",
         "start_time": "2024-06-13T16:21:02.308",
         "stop_time": "2024-06-13T16:24:06.333"
@@ -1475,6 +2753,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T162102_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T162102_E_BIN",
         "start_time": "2024-06-13T16:21:02.308",
         "stop_time": "2024-06-13T16:24:06.333"
@@ -1482,6 +2761,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T162406_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T162406_B_BIN",
         "start_time": "2024-06-13T16:24:06.633",
         "stop_time": "2024-06-13T16:27:12.233"
@@ -1489,6 +2769,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T162406_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T162406_E_BIN",
         "start_time": "2024-06-13T16:24:06.633",
         "stop_time": "2024-06-13T16:27:12.233"
@@ -1496,6 +2777,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T163107_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T163107_B_BIN",
         "start_time": "2024-06-13T16:31:07.208",
         "stop_time": "2024-06-13T16:34:11.207"
@@ -1503,6 +2785,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T163107_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T163107_E_BIN",
         "start_time": "2024-06-13T16:31:07.208",
         "stop_time": "2024-06-13T16:34:11.207"
@@ -1510,6 +2793,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T163411_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T163411_B_BIN",
         "start_time": "2024-06-13T16:34:11.307",
         "stop_time": "2024-06-13T16:37:15.232"
@@ -1517,6 +2801,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T163411_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T163411_E_BIN",
         "start_time": "2024-06-13T16:34:11.307",
         "stop_time": "2024-06-13T16:37:15.232"
@@ -1524,6 +2809,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T163715_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T163715_B_BIN",
         "start_time": "2024-06-13T16:37:15.307",
         "stop_time": "2024-06-13T16:40:17.332"
@@ -1531,6 +2817,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T163715_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T163715_E_BIN",
         "start_time": "2024-06-13T16:37:15.307",
         "stop_time": "2024-06-13T16:40:17.332"
@@ -1538,6 +2825,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T164018_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T164018_B_BIN",
         "start_time": "2024-06-13T16:40:18.182",
         "stop_time": "2024-06-13T16:43:15.332"
@@ -1545,6 +2833,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T164018_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T164018_E_BIN",
         "start_time": "2024-06-13T16:40:18.182",
         "stop_time": "2024-06-13T16:43:15.332"
@@ -1552,6 +2841,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T164448_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T164448_B_BIN",
         "start_time": "2024-06-13T16:44:48.306",
         "stop_time": "2024-06-13T16:47:47.206"
@@ -1559,6 +2849,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T164448_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T164448_E_BIN",
         "start_time": "2024-06-13T16:44:48.306",
         "stop_time": "2024-06-13T16:47:47.206"
@@ -1566,6 +2857,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T164924_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T164924_B_BIN",
         "start_time": "2024-06-13T16:49:24.306",
         "stop_time": "2024-06-13T16:52:21.331"
@@ -1573,6 +2865,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T164924_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T164924_E_BIN",
         "start_time": "2024-06-13T16:49:24.306",
         "stop_time": "2024-06-13T16:52:21.331"
@@ -1580,6 +2873,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T165251_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T165251_B_BIN",
         "start_time": "2024-06-13T16:52:51.631",
         "stop_time": "2024-06-13T16:55:55.331"
@@ -1587,6 +2881,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T165251_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T165251_E_BIN",
         "start_time": "2024-06-13T16:52:51.631",
         "stop_time": "2024-06-13T16:55:55.331"
@@ -1594,6 +2889,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T165555_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T165555_B_BIN",
         "start_time": "2024-06-13T16:55:55.631",
         "stop_time": "2024-06-13T16:58:59.330"
@@ -1601,6 +2897,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T165555_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T165555_E_BIN",
         "start_time": "2024-06-13T16:55:55.631",
         "stop_time": "2024-06-13T16:58:59.330"
@@ -1608,6 +2905,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T165918_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T165918_B_BIN",
         "start_time": "2024-06-13T16:59:18.180",
         "stop_time": "2024-06-13T17:02:21.655"
@@ -1615,6 +2913,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T165918_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T165918_E_BIN",
         "start_time": "2024-06-13T16:59:18.180",
         "stop_time": "2024-06-13T17:02:21.655"
@@ -1622,6 +2921,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T170222_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T170222_B_BIN",
         "start_time": "2024-06-13T17:02:22.305",
         "stop_time": "2024-06-13T17:05:24.330"
@@ -1629,6 +2929,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T170222_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T170222_E_BIN",
         "start_time": "2024-06-13T17:02:22.305",
         "stop_time": "2024-06-13T17:05:24.330"
@@ -1636,6 +2937,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T170524_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T170524_B_BIN",
         "start_time": "2024-06-13T17:05:24.655",
         "stop_time": "2024-06-13T17:08:21.654"
@@ -1643,6 +2945,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T170524_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T170524_E_BIN",
         "start_time": "2024-06-13T17:05:24.655",
         "stop_time": "2024-06-13T17:08:21.654"
@@ -1650,6 +2953,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T170909_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T170909_B_BIN",
         "start_time": "2024-06-13T17:09:09.629",
         "stop_time": "2024-06-13T17:12:07.329"
@@ -1657,6 +2961,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T170909_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T170909_E_BIN",
         "start_time": "2024-06-13T17:09:09.629",
         "stop_time": "2024-06-13T17:12:07.329"
@@ -1664,6 +2969,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T171254_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T171254_B_BIN",
         "start_time": "2024-06-13T17:12:54.629",
         "stop_time": "2024-06-13T17:15:53.229"
@@ -1671,6 +2977,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T171254_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T171254_E_BIN",
         "start_time": "2024-06-13T17:12:54.629",
         "stop_time": "2024-06-13T17:15:53.229"
@@ -1678,6 +2985,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T171820_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T171820_B_BIN",
         "start_time": "2024-06-13T17:18:20.629",
         "stop_time": "2024-06-13T17:21:19.328"
@@ -1685,6 +2993,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T171820_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T171820_E_BIN",
         "start_time": "2024-06-13T17:18:20.629",
         "stop_time": "2024-06-13T17:21:19.328"
@@ -1692,6 +3001,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T172119_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T172119_B_BIN",
         "start_time": "2024-06-13T17:21:19.628",
         "stop_time": "2024-06-13T17:24:18.228"
@@ -1699,6 +3009,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T172119_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T172119_E_BIN",
         "start_time": "2024-06-13T17:21:19.628",
         "stop_time": "2024-06-13T17:24:18.228"
@@ -1706,6 +3017,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T172628_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T172628_B_BIN",
         "start_time": "2024-06-13T17:26:28.328",
         "stop_time": "2024-06-13T17:29:26.653"
@@ -1713,6 +3025,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T172628_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T172628_E_BIN",
         "start_time": "2024-06-13T17:26:28.328",
         "stop_time": "2024-06-13T17:29:26.653"
@@ -1720,6 +3033,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T172927_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T172927_B_BIN",
         "start_time": "2024-06-13T17:29:27.303",
         "stop_time": "2024-06-13T17:32:25.328"
@@ -1727,6 +3041,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T172927_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T172927_E_BIN",
         "start_time": "2024-06-13T17:29:27.303",
         "stop_time": "2024-06-13T17:32:25.328"
@@ -1734,6 +3049,7 @@
       {
         "family": "B_REC",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T192210_B_REC_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T192210_B_REC",
         "start_time": "2024-06-13T19:22:10.294",
         "stop_time": "2024-06-13T20:32:08.238"
@@ -1741,6 +3057,7 @@
       {
         "family": "E_REC",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T192210_E_REC_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T192210_E_REC",
         "start_time": "2024-06-13T19:22:10.294",
         "stop_time": "2024-06-13T20:32:08.238"
@@ -1748,6 +3065,7 @@
       {
         "family": "NBS_REC",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T192210_NBS_REC_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T192210_NBS_REC",
         "start_time": "2024-06-13T19:22:10.294",
         "stop_time": "2024-06-13T20:32:08.238"
@@ -1755,6 +3073,7 @@
       {
         "family": "B_REC",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T203914_B_REC_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T203914_B_REC",
         "start_time": "2024-06-13T20:39:14.287",
         "stop_time": "2024-06-13T22:52:06.626"
@@ -1762,6 +3081,7 @@
       {
         "family": "E_REC",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T203914_E_REC_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T203914_E_REC",
         "start_time": "2024-06-13T20:39:14.287",
         "stop_time": "2024-06-13T22:52:06.626"
@@ -1769,6 +3089,7 @@
       {
         "family": "NBS_REC",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T203914_NBS_REC_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024165T203914_NBS_REC",
         "start_time": "2024-06-13T20:39:14.287",
         "stop_time": "2024-06-13T22:52:06.626"
@@ -1776,6 +3097,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T041717_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024166T041717_B_BIN",
         "start_time": "2024-06-14T04:17:17.575",
         "stop_time": "2024-06-14T04:20:22.275"
@@ -1783,6 +3105,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T041717_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024166T041717_E_BIN",
         "start_time": "2024-06-14T04:17:17.575",
         "stop_time": "2024-06-14T04:20:22.275"
@@ -1790,6 +3113,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T042124_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024166T042124_B_BIN",
         "start_time": "2024-06-14T04:21:24.250",
         "stop_time": "2024-06-14T04:24:28.299"
@@ -1797,6 +3121,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T042124_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024166T042124_E_BIN",
         "start_time": "2024-06-14T04:21:24.250",
         "stop_time": "2024-06-14T04:24:28.299"
@@ -1804,6 +3129,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T042429_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024166T042429_B_BIN",
         "start_time": "2024-06-14T04:24:29.149",
         "stop_time": "2024-06-14T04:27:35.599"
@@ -1811,6 +3137,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T042429_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024166T042429_E_BIN",
         "start_time": "2024-06-14T04:24:29.149",
         "stop_time": "2024-06-14T04:27:35.599"
@@ -1818,6 +3145,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T043321_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024166T043321_B_BIN",
         "start_time": "2024-06-14T04:33:21.149",
         "stop_time": "2024-06-14T04:36:24.148"
@@ -1825,6 +3153,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T043321_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024166T043321_E_BIN",
         "start_time": "2024-06-14T04:33:21.149",
         "stop_time": "2024-06-14T04:36:24.148"
@@ -1832,6 +3161,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T044932_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024166T044932_B_BIN",
         "start_time": "2024-06-14T04:49:32.147",
         "stop_time": "2024-06-14T04:52:47.272"
@@ -1839,6 +3169,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T044932_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024166T044932_E_BIN",
         "start_time": "2024-06-14T04:49:32.147",
         "stop_time": "2024-06-14T04:52:47.272"
@@ -1846,6 +3177,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T051715_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024166T051715_B_BIN",
         "start_time": "2024-06-14T05:17:15.570",
         "stop_time": "2024-06-14T05:20:28.595"
@@ -1853,6 +3185,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T051715_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024166T051715_E_BIN",
         "start_time": "2024-06-14T05:17:15.570",
         "stop_time": "2024-06-14T05:20:28.595"
@@ -1860,6 +3193,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T052536_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024166T052536_B_BIN",
         "start_time": "2024-06-14T05:25:36.119",
         "stop_time": "2024-06-14T05:28:54.269"
@@ -1867,6 +3201,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T052536_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024166T052536_E_BIN",
         "start_time": "2024-06-14T05:25:36.119",
         "stop_time": "2024-06-14T05:28:54.269"
@@ -1874,6 +3209,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T053603_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024166T053603_B_BIN",
         "start_time": "2024-06-14T05:36:03.244",
         "stop_time": "2024-06-14T05:39:21.268"
@@ -1881,6 +3217,7 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T053603_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024166T053603_E_BIN",
         "start_time": "2024-06-14T05:36:03.244",
         "stop_time": "2024-06-14T05:39:21.268"
@@ -1888,6 +3225,7 @@
       {
         "family": "B_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T054336_B_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024166T054336_B_BIN",
         "start_time": "2024-06-14T05:43:36.243",
         "stop_time": "2024-06-14T05:46:53.268"
@@ -1895,9 +3233,32 @@
       {
         "family": "E_BIN",
         "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T054336_E_BIN_V01.LBL",
+        "partition": "ELIGIBLE",
         "product_id": "WAV_2024166T054336_E_BIN",
         "start_time": "2024-06-14T05:43:36.243",
         "stop_time": "2024-06-14T05:46:53.268"
+      }
+    ],
+    "waves_survey_orbit62_labels": [
+      {
+        "band": "b",
+        "inclusion": "ELIGIBLE",
+        "stem": "WAV_2024165T000000_B_V01"
+      },
+      {
+        "band": "e",
+        "inclusion": "ELIGIBLE",
+        "stem": "WAV_2024165T000000_E_V01"
+      },
+      {
+        "band": "b",
+        "inclusion": "EXCLUDED",
+        "stem": "WAV_2024166T000000_B_V01"
+      },
+      {
+        "band": "e",
+        "inclusion": "EXCLUDED",
+        "stem": "WAV_2024166T000000_E_V01"
       }
     ]
   },

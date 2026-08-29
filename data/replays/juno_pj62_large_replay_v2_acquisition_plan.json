@@ -130,6 +130,7 @@
       "source_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-E_J_SS-WAV-3-CDR-BSTFULL-V2.0/INDEX/INDEX.TAB"
     }
   ],
+  "discovery_evidence_artifact_id": "ded2d9a7ed309410cea7f07992323efeffbfeda6e50ea8c5fa249eb99230235b",
   "final_temporal_eligibility": "LABEL_VERIFICATION_REQUIRED",
   "logical_entries": [
     {
@@ -9058,7 +9059,7 @@
       "temporal_evidence_status": "EXACT_DISCOVERY_METADATA"
     }
   ],
-  "plan_id": "1f8999929167d0bfb27f39fe96a6b76be4a0f2c45e8b9af06f8c6f05d29bacd3",
+  "plan_id": "5239a650b4c62b54af038e2e0e2c7440d905d82de21145e489faf424d71b4ced",
   "replay_id": "juno_pj62_large_replay_v2",
   "schema": "gcsi.historical_replay_v2_acquisition_plan",
   "schema_version": 1
