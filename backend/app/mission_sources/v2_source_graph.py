@@ -472,10 +472,29 @@ def load_verified_v2_source_graph(
                     f"computed={computed_snap_id!r} stored={row.snapshot_id!r}."
                 )
 
-        # Cross-check: observation_stop_utc — FAIL CLOSED (B4 Step 0)
-        if row.observation_stop_utc is not None and product.observation_stop_utc is not None:
-            stored_stop = _normalize_utc_iso(row.observation_stop_utc)
-            product_stop = product.observation_stop_utc.astimezone(timezone.utc).isoformat()
+        # Cross-check: observation_stop_utc — FAIL CLOSED (B4 Step 0 / B4.1 Defect C)
+        # Rules:
+        #   both absent      → allowed
+        #   ledger present, snapshot absent  → FAIL
+        #   ledger absent, snapshot present  → FAIL
+        #   both present     → canonical UTC equality required
+        ledger_stop = row.observation_stop_utc
+        snapshot_stop = product.observation_stop_utc
+        if ledger_stop is None and snapshot_stop is not None:
+            raise ValueError(
+                f"observation_stop_utc mismatch for {row.source_record_id!r}: "
+                f"ledger=None but snapshot has stop={snapshot_stop.isoformat()!r}. "
+                "Present/missing mismatch — fail closed."
+            )
+        if ledger_stop is not None and snapshot_stop is None:
+            raise ValueError(
+                f"observation_stop_utc mismatch for {row.source_record_id!r}: "
+                f"ledger={ledger_stop!r} but snapshot has no stop time. "
+                "Present/missing mismatch — fail closed."
+            )
+        if ledger_stop is not None and snapshot_stop is not None:
+            stored_stop = _normalize_utc_iso(ledger_stop)
+            product_stop = snapshot_stop.astimezone(timezone.utc).isoformat()
             if stored_stop != product_stop:
                 raise ValueError(
                     f"observation_stop_utc mismatch for {row.source_record_id!r}: "

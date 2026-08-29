@@ -671,12 +671,14 @@ class HistoricalReplayProvider(BaseMissionSourceProvider):
         try:
             source_graph = load_verified_v2_source_graph()
         except ValueError as exc:
+            # Sanitize: do not expose absolute filesystem paths in public message.
             raise MissionSourceValidationError(
-                f"V2 source graph verification failed: {exc}"
+                "V2 source graph verification failed."
             ) from exc
         except RuntimeError as exc:
+            # Sanitize: do not expose absolute filesystem paths in public message.
             raise MissionSourceValidationError(
-                f"V2 source graph contradiction: {exc}"
+                "V2 source graph verification failed."
             ) from exc
         except (MissionSourceUnavailableError, MissionSourceValidationError):
             raise

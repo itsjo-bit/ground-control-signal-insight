@@ -98,7 +98,11 @@ _PROVIDER_NAME = "GCSI-HistoricalReplayV2Provider"
 _MODELED_SOURCE_SYSTEM = "GCSI-historical-replay-v2-policy"
 _EXTERNAL_SOURCE_SYSTEM = "NASA Planetary Data System"
 _HORIZONS_SOURCE_SYSTEM = "NASA/JPL Horizons API"
-_DECISION_EPOCH_UTC = datetime(2024, 6, 14, 9, 35, 17, 546000, tzinfo=timezone.utc)
+
+# Frozen expected decision epoch — used only as a replay assertion constant, NOT
+# as the operative age-derivation value.  The operative epoch comes from the
+# validated descriptor (see assemble()).
+_FROZEN_DECISION_EPOCH_UTC = datetime(2024, 6, 14, 9, 35, 17, 546000, tzinfo=timezone.utc)
 
 # ---------------------------------------------------------------------------
 # Derivation method identifiers (frozen B3)
@@ -243,6 +247,61 @@ class ReplayAssemblerV2:
                 f"!= source graph replay_id {source_graph.source_bundle.replay_id!r}."
             )
 
+        # ---- Defect A fix: cross-bind and validate decision_epoch_utc ----
+        # Step 1: Parse descriptor.decision_epoch_utc as a timezone-aware datetime.
+        try:
+            desc_epoch_dt = datetime.fromisoformat(descriptor.decision_epoch_utc)
+        except (ValueError, TypeError) as exc:
+            raise MissionSourceValidationError(
+                "Descriptor decision_epoch_utc is not a valid ISO-8601 datetime."
+            ) from exc
+        if desc_epoch_dt.tzinfo is None:
+            raise MissionSourceValidationError(
+                "Descriptor decision_epoch_utc is timezone-naive; a UTC-aware timestamp is required."
+            )
+        desc_epoch_utc = desc_epoch_dt.astimezone(timezone.utc)
+
+        # Step 2: Cross-check against source_bundle.decision_epoch_utc
+        try:
+            bundle_epoch_dt = datetime.fromisoformat(
+                source_graph.source_bundle.decision_epoch_utc
+            )
+        except (ValueError, TypeError) as exc:
+            raise MissionSourceValidationError(
+                "Source bundle decision_epoch_utc is not a valid ISO-8601 datetime."
+            ) from exc
+        if bundle_epoch_dt.tzinfo is None:
+            bundle_epoch_utc = bundle_epoch_dt.replace(tzinfo=timezone.utc)
+        else:
+            bundle_epoch_utc = bundle_epoch_dt.astimezone(timezone.utc)
+
+        if desc_epoch_utc != bundle_epoch_utc:
+            raise MissionSourceValidationError(
+                f"Decision epoch mismatch: descriptor={desc_epoch_utc.isoformat()!r} "
+                f"!= source_bundle={bundle_epoch_utc.isoformat()!r}."
+            )
+
+        # Step 3: Cross-check against source_graph.horizons_epoch_utc
+        try:
+            horizons_epoch_dt = datetime.fromisoformat(source_graph.horizons_epoch_utc)
+        except (ValueError, TypeError) as exc:
+            raise MissionSourceValidationError(
+                "Source graph horizons_epoch_utc is not a valid ISO-8601 datetime."
+            ) from exc
+        if horizons_epoch_dt.tzinfo is None:
+            horizons_epoch_utc = horizons_epoch_dt.replace(tzinfo=timezone.utc)
+        else:
+            horizons_epoch_utc = horizons_epoch_dt.astimezone(timezone.utc)
+
+        if desc_epoch_utc != horizons_epoch_utc:
+            raise MissionSourceValidationError(
+                f"Decision epoch mismatch: descriptor={desc_epoch_utc.isoformat()!r} "
+                f"!= horizons_epoch={horizons_epoch_utc.isoformat()!r}."
+            )
+
+        # The validated descriptor epoch is the operative age-derivation authority.
+        decision_epoch_utc = desc_epoch_utc
+
         # ---- Cross-bind: queue count == source graph eligible logical count ----
         if descriptor.queue_membership_policy.eligible_logical_count != source_graph.eligible_logical_count:
             raise MissionSourceValidationError(
@@ -314,8 +373,12 @@ class ReplayAssemblerV2:
 
         # ---- Build shared modeled policy provenance records ----
         # Policy record — covers all modeled policy fields (scores, deadline, queue, etc.)
+        # decision_epoch_utc and decision_epoch_policy are included so the age-derivation
+        # authority is semantically bound to the decision-epoch configuration.
         policy_payload = json.dumps({
             "deadline_s": descriptor.product_policy.deadline_s,
+            "decision_epoch_policy": descriptor.decision_epoch_policy,
+            "decision_epoch_utc": decision_epoch_utc.isoformat(),
             "delivery_requirement": descriptor.product_policy.delivery_requirement,
             "entries": [
                 {
@@ -587,11 +650,12 @@ class ReplayAssemblerV2:
                 auth_stop = auth_stop.replace(tzinfo=timezone.utc)
             else:
                 auth_stop = auth_stop.astimezone(timezone.utc)
-            age_s_raw = (_DECISION_EPOCH_UTC - auth_stop).total_seconds()
+            # Use validated descriptor decision epoch as the operative age-derivation authority.
+            age_s_raw = (decision_epoch_utc - auth_stop).total_seconds()
             if age_s_raw < 0.0:
                 raise MissionSourceValidationError(
                     f"Negative age_s for {lid!r}: "
-                    f"decision_epoch={_DECISION_EPOCH_UTC.isoformat()!r} "
+                    f"decision_epoch={decision_epoch_utc.isoformat()!r} "
                     f"stop={auth_stop.isoformat()!r}."
                 )
             age_s = age_s_raw
