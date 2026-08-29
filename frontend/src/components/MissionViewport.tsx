@@ -70,8 +70,8 @@ interface ViewportControlsProps {
 function ViewportControls({ active, onSelect }: ViewportControlsProps) {
   return (
     <div style={{
-      position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
-      display: 'flex', gap: 4, zIndex: 10, pointerEvents: 'auto',
+      position: 'absolute', bottom: 14, left: '50%', transform: 'translateX(-50%)',
+      display: 'flex', gap: 3, zIndex: 10, pointerEvents: 'auto',
     }}>
       {(Object.keys(CAMERA_PRESETS) as CameraPreset[]).map((preset) => (
         <button
@@ -79,20 +79,20 @@ function ViewportControls({ active, onSelect }: ViewportControlsProps) {
           onClick={() => onSelect(preset)}
           style={{
             background: active === preset
-              ? 'rgba(52,211,153,0.12)'
-              : 'rgba(8,12,20,0.80)',
+              ? 'rgba(29,78,216,0.85)'
+              : 'rgba(5,9,16,0.78)',
             border: `1px solid ${active === preset
-              ? 'rgba(52,211,153,0.35)'
-              : 'rgba(255,255,255,0.10)'}`,
-            color: active === preset ? '#34d399' : 'rgba(226,232,244,0.45)',
+              ? 'rgba(29,78,216,0.90)'
+              : 'rgba(255,255,255,0.12)'}`,
+            color: active === preset ? '#ffffff' : 'rgba(200,210,228,0.55)',
             fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
             fontSize: 10,
-            fontWeight: 500,
-            padding: '5px 12px',
-            borderRadius: 6,
+            fontWeight: active === preset ? 600 : 400,
+            padding: '4px 10px',
+            borderRadius: 3,
             cursor: 'pointer',
-            backdropFilter: 'blur(8px)',
-            transition: 'background 0.15s, border-color 0.15s, color 0.15s',
+            backdropFilter: 'blur(6px)',
+            transition: 'background 0.12s, border-color 0.12s, color 0.12s',
           }}
           title={`Camera: ${PRESET_LABELS[preset]}`}
         >

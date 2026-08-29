@@ -22,10 +22,10 @@
  * Values come from props only — this component never fetches /state itself.
  */
 
-const DIM   = 'var(--text-dim,  #3d4a63)';
-const MUTED = 'var(--text-muted, #6f83a3)';
-const TEXT  = 'var(--text, #dce6f5)';
-const SIGNAL_COLOR = 'var(--signal, #35e7b7)';
+const DIM   = 'var(--text-dim,  #b0bac9)';
+const MUTED = 'var(--text-muted, #7a8699)';
+const TEXT  = 'var(--text, #1a2035)';
+const SIGNAL_COLOR = 'var(--signal, #16a34a)';
 
 // ── Formatting helpers ────────────────────────────────────────────────────────
 
@@ -164,20 +164,20 @@ export function SignalGeometryBlock({
           {/* Line */}
           <line
             x1={4} y1={7} x2={rulerW - 4} y2={7}
-            stroke="rgba(53,231,183,0.35)" strokeWidth={1}
+            stroke="rgba(29,78,216,0.25)" strokeWidth={1}
             strokeDasharray="3 4"
           />
           {/* Left tick */}
           <line x1={4} y1={3} x2={4} y2={11}
-            stroke="rgba(53,231,183,0.5)" strokeWidth={1} />
+            stroke="rgba(29,78,216,0.35)" strokeWidth={1} />
           {/* Right tick */}
           <line x1={rulerW - 4} y1={3} x2={rulerW - 4} y2={11}
-            stroke="rgba(53,231,183,0.5)" strokeWidth={1} />
+            stroke="rgba(29,78,216,0.35)" strokeWidth={1} />
           {/* Distance label */}
           <text
             x={rulerW / 2} y={7}
             textAnchor="middle" dominantBaseline="middle"
-            fill="rgba(53,231,183,0.75)"
+            fill="rgba(29,78,216,0.65)"
             fontSize={8}
             fontFamily="'IBM Plex Mono', ui-monospace, monospace"
             fontWeight={600}
@@ -200,9 +200,9 @@ export function SignalGeometryBlock({
         {/* One-way */}
         <div style={{
           flex: '1 1 0', minWidth: 80,
-          background: 'rgba(53,231,183,0.04)',
-          border: '1px solid rgba(53,231,183,0.14)',
-          borderRadius: 4, padding: '7px 10px',
+          background: '#f5f6f8',
+          border: '1px solid #dde1e8',
+          borderRadius: 3, padding: '7px 10px',
         }}>
           <SectionLabel>Signal Propagation Delay</SectionLabel>
           <div style={{
@@ -228,14 +228,14 @@ export function SignalGeometryBlock({
         {/* Round-trip */}
         <div style={{
           flex: '1 1 0', minWidth: 80,
-          background: 'rgba(124,158,255,0.04)',
-          border: '1px solid rgba(124,158,255,0.14)',
-          borderRadius: 4, padding: '7px 10px',
+          background: '#f5f6f8',
+          border: '1px solid #dde1e8',
+          borderRadius: 3, padding: '7px 10px',
         }}>
           <SectionLabel>Round Trip</SectionLabel>
           <div style={{
             fontFamily: 'var(--font-mono)', fontSize: 15, fontWeight: 700,
-            color: 'var(--ai, #7c9eff)', marginBottom: 2, letterSpacing: '-0.01em',
+            color: 'var(--accent, #1d4ed8)', marginBottom: 2, letterSpacing: '-0.01em',
           }}>
             {rttStr}
           </div>

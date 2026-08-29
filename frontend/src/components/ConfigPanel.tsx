@@ -2,6 +2,7 @@
  * ConfigPanel — Interface / Layout / View settings panel.
  *
  * V3.4: Added scenario management section.
+ * V4.0: Light analytical workspace theme.
  */
 import type { ViewSettings } from '../hooks/useViewSettings';
 import type { MissionSourceMode, ScenarioInfo } from '../types/domain';
@@ -37,21 +38,21 @@ function ToggleRow({
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       padding: '9px 0',
-      borderBottom: '1px solid rgba(255,255,255,0.05)',
+      borderBottom: '1px solid #e8eaee',
       gap: 12,
       minWidth: 0,
     }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
           fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-          fontSize: 12, fontWeight: 500, color: '#d4dcea',
+          fontSize: 12, fontWeight: 500, color: '#1a2035',
         }}>
           {label}
         </div>
         {description && (
           <div style={{
             fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-            fontSize: 10.5, color: 'rgba(147,160,180,0.7)',
+            fontSize: 10.5, color: '#7a8699',
             marginTop: 2, lineHeight: 1.4,
           }}>
             {description}
@@ -65,8 +66,8 @@ function ToggleRow({
         style={{
           width: 36, height: 20,
           borderRadius: 10,
-          background: value ? '#4C8DFF' : 'rgba(255,255,255,0.10)',
-          border: `1px solid ${value ? 'rgba(76,141,255,0.5)' : 'rgba(255,255,255,0.14)'}`,
+          background: value ? '#1d4ed8' : '#e8eaee',
+          border: `1px solid ${value ? '#1d4ed8' : '#c8cdd7'}`,
           position: 'relative',
           cursor: 'pointer',
           flexShrink: 0,
@@ -82,7 +83,7 @@ function ToggleRow({
           borderRadius: '50%',
           background: '#fff',
           transition: 'left 0.18s',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.15)',
         }} />
       </button>
     </div>
@@ -95,10 +96,10 @@ function SectionHead({ children }: { children: React.ReactNode }) {
       fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
       fontSize: 9, fontWeight: 600, letterSpacing: '0.07em',
       textTransform: 'uppercase',
-      color: 'rgba(76,141,255,0.65)',
+      color: '#7a8699',
       marginTop: 18, marginBottom: 4,
       paddingBottom: 5,
-      borderBottom: '1px solid rgba(76,141,255,0.12)',
+      borderBottom: '1px solid #e8eaee',
     }}>
       {children}
     </div>
@@ -118,10 +119,10 @@ function ActionBtn({
     <button
       onClick={onClick}
       style={{
-        background: danger ? 'rgba(248,113,113,0.08)' : 'rgba(76,141,255,0.08)',
-        color: danger ? '#f87171' : '#6EA8FF',
-        border: `1px solid ${danger ? 'rgba(248,113,113,0.20)' : 'rgba(76,141,255,0.20)'}`,
-        borderRadius: 7,
+        background: danger ? 'rgba(220,38,38,0.06)' : '#f5f6f8',
+        color: danger ? '#dc2626' : '#4a5568',
+        border: `1px solid ${danger ? 'rgba(220,38,38,0.22)' : '#c8cdd7'}`,
+        borderRadius: 4,
         padding: '6px 14px',
         fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
         fontSize: 11.5, fontWeight: 500,
@@ -132,11 +133,11 @@ function ActionBtn({
       }}
       onMouseEnter={(e) => {
         (e.currentTarget as HTMLButtonElement).style.background =
-          danger ? 'rgba(248,113,113,0.14)' : 'rgba(76,141,255,0.14)';
+          danger ? 'rgba(220,38,38,0.10)' : '#e8eaee';
       }}
       onMouseLeave={(e) => {
         (e.currentTarget as HTMLButtonElement).style.background =
-          danger ? 'rgba(248,113,113,0.08)' : 'rgba(76,141,255,0.08)';
+          danger ? 'rgba(220,38,38,0.06)' : '#f5f6f8';
       }}
     >
       {label}
@@ -165,13 +166,13 @@ export function ConfigPanel({
       <div style={{
         fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
         fontSize: 13, fontWeight: 600,
-        color: '#d4dcea', marginBottom: 4,
+        color: '#1a2035', marginBottom: 4,
       }}>
         Configuration
       </div>
       <div style={{
         fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-        fontSize: 11, color: 'rgba(147,160,180,0.65)',
+        fontSize: 11, color: '#7a8699',
         lineHeight: 1.5, marginBottom: 12,
       }}>
         Interface, layout, and 3D view preferences. All settings are saved automatically.
@@ -183,7 +184,7 @@ export function ConfigPanel({
       <div style={{ padding: '4px 0 0' }}>
         <div style={{
           fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-          fontSize: 12, fontWeight: 500, color: '#d4dcea',
+          fontSize: 12, fontWeight: 500, color: '#1a2035',
           marginBottom: 6,
         }}>
           Density
@@ -195,13 +196,13 @@ export function ConfigPanel({
               onClick={() => onUpdate('density', d)}
               style={{
                 padding: '5px 14px',
-                borderRadius: 6,
+                borderRadius: 4,
                 fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
                 fontSize: 11.5, fontWeight: 500,
                 cursor: 'pointer',
-                border: `1px solid ${settings.density === d ? 'rgba(76,141,255,0.45)' : 'rgba(255,255,255,0.10)'}`,
-                background: settings.density === d ? 'rgba(76,141,255,0.12)' : 'rgba(255,255,255,0.03)',
-                color: settings.density === d ? '#6EA8FF' : 'rgba(180,195,215,0.6)',
+                border: `1px solid ${settings.density === d ? 'rgba(29,78,216,0.35)' : '#c8cdd7'}`,
+                background: settings.density === d ? '#eef3fc' : '#f5f6f8',
+                color: settings.density === d ? '#1d4ed8' : '#4a5568',
                 transition: 'all 0.15s',
               }}
             >
@@ -216,9 +217,9 @@ export function ConfigPanel({
 
       <div style={{
         padding: '8px 12px',
-        background: 'rgba(76,141,255,0.05)',
-        border: '1px solid rgba(76,141,255,0.12)',
-        borderRadius: 8,
+        background: '#f5f6f8',
+        border: '1px solid #dde1e8',
+        borderRadius: 4,
         marginBottom: 8,
       }}>
         <div style={{
@@ -226,13 +227,13 @@ export function ConfigPanel({
         }}>
           <span style={{
             fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-            fontSize: 11, color: 'rgba(147,160,180,0.7)',
+            fontSize: 11, color: '#7a8699',
           }}>
             Current panel width
           </span>
           <span style={{
             fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-            fontSize: 12, fontWeight: 600, color: '#6EA8FF',
+            fontSize: 12, fontWeight: 600, color: '#1d4ed8',
           }}>
             {panelWidth}px
           </span>
@@ -243,13 +244,13 @@ export function ConfigPanel({
         }}>
           <span style={{
             fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-            fontSize: 11, color: 'rgba(147,160,180,0.7)',
+            fontSize: 11, color: '#7a8699',
           }}>
             Default width
           </span>
           <span style={{
             fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-            fontSize: 12, color: 'rgba(147,160,180,0.5)',
+            fontSize: 12, color: '#b0bac9',
           }}>
             {panelDefaultWidth}px
           </span>
@@ -306,16 +307,16 @@ export function ConfigPanel({
             <div style={{
               padding: '8px 10px',
               marginBottom: 10,
-              background: 'rgba(76,141,255,0.05)',
-              border: '1px solid rgba(76,141,255,0.20)',
-              borderRadius: 6,
+              background: 'rgba(29,78,216,0.04)',
+              border: '1px solid rgba(29,78,216,0.18)',
+              borderRadius: 4,
               fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
               fontSize: 10.5, lineHeight: 1.5,
-              color: 'rgba(147,160,180,0.80)',
+              color: '#4a5568',
             }}>
               <span style={{
                 display: 'block', fontWeight: 600,
-                color: '#6EA8FF', fontSize: 10, marginBottom: 3,
+                color: '#1d4ed8', fontSize: 10, marginBottom: 3,
               }}>
                 Historical replay is currently active.
               </span>
@@ -333,16 +334,16 @@ export function ConfigPanel({
                   style={{
                     padding: '10px 12px',
                     marginBottom: 6,
-                    borderRadius: 8,
-                    border: `1px solid ${isActive ? 'rgba(76,141,255,0.35)' : 'rgba(46,58,79,0.7)'}`,
-                    background: isActive ? 'rgba(76,141,255,0.06)' : 'rgba(255,255,255,0.02)',
+                    borderRadius: 4,
+                    border: `1px solid ${isActive ? 'rgba(29,78,216,0.28)' : '#dde1e8'}`,
+                    background: isActive ? '#eef3fc' : '#f5f6f8',
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
                     <div style={{
                       fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
                       fontSize: 10, fontWeight: 600,
-                      color: isActive ? '#6EA8FF' : 'rgba(147,160,180,0.7)',
+                      color: isActive ? '#1d4ed8' : '#4a5568',
                       wordBreak: 'break-all',
                     }}>
                       {scen.filename}
@@ -350,8 +351,8 @@ export function ConfigPanel({
                     {isActive && (
                       <span style={{
                         fontSize: 8, fontWeight: 700, letterSpacing: '0.07em',
-                        background: 'rgba(52,211,153,0.10)', color: '#34d399',
-                        border: '1px solid rgba(52,211,153,0.25)',
+                        background: 'rgba(22,163,74,0.08)', color: '#16a34a',
+                        border: '1px solid rgba(22,163,74,0.25)',
                         borderRadius: 2, padding: '1px 5px',
                         fontFamily: '"IBM Plex Mono"', flexShrink: 0, marginLeft: 6,
                       }}>
@@ -359,22 +360,22 @@ export function ConfigPanel({
                       </span>
                     )}
                   </div>
-                  <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 10.5, color: 'rgba(147,160,180,0.6)', marginBottom: 4, lineHeight: 1.4 }}>
+                  <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 10.5, color: '#7a8699', marginBottom: 4, lineHeight: 1.4 }}>
                     {scen.label}
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {scen.data_products_count > 0 && (
-                      <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#f59e0b' }}>
+                      <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#d97706' }}>
                         {scen.data_products_count} products
                       </span>
                     )}
                     {scen.anomalies_count > 0 && (
-                      <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#f87171' }}>
+                      <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#dc2626' }}>
                         {scen.anomalies_count} anomalies
                       </span>
                     )}
                     {!scen.has_data_products && (
-                      <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#f59e0b' }}>
+                      <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#d97706' }}>
                         legacy packets
                       </span>
                     )}
@@ -385,10 +386,10 @@ export function ConfigPanel({
                       disabled={scenarioSwitching}
                       style={{
                         marginTop: 8, fontSize: 11, padding: '4px 12px',
-                        background: 'rgba(76,141,255,0.08)',
-                        color: '#6EA8FF',
-                        border: '1px solid rgba(76,141,255,0.22)',
-                        borderRadius: 5, cursor: 'pointer',
+                        background: '#ffffff',
+                        color: '#1d4ed8',
+                        border: '1px solid rgba(29,78,216,0.28)',
+                        borderRadius: 4, cursor: 'pointer',
                         fontFamily: '"IBM Plex Sans"',
                         opacity: scenarioSwitching ? 0.5 : 1,
                       }}
@@ -401,7 +402,7 @@ export function ConfigPanel({
             })}
           </div>
           <div style={{
-            fontFamily: '"IBM Plex Sans"', fontSize: 10, color: 'rgba(120,135,155,0.5)', lineHeight: 1.5, marginBottom: 8,
+            fontFamily: '"IBM Plex Sans"', fontSize: 10, color: '#b0bac9', lineHeight: 1.5, marginBottom: 8,
           }}>
             Switching scenarios resets AI analysis, manual selections, and transmission state.
           </div>
@@ -422,7 +423,7 @@ export function ConfigPanel({
       <div style={{
         marginTop: 4,
         fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-        fontSize: 10, color: 'rgba(120,135,155,0.5)',
+        fontSize: 10, color: '#b0bac9',
         lineHeight: 1.5,
       }}>
         Settings are stored in your browser's local storage and persist across page refreshes.
@@ -432,17 +433,17 @@ export function ConfigPanel({
       <SectionHead>About</SectionHead>
       <div style={{
         padding: '8px 10px',
-        background: 'rgba(255,255,255,0.02)',
-        border: '1px solid rgba(46,58,79,0.6)',
-        borderRadius: 6,
+        background: '#f5f6f8',
+        border: '1px solid #dde1e8',
+        borderRadius: 4,
         fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
         fontSize: 10,
         lineHeight: 1.8,
-        color: 'rgba(147,160,180,0.7)',
+        color: '#4a5568',
       }}>
-        <div><span style={{ color: 'rgba(76,141,255,0.65)' }}>GCSI</span> 1.0.0</div>
+        <div><span style={{ color: '#1d4ed8', fontWeight: 600 }}>GCSI</span> 1.0.0</div>
         <div>Ground Control Signal Insight</div>
-        <div style={{ marginTop: 4, fontFamily: '"IBM Plex Sans"', fontSize: 10, color: 'rgba(120,135,155,0.45)' }}>
+        <div style={{ marginTop: 4, fontFamily: '"IBM Plex Sans"', fontSize: 10, color: '#b0bac9' }}>
           Earth imagery: NASA Blue Marble
         </div>
       </div>

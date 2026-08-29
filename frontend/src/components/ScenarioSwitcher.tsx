@@ -86,8 +86,8 @@ export function ScenarioSwitcher({
       <span style={{
         fontFamily: SANS,
         fontSize: 10,
-        color: 'rgba(122,143,168,0.6)',
-        fontWeight: 500,
+        color: '#7a8699',
+        fontWeight: 400,
         letterSpacing: '0.01em',
         flexShrink: 0,
       }}>
@@ -107,23 +107,19 @@ export function ScenarioSwitcher({
           alignItems: 'center',
           gap: 6,
           padding: '3px 9px',
-          background: switching
-            ? 'rgba(76,141,255,0.06)'
-            : 'rgba(255,255,255,0.04)',
-          color: switching
-            ? '#6EA8FF'
-            : 'rgba(226,232,244,0.8)',
+          background: switching ? '#eef3fc' : '#f5f6f8',
+          color: switching ? '#1d4ed8' : '#1a2035',
           border: switching
-            ? '1px solid rgba(76,141,255,0.22)'
-            : '1px solid rgba(255,255,255,0.08)',
-          borderRadius: 5,
+            ? '1px solid rgba(29,78,216,0.28)'
+            : '1px solid #dde1e8',
+          borderRadius: 3,
           fontFamily: MONO,
           fontSize: 10,
           fontWeight: 600,
           letterSpacing: '0.03em',
           cursor: disabled ? 'not-allowed' : 'pointer',
           opacity: disabled ? 0.55 : 1,
-          transition: 'background 0.15s, border-color 0.15s, color 0.15s',
+          transition: 'background 0.12s, border-color 0.12s, color 0.12s',
           whiteSpace: 'nowrap',
           minWidth: 180,
           userSelect: 'none',
@@ -152,11 +148,11 @@ export function ScenarioSwitcher({
             left: 0,
             marginTop: 4,
             minWidth: 240,
-            background: '#0E1520',
-            border: '1px solid rgba(46,58,79,0.9)',
-            borderRadius: 7,
+            background: '#ffffff',
+            border: '1px solid #c8cdd7',
+            borderRadius: 4,
             zIndex: 1000,
-            boxShadow: '0 8px 32px rgba(0,0,0,0.55)',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
             padding: '4px 0',
             overflow: 'hidden',
           }}
@@ -164,10 +160,10 @@ export function ScenarioSwitcher({
           {sources.map((src) => {
             const isActive = src.source_id === activeSourceId;
             const isSynthetic = src.mode === 'synthetic_scenario';
-            const modeLabel = isSynthetic ? 'SYNTHETIC' : 'HIST REPLAY';
-            const modeColor = isSynthetic
-              ? 'rgba(245,158,11,0.65)'
-              : 'rgba(110,168,255,0.70)';
+            const modeLabel = isSynthetic ? 'SYNTHETIC' : 'HIST';
+            const modeColor = isSynthetic ? '#d97706' : '#1d4ed8';
+            const modeBg = isSynthetic ? 'rgba(217,119,6,0.07)' : '#eef3fc';
+            const modeBdr = isSynthetic ? 'rgba(217,119,6,0.22)' : 'rgba(29,78,216,0.22)';
             return (
               <button
                 key={src.source_id}
@@ -180,43 +176,43 @@ export function ScenarioSwitcher({
                   width: '100%',
                   textAlign: 'left',
                   padding: '8px 12px',
-                  background: isActive ? 'rgba(76,141,255,0.08)' : 'transparent',
+                  background: isActive ? '#eef3fc' : 'transparent',
                   border: 'none',
-                  borderBottom: '1px solid rgba(46,58,79,0.5)',
+                  borderBottom: '1px solid #e8eaee',
                   cursor: 'pointer',
-                  transition: 'background 0.12s',
+                  transition: 'background 0.10s',
                 }}
                 onMouseEnter={(e) => {
-                  if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.04)';
+                  if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = '#f5f6f8';
                 }}
                 onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLButtonElement).style.background = isActive ? 'rgba(76,141,255,0.08)' : 'transparent';
+                  (e.currentTarget as HTMLButtonElement).style.background = isActive ? '#eef3fc' : 'transparent';
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {/* Active indicator */}
                   <span style={{
-                    width: 5, height: 5, borderRadius: '50%', flexShrink: 0,
-                    background: isActive ? '#4C8DFF' : 'transparent',
-                    border: isActive ? 'none' : '1px solid rgba(255,255,255,0.12)',
+                    width: 4, height: 4, borderRadius: '50%', flexShrink: 0,
+                    background: isActive ? '#1d4ed8' : 'transparent',
+                    border: isActive ? 'none' : '1px solid #c8cdd7',
                   }} />
                   {/* Name */}
                   <span style={{
                     fontFamily: SANS, fontSize: 11.5, fontWeight: isActive ? 600 : 400,
-                    color: isActive ? '#E6EBF2' : 'rgba(226,232,244,0.7)',
+                    color: isActive ? '#1a2035' : '#4a5568',
                     flex: 1,
                   }}>
                     {src.display_name}
                   </span>
                   {/* Mode badge */}
                   <span style={{
-                    fontFamily: MONO, fontSize: 8, fontWeight: 600,
-                    letterSpacing: '0.04em',
+                    fontFamily: MONO, fontSize: 8, fontWeight: 700,
+                    letterSpacing: '0.05em',
                     color: modeColor,
                     padding: '1px 5px',
-                    background: isSynthetic ? 'rgba(245,158,11,0.07)' : 'rgba(76,141,255,0.07)',
-                    border: `1px solid ${isSynthetic ? 'rgba(245,158,11,0.20)' : 'rgba(76,141,255,0.20)'}`,
-                    borderRadius: 3,
+                    background: modeBg,
+                    border: `1px solid ${modeBdr}`,
+                    borderRadius: 2,
                     flexShrink: 0,
                   }}>
                     {modeLabel}
@@ -225,8 +221,8 @@ export function ScenarioSwitcher({
                 {/* Description */}
                 <div style={{
                   fontFamily: SANS, fontSize: 10,
-                  color: 'rgba(122,143,168,0.55)',
-                  marginTop: 3, marginLeft: 13,
+                  color: '#7a8699',
+                  marginTop: 2, marginLeft: 12,
                   lineHeight: 1.4,
                 }}>
                   {src.description}
@@ -247,12 +243,12 @@ export function ScenarioSwitcher({
             left: 0,
             marginTop: 6,
             padding: '4px 10px',
-            background: 'rgba(248,113,113,0.10)',
-            border: '1px solid rgba(248,113,113,0.30)',
-            borderRadius: 5,
+            background: 'rgba(220,38,38,0.06)',
+            border: '1px solid rgba(220,38,38,0.25)',
+            borderRadius: 3,
             fontFamily: SANS,
             fontSize: 10.5,
-            color: '#f87171',
+            color: '#dc2626',
             whiteSpace: 'nowrap',
             zIndex: 1001,
           }}

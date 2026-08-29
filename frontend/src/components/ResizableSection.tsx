@@ -7,6 +7,8 @@
  *
  * The resize handle, height state, and GCSI_SEC_H_* localStorage keys have
  * been removed entirely. Collapse / expand is kept for user convenience.
+ *
+ * V4.0: Light analytical workspace theme.
  */
 import { useState } from 'react';
 
@@ -25,7 +27,7 @@ interface Props {
 export function ResizableSection({
   title,
   icon = '◆',
-  accent = '#4C8DFF',
+  accent = '#1d4ed8',
   defaultOpen = true,
   children,
 }: Props) {
@@ -33,9 +35,9 @@ export function ResizableSection({
 
   return (
     <div style={{
-      background: 'rgba(255,255,255,0.024)',
-      border: '1px solid rgba(255,255,255,0.07)',
-      borderRadius: 10,
+      background: '#ffffff',
+      border: '1px solid #dde1e8',
+      borderRadius: 4,
       marginBottom: 8,
       minWidth: 0,
     }}>
@@ -47,21 +49,21 @@ export function ResizableSection({
           display: 'flex',
           alignItems: 'center',
           gap: 8,
-          padding: '10px 14px',
+          padding: '8px 12px',
           background: 'none',
           border: 'none',
-          borderBottom: open ? '1px solid rgba(255,255,255,0.06)' : 'none',
+          borderBottom: open ? '1px solid #e8eaee' : 'none',
           cursor: 'pointer',
           textAlign: 'left',
           borderRadius: 0,
           flexShrink: 0,
         }}
       >
-        <span style={{ fontSize: 10, color: accent, flexShrink: 0, lineHeight: 1 }}>{icon}</span>
+        <span style={{ fontSize: 9, color: accent, flexShrink: 0, lineHeight: 1 }}>{icon}</span>
         <span style={{
           fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
           fontSize: 11, fontWeight: 600,
-          color: 'rgba(220,230,244,0.80)',
+          color: '#1a2035',
           letterSpacing: '0.01em',
           flex: 1,
         }}>
@@ -69,7 +71,7 @@ export function ResizableSection({
         </span>
         <span style={{
           fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-          fontSize: 13, color: 'rgba(120,140,168,0.45)',
+          fontSize: 12, color: '#b0bac9',
           lineHeight: 1, userSelect: 'none',
         }}>
           {open ? '−' : '+'}
@@ -79,7 +81,7 @@ export function ResizableSection({
       {/* Content — natural height, no scroll trap */}
       {open && (
         <div style={{
-          padding: '12px 14px',
+          padding: '10px 12px',
           minWidth: 0,
           overflowX: 'hidden',
         }}>

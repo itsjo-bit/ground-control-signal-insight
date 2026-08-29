@@ -87,8 +87,8 @@ const styles = `
   }
   body {
     font-family: 'IBM Plex Sans', system-ui, sans-serif;
-    background: #080B11;
-    color: #E6EBF2;
+    background: #f5f6f8;
+    color: #1a2035;
     font-size: 13px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
@@ -100,72 +100,84 @@ const styles = `
   /* Subtle scrollbars */
   ::-webkit-scrollbar { width: 4px; height: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: rgba(76,141,255,0.18); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: rgba(76,141,255,0.32); }
+  ::-webkit-scrollbar-thumb { background: rgba(29,78,216,0.18); border-radius: 2px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(29,78,216,0.32); }
 
-  /* ── V3.3 Gray + Blue design tokens ── */
+  /* ── V4.0 Scientific Mission Analysis design tokens ── */
   :root {
-    --panel:        #121822;
-    --panel-alt:    #161D28;
-    --panel-bg:     rgba(18,24,34,0.7);
-    --panel-border: rgba(46,58,79,0.8);
-    --panel-radius: 10px;
-    --border:       rgba(46,58,79,0.8);
-    --border-strong: rgba(53,67,90,0.9);
-    --text:       #E6EBF2;
-    --text-muted: #93A0B4;
-    --text-dim:   #4A5770;
-    --signal:   #34d399;
-    --warn:     #f59e0b;
-    --critical: #f87171;
-    --ai:       #6EA8FF;
+    /* shell */
+    --bg:            #f5f6f8;
+    --shell-bg:      #ffffff;
+    --shell-border:  #dde1e8;
+    --panel-bg:      #ffffff;
+    --panel-border:  #dde1e8;
+    --panel-radius:  4px;
+    --section-border: #e8eaee;
+    /* text */
+    --text:          #1a2035;
+    --text-secondary: #4a5568;
+    --text-muted:    #7a8699;
+    --text-dim:      #b0bac9;
+    /* accent */
+    --accent:        #1d4ed8;
+    --accent-light:  #eef3fc;
+    --accent-mid:    rgba(29,78,216,0.12);
+    /* borders */
+    --border:        #dde1e8;
+    --border-strong: #c8cdd7;
+    /* semantic */
+    --signal:   #16a34a;
+    --warn:     #d97706;
+    --critical: #dc2626;
+    --ai:       #1d4ed8;
+    /* fonts */
     --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
     --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
-    --risk-low-bg:       rgba(52,211,153,0.10);
-    --risk-low-color:    #34d399;
-    --risk-low-border:   rgba(52,211,153,0.28);
+    /* risk */
+    --risk-low-bg:       rgba(22,163,74,0.07);
+    --risk-low-color:    #16a34a;
+    --risk-low-border:   rgba(22,163,74,0.25);
     --risk-low-glow:     none;
-    --risk-medium-bg:    rgba(245,158,11,0.10);
-    --risk-medium-color: #f59e0b;
-    --risk-medium-border: rgba(245,158,11,0.30);
+    --risk-medium-bg:    rgba(217,119,6,0.08);
+    --risk-medium-color: #d97706;
+    --risk-medium-border: rgba(217,119,6,0.28);
     --risk-medium-glow:  none;
-    --risk-high-bg:      rgba(251,146,60,0.10);
-    --risk-high-color:   #fb923c;
-    --risk-high-border:  rgba(251,146,60,0.32);
+    --risk-high-bg:      rgba(234,88,12,0.08);
+    --risk-high-color:   #ea580c;
+    --risk-high-border:  rgba(234,88,12,0.28);
     --risk-high-glow:    none;
-    --risk-critical-bg:      rgba(248,113,113,0.10);
-    --risk-critical-color:   #f87171;
-    --risk-critical-border:  rgba(248,113,113,0.35);
+    --risk-critical-bg:      rgba(220,38,38,0.08);
+    --risk-critical-color:   #dc2626;
+    --risk-critical-border:  rgba(220,38,38,0.28);
     --risk-critical-glow:    none;
-    --btn-primary-bg:    #4C8DFF;
+    --btn-primary-bg:    #1d4ed8;
     --btn-primary-color: #ffffff;
     --btn-primary-glow:  none;
     --tab-active-glow:   none;
-    --ai-panel-border:   rgba(76,141,255,0.22);
+    --ai-panel-border:   rgba(29,78,216,0.18);
     --ai-panel-glow:     none;
-    --bg: #080B11;
   }
 
-  /* ── Panel base ── */
+  /* ── Panel base — flat, minimal rounding ── */
   .panel {
     background: var(--panel-bg);
     border: 1px solid var(--panel-border);
     border-radius: var(--panel-radius);
     padding: 14px 16px;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
     min-width: 0;
     box-sizing: border-box;
     overflow-x: hidden;
   }
   .panel h2 {
     font-family: var(--font-sans);
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 600;
     color: var(--text-muted);
-    text-transform: none;
-    letter-spacing: 0.01em;
-    margin-bottom: 12px;
-    padding-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
     border-bottom: 1px solid var(--border);
     display: flex;
     align-items: baseline;
@@ -178,55 +190,184 @@ const styles = `
     color: var(--text-muted);
     font-weight: 500;
     letter-spacing: 0.01em;
-    margin: 12px 0 6px;
+    margin: 10px 0 5px;
   }
   .panel p {
     margin-bottom: 8px;
     line-height: 1.6;
     font-size: 12.5px;
-    color: var(--text-muted);
+    color: var(--text-secondary);
   }
   .waveform-wrap {
-    background: rgba(0,0,0,0.2);
+    background: rgba(0,0,0,0.03);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 3px;
     padding: 6px 10px;
     margin-bottom: 12px;
   }
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
   th, td {
-    padding: 6px 8px;
+    padding: 5px 8px;
     text-align: left;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--section-border);
   }
   th {
-    color: var(--text-dim);
+    color: var(--text-muted);
     font-weight: 500;
     font-size: 10px;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.05em;
     font-family: var(--font-sans);
-    text-transform: none;
+    text-transform: uppercase;
   }
-  td { font-family: var(--font-mono); font-size: 12px; }
-  td:first-child { font-family: var(--font-sans); color: var(--text-muted); font-size: 12px; }
+  td { font-family: var(--font-mono); font-size: 12px; color: var(--text); }
+  td:first-child { font-family: var(--font-sans); color: var(--text-secondary); font-size: 12px; }
   code {
-    background: rgba(129,140,248,0.10);
-    color: var(--ai);
-    border-radius: 4px;
-    padding: 2px 6px;
+    background: var(--accent-light);
+    color: var(--accent);
+    border-radius: 3px;
+    padding: 1px 5px;
     font-size: 11px;
     font-family: var(--font-mono);
   }
   .ai-hero {
     border-color: var(--ai-panel-border);
-    background: rgba(8,12,20,0.96);
+    background: #fafbfd;
   }
-  .ai-hero h2 { color: var(--ai); border-bottom-color: rgba(129,140,248,0.15); }
+  .ai-hero h2 { color: var(--accent); border-bottom-color: rgba(29,78,216,0.12); }
   .approval-bar {
     background: var(--panel-bg);
     border: 1px solid var(--panel-border);
     border-radius: var(--panel-radius);
-    padding: 14px 16px;
+    padding: 12px 14px;
+  }
+
+  /* ── ApprovalBar buttons ── */
+  .btn-approve {
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-color);
+    border: 1px solid var(--btn-primary-bg);
+    border-radius: 3px;
+    padding: 7px 18px;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    letter-spacing: 0.01em;
+  }
+  .btn-approve:hover { background: #1e40af; border-color: #1e40af; }
+  .btn-override {
+    background: #f5f6f8;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-strong);
+    border-radius: 3px;
+    padding: 7px 14px;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .btn-override:hover { background: #e8eaee; }
+  .btn-reset {
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 7px 12px;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .btn-reset:hover { background: #f5f6f8; }
+
+  /* ── ApprovalBar drag list ── */
+  .drag-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 280px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 4px;
+    background: #f5f6f8;
+  }
+  .drag-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    cursor: grab;
+    font-size: 11px;
+    min-width: 0;
+  }
+  .drag-item:active { cursor: grabbing; }
+  .drag-handle { color: var(--text-dim); font-size: 13px; flex-shrink: 0; cursor: grab; }
+  .drag-rank { color: var(--text-dim); font-family: var(--font-mono); font-size: 10px; min-width: 20px; text-align: right; flex-shrink: 0; }
+  .drag-id { font-family: var(--font-mono); font-size: 11px; color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: none; }
+  .drag-type { font-family: var(--font-sans); font-size: 10px; flex-shrink: 0; }
+  .drag-crit { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
+  .drag-size { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
+
+  /* ── LinkHealthPanel whatif ── */
+  .whatif-section {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+  .whatif-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+  .whatif-label { font-size: 11px; color: var(--text-secondary); }
+  .whatif-preview-badge {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 700;
+    background: rgba(217,119,6,0.08);
+    color: var(--warn);
+    border: 1px solid rgba(217,119,6,0.25);
+    border-radius: 2px;
+    padding: 1px 5px;
+    letter-spacing: 0.06em;
+  }
+  .whatif-slider {
+    flex: 1;
+    accent-color: var(--accent);
+  }
+  .whatif-reset {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 2px 7px;
+  }
+  .whatif-reset:hover { background: #f5f6f8; }
+
+  /* ── Section header — analytical workspace style ── */
+  .section-hd {
+    font-family: var(--font-sans);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    padding-bottom: 7px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   /* ── V3.5: workspace transitions ── */
@@ -242,7 +383,7 @@ const styles = `
 
   @keyframes pulse {
     0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
+    50% { opacity: 0.4; }
   }
 `;
 
@@ -1196,59 +1337,60 @@ export default function MissionControl() {
     <>
       <style>{styles}</style>
 
-      {/* ── Top bar ─────────────────────────────────────────────────────── */}
+      {/* ── Top bar — flat scientific mission header ──────────────────────── */}
       <div style={{
-        height: 42,
-        background: 'rgba(6,9,18,0.98)',
-        borderBottom: '1px solid rgba(255,255,255,0.07)',
+        height: 44,
+        background: '#ffffff',
+        borderBottom: '1px solid #dde1e8',
         display: 'flex',
         alignItems: 'center',
         paddingLeft: 16,
         paddingRight: 12,
-        gap: 10,
+        gap: 0,
         flexShrink: 0,
         zIndex: 100,
         position: 'relative',
       }}>
-        {/* Live pulse dot */}
-        <span style={{
-          display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
-          background: '#34d399', animation: 'pulse 2.5s infinite', flexShrink: 0,
-        }} title="Live" />
+        {/* Identity — GCSI wordmark */}
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', marginRight: 20, flexShrink: 0 }}>
+          <span style={{
+            fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
+            fontSize: 13, fontWeight: 700, letterSpacing: '0.03em',
+            color: '#1a2035',
+            lineHeight: 1.1,
+          }}>
+            GCSI
+          </span>
+          <span style={{
+            fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
+            fontSize: 9, color: '#7a8699',
+            fontWeight: 400,
+            letterSpacing: '0.01em',
+            lineHeight: 1.2,
+          }}>
+            Ground Control Signal Insight
+          </span>
+        </div>
 
-        {/* Title */}
-        <span style={{
-          fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-          fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em',
-          color: '#e2e8f4',
-          flexShrink: 0,
-        }}>
-          GCSI
-        </span>
-        <span style={{
-          fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-          fontSize: 12, color: 'rgba(122,143,168,0.7)',
-          fontWeight: 400,
-          flexShrink: 0,
-        }}>
-          Ground Control Signal Insight
-        </span>
+        {/* Thin divider */}
+        <div style={{ width: 1, height: 22, background: '#dde1e8', marginRight: 16, flexShrink: 0 }} />
 
-        {/* Source mode badge — SIM for synthetic, HIST for historical replay */}
+        {/* Source mode indicator — semantic only */}
         {(() => {
           const isHistorical = sourceSummary?.mode === 'historical_replay';
           return (
             <span
               data-testid="source-mode-badge"
               style={{
-                padding: '2px 7px',
-                background: isHistorical ? 'rgba(76,141,255,0.08)' : 'rgba(245,158,11,0.08)',
-                color: isHistorical ? '#6EA8FF' : '#f59e0b',
-                border: `1px solid ${isHistorical ? 'rgba(76,141,255,0.22)' : 'rgba(245,158,11,0.22)'}`,
-                borderRadius: 4,
+                padding: '2px 6px',
+                background: isHistorical ? '#eef3fc' : 'rgba(217,119,6,0.08)',
+                color: isHistorical ? '#1d4ed8' : '#d97706',
+                border: `1px solid ${isHistorical ? 'rgba(29,78,216,0.22)' : 'rgba(217,119,6,0.25)'}`,
+                borderRadius: 3,
                 fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-                fontSize: 9, fontWeight: 600, letterSpacing: '0.04em',
+                fontSize: 9, fontWeight: 700, letterSpacing: '0.06em',
                 flexShrink: 0,
+                marginRight: 10,
               }}
               title={isHistorical ? 'Historical replay — not live telemetry' : 'Simulated synthetic scenario'}
             >
@@ -1257,74 +1399,45 @@ export default function MissionControl() {
           );
         })()}
 
-        {/* What-if indicator */}
+        {/* What-if indicator — operational context */}
         {whatIfEvals !== null && (
           <span style={{
-            padding: '2px 8px',
-            background: 'rgba(245,158,11,0.08)',
-            color: '#f59e0b',
-            border: '1px solid rgba(245,158,11,0.28)',
-            borderRadius: 4,
+            padding: '2px 6px',
+            background: 'rgba(217,119,6,0.07)',
+            color: '#d97706',
+            border: '1px solid rgba(217,119,6,0.25)',
+            borderRadius: 3,
             fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-            fontSize: 9, fontWeight: 600,
+            fontSize: 9, fontWeight: 700,
             flexShrink: 0,
+            marginRight: 8,
           }}>
-            What-if · {whatIfSnr?.toFixed(1)} dB
+            WHAT-IF · {whatIfSnr?.toFixed(1)} dB
           </span>
         )}
 
-        {/* V3.4: Decision mode badge */}
-        {decisionMode !== 'unselected' && (
-          <span style={{
-            padding: '2px 8px',
-            background: decisionMode === 'manual' ? 'rgba(52,211,153,0.07)' : 'rgba(76,141,255,0.07)',
-            color: decisionMode === 'manual' ? '#34d399' : '#6EA8FF',
-            border: `1px solid ${decisionMode === 'manual' ? 'rgba(52,211,153,0.22)' : 'rgba(76,141,255,0.22)'}`,
-            borderRadius: 4,
-            fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-            fontSize: 9, fontWeight: 600,
-            flexShrink: 0,
-          }}>
-            {decisionMode === 'manual' ? 'MANUAL' : 'AI ASSISTED'}
-          </span>
-        )}
-
-        {/* V3.4: AI lifecycle badge — provider-aware labeling */}
+        {/* AI lifecycle — only show non-standby states, keep minimal */}
         {aiLifecycle !== 'standby' && ((): React.ReactNode => {
-          // Use shared provider classifier (Phase 5.1E — one authority for provider labeling)
           const providerClass = classifyProvider(aiActualProvider ?? aiProvider);
           const badgeLabel = buildProviderBadgeLabel(aiActualProvider ?? aiProvider, aiLifecycle);
           const isLocal = providerClass.kind === 'local_deterministic';
-          const isUnknown = providerClass.kind === 'unknown';
+          const isError = aiLifecycle === 'error';
           const isReady = aiLifecycle === 'ready';
-          const bgColor = aiLifecycle === 'analyzing' ? 'rgba(76,141,255,0.07)' :
-                          aiLifecycle === 'error' ? 'rgba(248,113,113,0.07)' :
-                          isLocal ? 'rgba(245,158,11,0.07)' :
-                          isUnknown ? 'rgba(147,160,180,0.07)' :
-                          isReady ? 'rgba(52,211,153,0.07)' : 'rgba(245,158,11,0.07)';
-          const fgColor = aiLifecycle === 'analyzing' ? '#6EA8FF' :
-                          aiLifecycle === 'error' ? '#f87171' :
-                          isLocal ? '#f59e0b' :
-                          isUnknown ? 'rgba(147,160,180,0.7)' :
-                          isReady ? '#34d399' : '#f59e0b';
-          const borderColor = aiLifecycle === 'analyzing' ? 'rgba(76,141,255,0.22)' :
-                              aiLifecycle === 'error' ? 'rgba(248,113,113,0.22)' :
-                              isLocal ? 'rgba(245,158,11,0.22)' :
-                              isUnknown ? 'rgba(147,160,180,0.22)' :
-                              isReady ? 'rgba(52,211,153,0.22)' : 'rgba(245,158,11,0.22)';
+          const isAnalyzing = aiLifecycle === 'analyzing';
           const titleText = isLocal
             ? 'Deterministic local fallback — not an AI model'
-            : isUnknown
-            ? 'Provider identity unknown — advisory label only'
             : undefined;
+          const color = isError ? '#dc2626' : isLocal ? '#d97706' : isAnalyzing ? '#1d4ed8' : isReady ? '#16a34a' : '#7a8699';
+          const bg = isError ? 'rgba(220,38,38,0.07)' : isLocal ? 'rgba(217,119,6,0.07)' : isAnalyzing ? '#eef3fc' : isReady ? 'rgba(22,163,74,0.07)' : 'transparent';
+          const bdr = isError ? 'rgba(220,38,38,0.25)' : isLocal ? 'rgba(217,119,6,0.25)' : isAnalyzing ? 'rgba(29,78,216,0.22)' : isReady ? 'rgba(22,163,74,0.22)' : '#dde1e8';
           return (
             <span style={{
-              padding: '2px 8px', background: bgColor, color: fgColor,
-              border: `1px solid ${borderColor}`, borderRadius: 4,
+              padding: '2px 6px', background: bg, color,
+              border: `1px solid ${bdr}`, borderRadius: 3,
               fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-              fontSize: 9, fontWeight: 600, flexShrink: 0,
+              fontSize: 9, fontWeight: 700, flexShrink: 0, marginRight: 8,
             }} title={titleText}>
-              {badgeLabel}
+              AI · {badgeLabel}
             </span>
           );
         })()}
@@ -1341,21 +1454,27 @@ export default function MissionControl() {
           error={sourceSwitchError}
         />
 
-        {/* Action buttons */}
+        {/* Thin divider */}
+        <div style={{ width: 1, height: 22, background: '#dde1e8', marginLeft: 12, marginRight: 8, flexShrink: 0 }} />
+
+        {/* Action buttons — flat */}
         <button
           onClick={handleReset}
           disabled={loading || resetting}
           style={{
             background: 'transparent',
-            color: 'rgba(248,113,113,0.65)',
-            border: '1px solid rgba(248,113,113,0.18)',
-            borderRadius: 6, padding: '4px 12px',
+            color: '#7a8699',
+            border: '1px solid #dde1e8',
+            borderRadius: 3, padding: '4px 11px',
             fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
             fontSize: 11, fontWeight: 500,
-            cursor: 'pointer', transition: 'background 0.15s',
+            cursor: 'pointer', transition: 'background 0.12s, color 0.12s',
             opacity: (loading || resetting) ? 0.4 : 1,
+            marginRight: 4,
           }}
           title="Reload scenario from backend with randomized link conditions"
+          onMouseEnter={(e) => { if (!loading && !resetting) { (e.currentTarget as HTMLButtonElement).style.color = '#dc2626'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(220,38,38,0.35)'; } }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = '#7a8699'; (e.currentTarget as HTMLButtonElement).style.borderColor = '#dde1e8'; }}
         >
           Reset
         </button>
@@ -1363,13 +1482,13 @@ export default function MissionControl() {
           onClick={refresh}
           disabled={loading || resetting}
           style={{
-            background: 'rgba(255,255,255,0.04)',
-            color: 'rgba(226,232,244,0.6)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: 6, padding: '4px 12px',
+            background: 'transparent',
+            color: '#4a5568',
+            border: '1px solid #dde1e8',
+            borderRadius: 3, padding: '4px 11px',
             fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
             fontSize: 11, fontWeight: 500,
-            cursor: 'pointer', transition: 'background 0.15s',
+            cursor: 'pointer', transition: 'background 0.12s',
             opacity: (loading || resetting) ? 0.4 : 1,
           }}
         >
@@ -1381,9 +1500,9 @@ export default function MissionControl() {
       {loading && (
         <div style={{
           flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: '#080B11',
+          background: '#f5f6f8',
           fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-          fontSize: 12, color: 'rgba(147,160,180,0.5)',
+          fontSize: 12, color: '#7a8699',
           letterSpacing: '0.02em',
         }}>
           Loading mission data…
@@ -1393,24 +1512,24 @@ export default function MissionControl() {
       {!loading && error && (
         <div style={{
           flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: '#080B11',
+          background: '#f5f6f8',
           flexDirection: 'column', gap: 12,
         }}>
           <div style={{
             fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-            fontSize: 12, color: '#f87171',
-            padding: '10px 20px', background: 'rgba(248,113,113,0.06)',
-            border: '1px solid rgba(248,113,113,0.20)', borderRadius: 8,
+            fontSize: 12, color: '#dc2626',
+            padding: '10px 20px', background: 'rgba(220,38,38,0.05)',
+            border: '1px solid rgba(220,38,38,0.18)', borderRadius: 4,
           }}>
             Error: {error}
           </div>
           <button
             onClick={refresh}
             style={{
-              background: 'rgba(76,141,255,0.08)',
-              color: '#6EA8FF',
-              border: '1px solid rgba(76,141,255,0.22)',
-              borderRadius: 6, padding: '6px 16px',
+              background: '#eef3fc',
+              color: '#1d4ed8',
+              border: '1px solid rgba(29,78,216,0.22)',
+              borderRadius: 3, padding: '6px 16px',
               fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
               fontSize: 12, fontWeight: 500, cursor: 'pointer',
             }}
@@ -1431,9 +1550,9 @@ export default function MissionControl() {
       {/* ── Legacy mode banner ───────────────────────────────────────────── */}
       {!loading && !error && !hasDataProducts && dataProductsCount === 0 && (
         <div style={{
-          background: 'rgba(245,158,11,0.07)',
-          borderBottom: '1px solid rgba(245,158,11,0.22)',
-          padding: '10px 20px',
+          background: 'rgba(217,119,6,0.05)',
+          borderBottom: '1px solid rgba(217,119,6,0.18)',
+          padding: '8px 16px',
           display: 'flex',
           alignItems: 'center',
           gap: 14,
@@ -1442,14 +1561,14 @@ export default function MissionControl() {
         }}>
           <span style={{
             fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-            fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
-            color: '#f59e0b', flexShrink: 0,
+            fontSize: 9, fontWeight: 700, letterSpacing: '0.07em',
+            color: '#d97706', flexShrink: 0,
           }}>
             LIMITED DEMO MODE
           </span>
           <span style={{
             fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-            fontSize: 11, color: 'rgba(147,160,180,0.8)', flex: 1,
+            fontSize: 11, color: '#4a5568', flex: 1,
           }}>
             {missionState ? `${missionState.current_event} — ` : ''}
             Legacy packet scenario active. High-volume AI prioritization, anomaly analysis, and spacecraft geometry are unavailable.
@@ -1458,11 +1577,11 @@ export default function MissionControl() {
             onClick={() => handleSwitchScenario('mission_data_v3.json')}
             disabled={scenarioSwitching}
             style={{
-              padding: '5px 14px',
-              background: 'rgba(76,141,255,0.10)',
-              color: '#6EA8FF',
-              border: '1px solid rgba(76,141,255,0.30)',
-              borderRadius: 5, cursor: 'pointer', flexShrink: 0,
+              padding: '4px 12px',
+              background: '#eef3fc',
+              color: '#1d4ed8',
+              border: '1px solid rgba(29,78,216,0.28)',
+              borderRadius: 3, cursor: 'pointer', flexShrink: 0,
               fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
               fontSize: 11, fontWeight: 600,
               opacity: scenarioSwitching ? 0.5 : 1,
@@ -1530,22 +1649,22 @@ export default function MissionControl() {
               onDoubleClick={resetPanelWidth}
               title="Drag to resize · Double-click to reset"
               style={{
-                width: 5,
+                width: 4,
                 flexShrink: 0,
                 background: 'transparent',
-                borderLeft: '1px solid rgba(46,58,79,0.7)',
+                borderLeft: '1px solid #dde1e8',
                 cursor: 'col-resize',
                 position: 'relative',
                 zIndex: 30,
                 transition: 'background 0.15s, border-color 0.15s',
               }}
               onMouseEnter={(e) => {
-                (e.currentTarget as HTMLDivElement).style.background = 'rgba(76,141,255,0.12)';
-                (e.currentTarget as HTMLDivElement).style.borderLeftColor = 'rgba(76,141,255,0.40)';
+                (e.currentTarget as HTMLDivElement).style.background = 'rgba(29,78,216,0.06)';
+                (e.currentTarget as HTMLDivElement).style.borderLeftColor = 'rgba(29,78,216,0.35)';
               }}
               onMouseLeave={(e) => {
                 (e.currentTarget as HTMLDivElement).style.background = 'transparent';
-                (e.currentTarget as HTMLDivElement).style.borderLeftColor = 'rgba(46,58,79,0.7)';
+                (e.currentTarget as HTMLDivElement).style.borderLeftColor = '#dde1e8';
               }}
             >
               {/* grip dots */}
@@ -1558,8 +1677,8 @@ export default function MissionControl() {
               }}>
                 {[0,1,2].map((i) => (
                   <div key={i} style={{
-                    width: 3, height: 3, borderRadius: '50%',
-                    background: 'rgba(76,141,255,0.30)',
+                    width: 2, height: 2, borderRadius: '50%',
+                    background: 'rgba(29,78,216,0.25)',
                   }} />
                 ))}
               </div>

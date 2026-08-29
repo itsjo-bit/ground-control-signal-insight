@@ -19,11 +19,11 @@
 
 import { formatBitsAsDataVolume } from '../utils/formatters';
 
-const DETERM_COLOR = 'var(--signal, #35e7b7)';
-const WARN_COLOR   = 'var(--warn,   #ffb648)';
-const CRIT_COLOR   = 'var(--critical, #ff4d5e)';
-const DIM          = 'var(--text-dim,  #57606a)';
-const MUTED        = 'var(--text-muted, #8b949e)';
+const DETERM_COLOR = 'var(--signal, #16a34a)';
+const WARN_COLOR   = 'var(--warn,   #d97706)';
+const CRIT_COLOR   = 'var(--critical, #dc2626)';
+const DIM          = 'var(--text-dim,  #b0bac9)';
+const MUTED        = 'var(--text-muted, #7a8699)';
 
 interface Props {
   availableCapacityBits: number;
@@ -90,8 +90,8 @@ export function CommBudgetBar({
       {/* Fill bar */}
       <div style={{
         height: 8, borderRadius: 2, width: '100%',
-        background: 'rgba(255,255,255,0.06)',
-        border: '1px solid rgba(255,255,255,0.07)',
+        background: '#e8eaee',
+        border: '1px solid #dde1e8',
         overflow: 'hidden',
       }}>
         <div style={{

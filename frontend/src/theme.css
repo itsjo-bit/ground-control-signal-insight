@@ -3,7 +3,9 @@
  * Import once in main.tsx. All components reference these variables.
  * Do NOT duplicate hex values inline — use the variables defined here.
  *
- * V3.3 — Gray + Blue palette.
+ * V4.0 — Scientific Mission Analysis workspace.
+ * Light analytical shell + dark 3D viewport anchor.
+ * IBM-like clarity and hierarchy.
  */
 
 :root {
@@ -11,63 +13,80 @@
   --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
   --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
 
-  /* ── Base background ── */
-  --bg: #080B11;
+  /* ── Application shell — light analytical workspace ── */
+  --bg:           #f5f6f8;   /* page background: off-white */
+  --shell-bg:     #ffffff;   /* panel surface */
+  --shell-border: #dde1e8;   /* thin cool gray dividers */
 
-  /* ── Surface / panel ── */
-  --panel-bg: rgba(18, 24, 34, 0.70);
-  --panel-border: rgba(46, 58, 79, 0.80);
-  --panel-radius: 10px;
+  /* ── Navigation rail ── */
+  --nav-bg:       #ffffff;
+  --nav-border:   #dde1e8;
+  --nav-text:     #4a5568;
+  --nav-text-dim: #a0aab8;
+  --nav-active-bg: #eef3fc;
+  --nav-active-color: #1d4ed8;
+  --nav-indicator: #1d4ed8;
 
-  /* ── Border shades ── */
-  --border:       rgba(46, 58, 79, 0.80);
-  --border-strong: rgba(53, 67, 90, 0.90);
+  /* ── Right analytical workspace ── */
+  --panel-bg:     #ffffff;
+  --panel-border: #dde1e8;
+  --panel-radius: 4px;
+  --section-border: #e8eaee;
 
   /* ── Text ── */
-  --text:       #E6EBF2;
-  --text-muted: #93A0B4;
-  --text-dim:   #4A5770;
+  --text:         #1a2035;   /* near-black navy */
+  --text-secondary: #4a5568; /* blue-gray secondary */
+  --text-muted:   #7a8699;   /* muted labels */
+  --text-dim:     #b0bac9;   /* very dim metadata */
 
-  /* ── Semantic accent colours ── */
-  --signal:   #34d399;  /* green — good / delivered */
-  --warn:     #f59e0b;  /* amber — caution */
-  --critical: #f87171;  /* red — danger */
-  --ai:       #6EA8FF;  /* blue — AI / provider */
+  /* ── Primary accent — one mission blue ── */
+  --accent:       #1d4ed8;   /* IBM-like mission blue */
+  --accent-light: #eef3fc;   /* blue tint for hover / selection */
+  --accent-mid:   rgba(29,78,216,0.12);
 
-  /* ── Background radial glows ── */
-  --glow-tl: radial-gradient(ellipse 900px 600px at -10% -5%,  rgba(76,141,255,0.05) 0%, transparent 70%);
-  --glow-br: radial-gradient(ellipse 700px 500px at 110% 110%, rgba(76,141,255,0.04) 0%, transparent 70%);
+  /* ── Semantic — warning / error / success ── */
+  --signal:   #16a34a;  /* green — delivered / success */
+  --warn:     #d97706;  /* amber — degraded / caution */
+  --critical: #dc2626;  /* red — critical / failure */
+  --ai:       #1d4ed8;  /* blue — AI accent (same as primary) */
 
-  /* ── Risk badge — flat fills ── */
-  --risk-low-bg:      rgba(52, 211, 153, 0.10);
-  --risk-low-color:   #34d399;
-  --risk-low-border:  rgba(52, 211, 153, 0.28);
+  /* ── 3D viewport — dark anchor (intentional exception) ── */
+  --viewport-bg: #050910;
+
+  /* ── Borders ── */
+  --border:        #dde1e8;
+  --border-strong: #c8cdd7;
+
+  /* ── Risk semantics (light background variants) ── */
+  --risk-low-bg:      rgba(22, 163, 74, 0.07);
+  --risk-low-color:   #16a34a;
+  --risk-low-border:  rgba(22, 163, 74, 0.25);
   --risk-low-glow:    none;
 
-  --risk-medium-bg:    rgba(245, 158, 11, 0.10);
-  --risk-medium-color: #f59e0b;
-  --risk-medium-border: rgba(245, 158, 11, 0.30);
+  --risk-medium-bg:    rgba(217, 119, 6, 0.08);
+  --risk-medium-color: #d97706;
+  --risk-medium-border: rgba(217, 119, 6, 0.28);
   --risk-medium-glow:  none;
 
-  --risk-high-bg:      rgba(251, 146, 60, 0.10);
-  --risk-high-color:   #fb923c;
-  --risk-high-border:  rgba(251, 146, 60, 0.32);
+  --risk-high-bg:      rgba(234, 88, 12, 0.08);
+  --risk-high-color:   #ea580c;
+  --risk-high-border:  rgba(234, 88, 12, 0.28);
   --risk-high-glow:    none;
 
-  --risk-critical-bg:      rgba(248, 113, 113, 0.10);
-  --risk-critical-color:   #f87171;
-  --risk-critical-border:  rgba(248, 113, 113, 0.35);
+  --risk-critical-bg:      rgba(220, 38, 38, 0.08);
+  --risk-critical-color:   #dc2626;
+  --risk-critical-border:  rgba(220, 38, 38, 0.28);
   --risk-critical-glow:    none;
 
   /* ── Primary action button ── */
-  --btn-primary-bg:    #4C8DFF;
+  --btn-primary-bg:    #1d4ed8;
   --btn-primary-color: #ffffff;
   --btn-primary-glow:  none;
 
-  /* ── Active tab ── */
+  /* ── Tab active ── */
   --tab-active-glow: none;
 
   /* ── AI hero panel accent ── */
-  --ai-panel-border: rgba(76, 141, 255, 0.22);
+  --ai-panel-border: rgba(29, 78, 216, 0.18);
   --ai-panel-glow:   none;
 }

@@ -1,7 +1,8 @@
 /**
  * NavigationSidebar — narrow persistent left navigation rail.
  *
- * V3.3: Config button now triggers navigation to 'config' view.
+ * V4.0: Light analytical shell. Blue indicator line for active item.
+ * No neon glow. Restrained, IBM-like navigation.
  */
 
 export type NavSection =
@@ -39,9 +40,9 @@ interface Props {
 export function NavigationSidebar({ active, onNavigate }: Props) {
   return (
     <nav style={{
-      width: 64,
-      background: 'rgba(6,9,18,0.98)',
-      borderRight: '1px solid rgba(255,255,255,0.06)',
+      width: 60,
+      background: '#ffffff',
+      borderRight: '1px solid #dde1e8',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
@@ -49,23 +50,23 @@ export function NavigationSidebar({ active, onNavigate }: Props) {
       zIndex: 20,
       position: 'relative',
     }}>
-      {/* GCSI logo mark */}
+      {/* GCSI mark */}
       <div style={{
         width: '100%',
-        padding: '14px 0 12px',
+        padding: '12px 0 10px',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
-        marginBottom: 10,
+        borderBottom: '1px solid #e8eaee',
+        marginBottom: 8,
         flexShrink: 0,
       }}>
         <div style={{
           fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-          fontSize: 9,
+          fontSize: 8,
           fontWeight: 700,
-          color: 'rgba(76,141,255,0.75)',
-          letterSpacing: '0.12em',
+          color: '#1d4ed8',
+          letterSpacing: '0.10em',
           textTransform: 'uppercase',
         }}>
           GCS
@@ -76,9 +77,9 @@ export function NavigationSidebar({ active, onNavigate }: Props) {
       <div style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: 4,
+        gap: 2,
         width: '100%',
-        padding: '0 6px',
+        padding: '0 4px',
         flex: 1,
       }}>
         {NAV_ITEMS.map((item) => {
@@ -94,18 +95,19 @@ export function NavigationSidebar({ active, onNavigate }: Props) {
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: 4,
-                padding: '9px 0',
-                background: isActive ? 'rgba(76,141,255,0.12)' : 'transparent',
-                border: `1px solid ${isActive ? 'rgba(76,141,255,0.28)' : 'transparent'}`,
-                borderRadius: 8,
+                gap: 3,
+                padding: '8px 0',
+                background: isActive ? '#eef3fc' : 'transparent',
+                border: 'none',
+                borderLeft: isActive ? '3px solid #1d4ed8' : '3px solid transparent',
+                borderRadius: '0 3px 3px 0',
                 cursor: 'pointer',
-                transition: 'background 0.15s, border-color 0.15s',
+                transition: 'background 0.12s',
                 width: '100%',
               }}
               onMouseEnter={(e) => {
                 if (!isActive) {
-                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.04)';
+                  (e.currentTarget as HTMLButtonElement).style.background = '#f5f6f8';
                 }
               }}
               onMouseLeave={(e) => {
@@ -115,21 +117,21 @@ export function NavigationSidebar({ active, onNavigate }: Props) {
               }}
             >
               <span style={{
-                fontSize: 14,
-                color: isActive ? '#4C8DFF' : 'rgba(147,160,180,0.5)',
+                fontSize: 13,
+                color: isActive ? '#1d4ed8' : '#7a8699',
                 lineHeight: 1,
-                transition: 'color 0.15s',
+                transition: 'color 0.12s',
               }}>
                 {item.icon}
               </span>
               <span style={{
                 fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
                 fontSize: 8,
-                fontWeight: 500,
-                color: isActive ? '#4C8DFF' : 'rgba(147,160,180,0.40)',
-                letterSpacing: '0.03em',
+                fontWeight: isActive ? 600 : 400,
+                color: isActive ? '#1d4ed8' : '#a0aab8',
+                letterSpacing: '0.02em',
                 lineHeight: 1,
-                transition: 'color 0.15s',
+                transition: 'color 0.12s',
               }}>
                 {item.label}
               </span>
@@ -141,8 +143,8 @@ export function NavigationSidebar({ active, onNavigate }: Props) {
       {/* Config button — bottom utility area */}
       <div style={{
         width: '100%',
-        borderTop: '1px solid rgba(255,255,255,0.05)',
-        padding: '8px 6px',
+        borderTop: '1px solid #e8eaee',
+        padding: '6px 4px',
         marginTop: 'auto',
       }}>
         <button
@@ -154,18 +156,19 @@ export function NavigationSidebar({ active, onNavigate }: Props) {
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            gap: 4,
+            gap: 3,
             padding: '7px 0',
-            borderRadius: 8,
+            borderRadius: '0 3px 3px 0',
             width: '100%',
-            background: active === 'config' ? 'rgba(76,141,255,0.12)' : 'transparent',
-            border: `1px solid ${active === 'config' ? 'rgba(76,141,255,0.28)' : 'transparent'}`,
+            background: active === 'config' ? '#eef3fc' : 'transparent',
+            border: 'none',
+            borderLeft: active === 'config' ? '3px solid #1d4ed8' : '3px solid transparent',
             cursor: 'pointer',
-            transition: 'background 0.15s, border-color 0.15s',
+            transition: 'background 0.12s',
           }}
           onMouseEnter={(e) => {
             if (active !== 'config') {
-              (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.04)';
+              (e.currentTarget as HTMLButtonElement).style.background = '#f5f6f8';
             }
           }}
           onMouseLeave={(e) => {
@@ -175,16 +178,16 @@ export function NavigationSidebar({ active, onNavigate }: Props) {
           }}
         >
           <span style={{
-            fontSize: 13,
-            color: active === 'config' ? '#4C8DFF' : 'rgba(147,160,180,0.35)',
-            transition: 'color 0.15s',
+            fontSize: 12,
+            color: active === 'config' ? '#1d4ed8' : '#a0aab8',
+            transition: 'color 0.12s',
           }}>⚙</span>
           <span style={{
             fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-            fontSize: 8, fontWeight: 500,
-            color: active === 'config' ? '#4C8DFF' : 'rgba(147,160,180,0.30)',
-            letterSpacing: '0.03em',
-            transition: 'color 0.15s',
+            fontSize: 8, fontWeight: active === 'config' ? 600 : 400,
+            color: active === 'config' ? '#1d4ed8' : '#a0aab8',
+            letterSpacing: '0.02em',
+            transition: 'color 0.12s',
           }}>
             Config
           </span>
