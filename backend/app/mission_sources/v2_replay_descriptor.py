@@ -44,7 +44,24 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .errors import MissionSourceUnavailableError, MissionSourceValidationError
+from .replay_descriptor import replay_risk_level_from_score
 
+
+# ---------------------------------------------------------------------------
+# Required semantic roles — complete role set for V2 product policy
+# ---------------------------------------------------------------------------
+
+_REQUIRED_SEMANTIC_ROLES: frozenset[str] = frozenset({
+    "instrument_diagnostic",
+    "radiometry_science",
+    "ultraviolet_observation",
+    "visible_imaging",
+    "magnetic_field",
+    "plasma_particles",
+    "energetic_particles",
+    "radio_plasma_survey",
+    "radio_plasma_burst",
+})
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -349,7 +366,60 @@ class HistoricalReplayV2Descriptor(BaseModel):
 
     @model_validator(mode="after")
     def _validate_descriptor(self) -> "HistoricalReplayV2Descriptor":
-        # Recompute descriptor_id and verify
+        # ---- Cross-field: size_policy_id == size_policy.policy_id ----
+        if self.size_policy_id != self.size_policy.policy_id:
+            raise ValueError(
+                f"size_policy_id {self.size_policy_id!r} != "
+                f"size_policy.policy_id {self.size_policy.policy_id!r}. "
+                "Cross-field invariant violated."
+            )
+
+        # ---- Cross-field: product_policy_id == product_policy.policy_id ----
+        if self.product_policy_id != self.product_policy.policy_id:
+            raise ValueError(
+                f"product_policy_id {self.product_policy_id!r} != "
+                f"product_policy.policy_id {self.product_policy.policy_id!r}. "
+                "Cross-field invariant violated."
+            )
+
+        # ---- Product policy: no duplicate semantic roles ----
+        roles_seen: list[str] = []
+        for entry in self.product_policy.entries:
+            if entry.semantic_role in roles_seen:
+                raise ValueError(
+                    f"Duplicate semantic role {entry.semantic_role!r} in product_policy.entries."
+                )
+            roles_seen.append(entry.semantic_role)
+        roles_present = set(roles_seen)
+
+        # ---- Product policy: complete required role set ----
+        missing_roles = _REQUIRED_SEMANTIC_ROLES - roles_present
+        if missing_roles:
+            raise ValueError(
+                f"product_policy.entries is missing required semantic roles: "
+                f"{sorted(missing_roles)!r}."
+            )
+
+        # ---- Queue membership: eligible_logical_count > 0 ----
+        if self.queue_membership_policy.eligible_logical_count <= 0:
+            raise ValueError(
+                f"queue_membership_policy.eligible_logical_count must be > 0; "
+                f"got {self.queue_membership_policy.eligible_logical_count}."
+            )
+
+        # ---- Risk level consistency ----
+        expected_risk_level = replay_risk_level_from_score(
+            self.modeled_mission_state.risk_score
+        )
+        if self.modeled_mission_state.risk_level != expected_risk_level:
+            raise ValueError(
+                f"modeled_mission_state.risk_level {self.modeled_mission_state.risk_level!r} "
+                f"!= replay_risk_level_from_score({self.modeled_mission_state.risk_score}) "
+                f"= {expected_risk_level!r}. "
+                "Cross-field risk level consistency violated."
+            )
+
+        # ---- descriptor_id recomputation and verification ----
         expected_id = compute_descriptor_id(self)
         if self.descriptor_id != expected_id:
             raise ValueError(

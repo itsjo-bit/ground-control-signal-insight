@@ -472,14 +472,30 @@ def load_verified_v2_source_graph(
                     f"computed={computed_snap_id!r} stored={row.snapshot_id!r}."
                 )
 
-        # Cross-check: observation_stop_utc
+        # Cross-check: observation_stop_utc — FAIL CLOSED (B4 Step 0)
         if row.observation_stop_utc is not None and product.observation_stop_utc is not None:
             stored_stop = _normalize_utc_iso(row.observation_stop_utc)
             product_stop = product.observation_stop_utc.astimezone(timezone.utc).isoformat()
             if stored_stop != product_stop:
-                logger.warning(
-                    "Stop time mismatch for %s: ledger=%s snapshot=%s",
-                    row.source_record_id, stored_stop, product_stop,
+                raise ValueError(
+                    f"observation_stop_utc mismatch for {row.source_record_id!r}: "
+                    f"ledger={stored_stop!r} snapshot={product_stop!r}. "
+                    "Source integrity check failed — fail closed."
+                )
+
+        # Cross-check: observation_start_utc where both sides provide it — FAIL CLOSED (B4 Step 0)
+        if (
+            hasattr(row, "observation_start_utc")
+            and row.observation_start_utc is not None
+            and product.observation_start_utc is not None
+        ):
+            stored_start = _normalize_utc_iso(row.observation_start_utc)
+            product_start = product.observation_start_utc.astimezone(timezone.utc).isoformat()
+            if stored_start != product_start:
+                raise ValueError(
+                    f"observation_start_utc mismatch for {row.source_record_id!r}: "
+                    f"ledger={stored_start!r} snapshot={product_start!r}. "
+                    "Source integrity check failed — fail closed."
                 )
 
         snapshots_by_source_record_id[row.source_record_id] = (product, provenance)
@@ -584,7 +600,7 @@ def load_verified_v2_source_graph(
                     f"references source_record_id {srid!r} not in loaded snapshots."
                 )
 
-        # Verify all provenance_ids resolve
+        # Verify all provenance_ids resolve — FAIL CLOSED (B4 Step 0)
         for prov_id in entry.provenance_ids:
             found = False
             for srid in entry.source_record_ids:
@@ -594,9 +610,11 @@ def load_verified_v2_source_graph(
                         found = True
                         break
             if not found:
-                logger.warning(
-                    "Reconciliation entry %s: provenance_id %s not matched (may differ by ledger row)",
-                    entry.logical_product_id, prov_id,
+                raise ValueError(
+                    f"Reconciliation entry {entry.logical_product_id!r}: "
+                    f"provenance_id {prov_id!r} does not resolve to any loaded snapshot "
+                    "for this logical product. "
+                    "Source provenance trust boundary violated — fail closed."
                 )
 
     # -----------------------------------------------------------------------

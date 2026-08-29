@@ -1,25 +1,29 @@
-"""GCSI Phase 6E-C5 / C5.1 — Historical Replay Provider.
+"""GCSI Phase 6E-C5 / C5.1 / B4 — Historical Replay Provider.
 
 Implements :class:`BaseMissionSourceProvider` for the ``historical_replay``
 source mode.
 
 Provider responsibilities
 -------------------------
-- Descriptor IO (via load_historical_replay_descriptor)
+- Descriptor IO (via load_historical_replay_descriptor / load_v2_replay_descriptor)
 - Descriptor source_ref trust boundary (lexical + symlink-resolved containment)
+- Safe schema discrimination (V1 vs V2 descriptor generation)
 - Snapshot-path resolution (repository-relative, symlink-safe)
 - Verified snapshot loading (via HorizonsSnapshotStore / PdsArchiveSnapshotStore)
+- V2 source graph loading and assembly via ReplayAssemblerV2
 - Error normalization (MissionSourceUnavailableError / MissionSourceValidationError)
-- MissionSourceBundle construction
+- MissionSourceBundle construction with caller-provided source_ref
 
 Architecture separation
 -----------------------
 This provider performs local file IO ONLY through:
-    - load_historical_replay_descriptor
-    - HorizonsSnapshotStore.load
-    - PdsArchiveSnapshotStore.load
+    - load_historical_replay_descriptor (V1)
+    - load_v2_replay_descriptor (V2 descriptor)
+    - load_verified_v2_source_graph (V2 source graph + 535 snapshots)
+    - HorizonsSnapshotStore.load (V1 only)
+    - PdsArchiveSnapshotStore.load (V1 only)
 
-ReplayAssembler is pure and performs zero IO.
+ReplayAssembler (V1) and ReplayAssemblerV2 are pure and perform zero IO.
 
 Repository root
 ---------------
@@ -51,6 +55,19 @@ source_ref undergoes two layers of validation in _resolve_descriptor_path():
    - Resolved absolute path must remain inside ``<repo>/data/replays/``
    - This catches symlink escapes even when the lexical path looks safe
 
+Schema discrimination (Phase B4)
+---------------------------------
+After _resolve_descriptor_path() completes, a bounded JSON header read
+performs safe schema discrimination:
+
+    - Bounded read of already-validated resolved path
+    - Check "schema" (V2) or "descriptor_schema" (V1)
+    - V1 → existing V1 loader path unchanged
+    - V2 → V2 loader path
+    - Unknown schema → MissionSourceValidationError
+    - Malformed JSON → MissionSourceValidationError
+    - No filename heuristics
+
 Security/reference split:
     The *resolved* path is used for IO only.
     The *caller-provided* source_ref is stored unchanged in the bundle.
@@ -61,15 +78,13 @@ Security invariants
 - Snapshot symlink resolution is checked against the repository root.
 - Absolute filesystem paths are never exposed in public exception messages.
 - source_ref is stored as-is (opaque caller-provided string).
-
-Dormancy
---------
-This provider is callable directly in tests but NOT wired into state.py,
-API routes, or application startup.  See Phase 6E-C6 for activation.
+- V2 source graph errors are wrapped as MissionSourceValidationError.
+- No silent fallback between descriptor generations.
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from .base import BaseMissionSourceProvider
@@ -110,6 +125,26 @@ _DESCRIPTOR_PREFIX: str = "data/replays/"
 
 # Resolved trusted root for descriptor containment check.
 _REPLAYS_ROOT: Path = (_REPO_ROOT / "data" / "replays").resolve()
+
+# ---------------------------------------------------------------------------
+# Schema discrimination constants (B4 safe bounded read)
+# ---------------------------------------------------------------------------
+
+#: Bounded read size for schema discrimination (64 KiB — same as loader limits).
+_SCHEMA_DISC_MAX_BYTES: int = 64 * 1024
+
+# V1 descriptor schema identifier
+_V1_SCHEMA: str = "gcsi.historical_replay_descriptor"
+_V1_VERSION: int = 1
+# V1 used "descriptor_schema" as key in JSON; "descriptor_version" for version
+_V1_SCHEMA_KEY: str = "descriptor_schema"
+_V1_VERSION_KEY: str = "descriptor_version"
+
+# V2 descriptor schema identifier
+_V2_SCHEMA: str = "gcsi.historical_replay_v2_descriptor"
+_V2_VERSION: int = 1
+_V2_SCHEMA_KEY: str = "schema"
+_V2_VERSION_KEY: str = "schema_version"
 
 
 # ---------------------------------------------------------------------------
@@ -310,6 +345,72 @@ def _resolve_snapshot_path(relative_path: str) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# Schema discriminator — bounded local JSON read (B4 Section 13)
+# ---------------------------------------------------------------------------
+
+
+def _discriminate_descriptor_schema(resolved_path: Path) -> str:
+    """Perform a bounded local JSON read to discriminate descriptor generation.
+
+    Only called on a path that has already been fully validated by
+    _resolve_descriptor_path() (lexical + containment + existence checks).
+
+    Returns one of:
+        "V1" — V1 descriptor (gcsi.historical_replay_descriptor)
+        "V2" — V2 descriptor (gcsi.historical_replay_v2_descriptor)
+
+    Raises:
+        MissionSourceValidationError — malformed JSON or unknown schema.
+    """
+    try:
+        size = resolved_path.stat().st_size
+        if size > _SCHEMA_DISC_MAX_BYTES:
+            raise MissionSourceValidationError(
+                "Replay descriptor file exceeds maximum allowed size."
+            )
+        raw = resolved_path.read_bytes()[:_SCHEMA_DISC_MAX_BYTES]
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise MissionSourceValidationError(
+                "Replay descriptor is not valid JSON."
+            )
+    except (MissionSourceValidationError, MissionSourceUnavailableError):
+        raise
+    except OSError as exc:
+        raise MissionSourceUnavailableError(
+            "Replay descriptor is not available."
+        ) from exc
+
+    if not isinstance(data, dict):
+        raise MissionSourceValidationError(
+            "Replay descriptor JSON top level is not an object."
+        )
+
+    # Check V2 schema first (uses "schema" key)
+    v2_schema = data.get(_V2_SCHEMA_KEY)
+    if v2_schema == _V2_SCHEMA:
+        return "V2"
+
+    # Check V1 schema (uses "descriptor_schema" key)
+    v1_schema = data.get(_V1_SCHEMA_KEY)
+    if v1_schema == _V1_SCHEMA:
+        return "V1"
+
+    # Unknown or missing schema — no fallback, fail closed
+    if v2_schema is not None or v1_schema is not None:
+        raise MissionSourceValidationError(
+            "Replay descriptor has an unknown schema. "
+            "Only 'gcsi.historical_replay_descriptor' (V1) and "
+            "'gcsi.historical_replay_v2_descriptor' (V2) are supported."
+        )
+    raise MissionSourceValidationError(
+        "Replay descriptor has no recognized schema field. "
+        "Expected 'schema' (V2) or 'descriptor_schema' (V1) at root level."
+    )
+
+
+# ---------------------------------------------------------------------------
 # HistoricalReplayProvider
 # ---------------------------------------------------------------------------
 
@@ -368,6 +469,8 @@ class HistoricalReplayProvider(BaseMissionSourceProvider):
     def load(self, source_ref: str) -> MissionSourceBundle:
         """Load a historical replay bundle from *source_ref*.
 
+        Dispatches to V1 or V2 load path based on safe schema discrimination.
+
         Parameters
         ----------
         source_ref:
@@ -386,7 +489,8 @@ class HistoricalReplayProvider(BaseMissionSourceProvider):
 
         MissionSourceValidationError
             If the descriptor fails validation, any snapshot fails integrity
-            re-validation, cross-source semantic checks fail, or assembly fails.
+            re-validation, cross-source semantic checks fail, assembly fails,
+            or the descriptor schema is unknown.
         """
         # ----------------------------------------------------------------
         # Step 1: Validate source_ref and resolve descriptor path
@@ -397,7 +501,24 @@ class HistoricalReplayProvider(BaseMissionSourceProvider):
             raise
 
         # ----------------------------------------------------------------
-        # Step 2: Load and validate the descriptor content
+        # Step 2: Safe schema discrimination (bounded JSON read — no filename heuristics)
+        # ----------------------------------------------------------------
+        generation = _discriminate_descriptor_schema(descriptor_path)
+
+        if generation == "V2":
+            return self._load_v2(source_ref=source_ref, descriptor_path=descriptor_path)
+        else:
+            # generation == "V1"
+            return self._load_v1(source_ref=source_ref, descriptor_path=descriptor_path)
+
+    # ----------------------------------------------------------------
+    # V1 load path (unchanged semantics from Phase 6E-C5)
+    # ----------------------------------------------------------------
+
+    def _load_v1(self, source_ref: str, descriptor_path: Path) -> MissionSourceBundle:
+        """Load a V1 historical replay bundle."""
+        # ----------------------------------------------------------------
+        # Step 2: Load and validate the V1 descriptor content
         # ----------------------------------------------------------------
         try:
             descriptor = load_historical_replay_descriptor(descriptor_path)
@@ -507,6 +628,89 @@ class HistoricalReplayProvider(BaseMissionSourceProvider):
         return MissionSourceBundle(
             scenario=scenario,
             provenance=manifest,
+            provider_name=self.provider_name,
+            source_mode=self.source_mode,
+            source_ref=source_ref,  # opaque caller-provided string, unchanged
+        )
+
+    # ----------------------------------------------------------------
+    # V2 load path (Phase B4)
+    # ----------------------------------------------------------------
+
+    def _load_v2(self, source_ref: str, descriptor_path: Path) -> MissionSourceBundle:
+        """Load a V2 historical replay bundle.
+
+        Loads the V2 descriptor, loads and verifies the complete source graph
+        (411 candidates / 535 snapshots / 403 eligible), assembles the bundle
+        via ReplayAssemblerV2, and wraps all errors as MissionSourceValidationError.
+
+        The caller-provided source_ref is preserved as the bundle's source_ref
+        so that reset semantics work correctly.
+
+        No network access. All IO is local and offline.
+        """
+        from .v2_replay_descriptor import load_v2_replay_descriptor
+        from .v2_source_graph import load_verified_v2_source_graph
+        from .v2_replay_assembler import ReplayAssemblerV2
+
+        # ----------------------------------------------------------------
+        # Step 2: Load and validate the V2 descriptor
+        # ----------------------------------------------------------------
+        try:
+            descriptor = load_v2_replay_descriptor(descriptor_path)
+        except (MissionSourceUnavailableError, MissionSourceValidationError):
+            raise
+        except Exception as exc:
+            raise MissionSourceValidationError(
+                "V2 replay descriptor could not be loaded."
+            ) from exc
+
+        # ----------------------------------------------------------------
+        # Step 3: Load and fully verify the V2 source graph
+        # ----------------------------------------------------------------
+        try:
+            source_graph = load_verified_v2_source_graph()
+        except ValueError as exc:
+            raise MissionSourceValidationError(
+                f"V2 source graph verification failed: {exc}"
+            ) from exc
+        except RuntimeError as exc:
+            raise MissionSourceValidationError(
+                f"V2 source graph contradiction: {exc}"
+            ) from exc
+        except (MissionSourceUnavailableError, MissionSourceValidationError):
+            raise
+        except Exception as exc:
+            raise MissionSourceValidationError(
+                "V2 source graph could not be loaded."
+            ) from exc
+
+        # ----------------------------------------------------------------
+        # Step 4: Assemble MissionSourceBundle (pure, no IO)
+        # The assembler receives source_ref so the bundle carries the
+        # caller-provided descriptor path (not the source_bundle_ref).
+        # ----------------------------------------------------------------
+        try:
+            bundle = ReplayAssemblerV2.assemble(
+                descriptor=descriptor,
+                source_graph=source_graph,
+                source_ref=source_ref,
+            )
+        except MissionSourceValidationError:
+            raise
+        except Exception as exc:
+            raise MissionSourceValidationError(
+                "V2 historical replay assembly failed."
+            ) from exc
+
+        # ----------------------------------------------------------------
+        # Step 5: Override provider_name and source_mode with canonical values
+        # The assembler returns its own provider_name; the provider wraps it
+        # with its own identity to preserve the single provider contract.
+        # ----------------------------------------------------------------
+        return MissionSourceBundle(
+            scenario=bundle.scenario,
+            provenance=bundle.provenance,
             provider_name=self.provider_name,
             source_mode=self.source_mode,
             source_ref=source_ref,  # opaque caller-provided string, unchanged

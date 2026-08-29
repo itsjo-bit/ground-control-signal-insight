@@ -83,7 +83,6 @@ from .v2_replay_descriptor import HistoricalReplayV2Descriptor
 from .v2_replay_policy import (
     PJ62_V2_MODELED_LINK_INPUTS,
     PJ62_V2_MODELED_MISSION_STATE,
-    get_policy_entry,
     resolve_semantic_role,
 )
 from .v2_source_graph import VerifiedV2SourceGraph
@@ -171,6 +170,7 @@ def _mrec(
     pid: str,
     policy_version: str,
     notes: Optional[str] = None,
+    parents: tuple[str, ...] = (),
 ) -> ProvenanceRecord:
     return ProvenanceRecord(
         provenance_id=pid,
@@ -178,6 +178,7 @@ def _mrec(
         source_system=_MODELED_SOURCE_SYSTEM,
         source_version=policy_version,
         validation_status=ProvenanceValidationStatus.VALIDATED,
+        parent_provenance_ids=parents,
         notes=notes,
     )
 
@@ -204,6 +205,7 @@ class ReplayAssemblerV2:
         *,
         descriptor: HistoricalReplayV2Descriptor,
         source_graph: VerifiedV2SourceGraph,
+        source_ref: Optional[str] = None,
     ) -> MissionSourceBundle:
         """Assemble a complete MissionSourceBundle from descriptor + source graph.
 
@@ -213,6 +215,11 @@ class ReplayAssemblerV2:
             Validated V2 descriptor.
         source_graph:
             Fully verified V2 source graph.
+        source_ref:
+            Caller-provided opaque source reference (descriptor path).
+            If None, falls back to descriptor.source_bundle_ref (legacy).
+            The provider MUST pass the original caller source_ref so that
+            reset semantics work correctly.
 
         Returns
         -------
@@ -235,6 +242,23 @@ class ReplayAssemblerV2:
                 f"Descriptor replay_id {descriptor.replay_id!r} "
                 f"!= source graph replay_id {source_graph.source_bundle.replay_id!r}."
             )
+
+        # ---- Cross-bind: queue count == source graph eligible logical count ----
+        if descriptor.queue_membership_policy.eligible_logical_count != source_graph.eligible_logical_count:
+            raise MissionSourceValidationError(
+                f"Descriptor queue_membership_policy.eligible_logical_count "
+                f"{descriptor.queue_membership_policy.eligible_logical_count} != "
+                f"source_graph.eligible_logical_count {source_graph.eligible_logical_count}."
+            )
+
+        # ---- Build descriptor-based product policy lookup (Section 8 authority) ----
+        # This is the canonical policy authority for runtime assembly.
+        # Module-level constants may remain as default builder values but
+        # runtime assembly MUST consume the descriptor's policy.
+        descriptor_policy_by_role: dict[str, object] = {
+            entry.semantic_role: entry
+            for entry in descriptor.product_policy.entries
+        }
 
         # ---- Compute size fallback from eligible exact-size evidence ----
         exact_bytes_pool: list[int] = []
@@ -273,6 +297,21 @@ class ReplayAssemblerV2:
         fallback_bytes = statistics.median_low(exact_bytes_pool)
         fallback_size_bits = fallback_bytes * 8
 
+        # ---- Collect exact-source provenance IDs for the evidence pool ----
+        # (source_record_ids whose snapshots contributed to the exact_bytes_pool)
+        exact_source_prov_ids: list[str] = []
+        for srid in sorted(eligible_srids):  # sorted for determinism
+            if srid not in snap_idx:
+                continue
+            product, prov = snap_idx[srid]
+            if product.total_data_size_bytes is not None and product.total_data_size_bytes > 0:
+                all_exact = all(
+                    f.size_certainty == ArchiveDataFileSizeCertainty.SIZE_METADATA_EXACT
+                    for f in product.data_files
+                )
+                if all_exact:
+                    exact_source_prov_ids.append(prov.provenance_id)
+
         # ---- Build shared modeled policy provenance records ----
         # Policy record — covers all modeled policy fields (scores, deadline, queue, etc.)
         policy_payload = json.dumps({
@@ -303,8 +342,31 @@ class ReplayAssemblerV2:
             f"GCSI modeled V2 replay policy for {descriptor.replay_id}.",
         )
 
-        # Size fallback policy record
+        # ---- Size provenance lineage: shared evidence-pool DERIVED record ----
+        # One reusable record that parents all exact-source provenances.
+        # This avoids attaching N source parents to every fallback product.
+        evidence_pool_parents = tuple(sorted(set(exact_source_prov_ids)))
+        evidence_pool_payload = json.dumps({
+            "derivation_method": _DM_SIZE_FALLBACK,
+            "exact_source_count": len(evidence_pool_parents),
+            "fallback_archive_proxy_bytes": fallback_bytes,
+            "policy_id": descriptor.size_policy_id,
+        }, sort_keys=True, separators=(",", ":"))
+        evidence_pool_prov_id = _derived_id(_DM_SIZE_FALLBACK, evidence_pool_parents)
+        evidence_pool_prov_rec = _drec(
+            evidence_pool_prov_id,
+            _DM_SIZE_FALLBACK,
+            evidence_pool_parents,
+            (
+                f"PJ62 V2 replay-size proxy evidence pool: "
+                f"{len(evidence_pool_parents)} exact eligible archive-size source provenances. "
+                f"median_low = {fallback_bytes} bytes."
+            ),
+        )
+
+        # ---- MODELED fallback record parents the evidence-pool record ----
         size_fallback_payload = json.dumps({
+            "evidence_pool_prov_id": evidence_pool_prov_id,
             "fallback_archive_proxy_bytes": fallback_bytes,
             "policy_id": descriptor.size_policy_id,
             "rule": descriptor.size_policy.fallback_rule,
@@ -318,6 +380,7 @@ class ReplayAssemblerV2:
                 f"({fallback_bytes} bytes) used when authoritative source labels expose no exact "
                 f"payload size metadata."
             ),
+            parents=(evidence_pool_prov_id,),
         )
 
         # Queue membership record
@@ -422,7 +485,8 @@ class ReplayAssemblerV2:
         all_records: list[ProvenanceRecord] = [
             horizons_prov,
             policy_prov_rec,
-            size_fallback_prov_rec,
+            evidence_pool_prov_rec,   # DERIVED evidence-pool for fallback size lineage
+            size_fallback_prov_rec,   # MODELED fallback, parents evidence_pool
             queue_prov_rec,
             distance_prov_rec,
             risk_level_prov_rec,
@@ -454,7 +518,13 @@ class ReplayAssemblerV2:
             instrument = plan_entry.instrument
             profile_id = plan_entry.representations[0].profile_id if plan_entry.representations else ""
             semantic_role = resolve_semantic_role(instrument, profile_id)
-            policy_entry = get_policy_entry(semantic_role)
+            # Use descriptor-based policy as the authoritative runtime source (Section 8)
+            policy_entry = descriptor_policy_by_role.get(semantic_role)
+            if policy_entry is None:
+                raise MissionSourceValidationError(
+                    f"No product policy entry in descriptor for semantic role {semantic_role!r} "
+                    f"(logical_product_id={lid!r}). Descriptor product policy is incomplete."
+                )
 
             # Source provenances for this logical product (collect from inv_entry)
             source_prov_ids = tuple(inv_entry.source_fact_provenance_ids)
@@ -477,40 +547,29 @@ class ReplayAssemblerV2:
                 logical_archive_proxy_bytes = max(exact_sizes)
                 size_bits = logical_archive_proxy_bytes * 8
                 exact_proxy_count += 1
-                # Per-product size provenance record
-                # Use source provenance IDs for size derivation
-                if source_prov_ids:
-                    size_prov_id = _derived_id(_DM_SIZE_EXACT, source_prov_ids)
-                else:
-                    size_prov_id = _derived_id(
-                        _DM_SIZE_EXACT, (lid, _DM_SIZE_EXACT)
-                    )
-                size_prov_rec = _drec(
-                    size_prov_id,
-                    _DM_SIZE_EXACT,
-                    source_prov_ids,
-                    f"size_bits = max({exact_sizes!r}) × 8 = {size_bits}. "
-                    "Archive bytes are authoritative; interpretation as replay burden is MODELED.",
-                )
-                size_prov_kind = ProvenanceKind.MODELED
-                # Override to MODELED: exact archive bytes → modeled proxy
-                size_prov_id_final = _modeled_id(json.dumps({
+                # MODELED size proxy record.
+                # parent_provenance_ids = source provenance IDs so the lineage is:
+                #   PDS authoritative source provenance
+                #       → MODELED replay-size proxy
+                #       → DataProduct.size_bits
+                # This satisfies the required provenance DAG (Section 9).
+                size_prov_id_used = _modeled_id(json.dumps({
                     "exact_bytes": logical_archive_proxy_bytes,
                     "lid": lid,
                     "policy_id": descriptor.size_policy_id,
                     "rule": "max_exact",
                 }, sort_keys=True, separators=(",", ":")))
                 size_prov_rec_final = _mrec(
-                    size_prov_id_final,
+                    size_prov_id_used,
                     descriptor.size_policy_id,
                     f"PJ62 V2 exact-size proxy for {lid!r}: "
                     f"max(exact archive_total_size_bytes) = {logical_archive_proxy_bytes} bytes, "
                     f"size_bits = {size_bits}. "
                     "Archive byte count is EXTERNAL_AUTHORITATIVE; "
                     "interpretation as replay transmission burden is MODELED.",
+                    parents=source_prov_ids,
                 )
                 all_records.append(size_prov_rec_final)
-                size_prov_id_used = size_prov_id_final
             else:
                 size_bits = fallback_size_bits
                 fallback_count += 1
@@ -684,13 +743,16 @@ class ReplayAssemblerV2:
         )
 
         # ---- Build MissionSourceBundle ----
-        source_ref = descriptor.source_bundle_ref or f"data/replays/{descriptor.replay_id}_descriptor.json"
+        # Use caller-provided source_ref (descriptor path) so reset semantics work:
+        #   active_source_ref → HistoricalReplayProvider.load(active_source_ref)
+        # Fall back to source_bundle_ref only when no caller source_ref provided.
+        final_source_ref = source_ref if source_ref is not None else descriptor.source_bundle_ref
         bundle = MissionSourceBundle(
             scenario=scenario,
             provenance=manifest,
             provider_name=_PROVIDER_NAME,
             source_mode=MissionSourceMode.HISTORICAL_REPLAY,
-            source_ref=source_ref,
+            source_ref=final_source_ref,
         )
 
         return bundle
