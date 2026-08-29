@@ -27,7 +27,7 @@ interface Props {
 export function ResizableSection({
   title,
   icon = '◆',
-  accent = '#1d4ed8',
+  accent = '#2f81f7',
   defaultOpen = true,
   children,
 }: Props) {
@@ -35,8 +35,8 @@ export function ResizableSection({
 
   return (
     <div style={{
-      background: '#ffffff',
-      border: '1px solid #dde1e8',
+      background: '#161b22',
+      border: '1px solid #30363d',
       borderRadius: 4,
       marginBottom: 8,
       minWidth: 0,
@@ -52,7 +52,7 @@ export function ResizableSection({
           padding: '8px 12px',
           background: 'none',
           border: 'none',
-          borderBottom: open ? '1px solid #e8eaee' : 'none',
+          borderBottom: open ? '1px solid #30363d' : 'none',
           cursor: 'pointer',
           textAlign: 'left',
           borderRadius: 0,
@@ -63,7 +63,7 @@ export function ResizableSection({
         <span style={{
           fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
           fontSize: 11, fontWeight: 600,
-          color: '#1a2035',
+          color: '#e6edf3',
           letterSpacing: '0.01em',
           flex: 1,
         }}>
@@ -71,7 +71,7 @@ export function ResizableSection({
         </span>
         <span style={{
           fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-          fontSize: 12, color: '#b0bac9',
+          fontSize: 12, color: '#656d76',
           lineHeight: 1, userSelect: 'none',
         }}>
           {open ? '−' : '+'}

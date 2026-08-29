@@ -142,7 +142,7 @@ export function LinkHealthPanel({ linkState: ls, snrHistory, onWhatIfResult }: P
     { label: 'LINK STATE', value: linkStatus, color: linkStatusColor },
   ].map(({ label, value, color }) => (
     <div key={label} style={{
-      background: '#f5f6f8', border: '1px solid #dde1e8',
+      background: '#21262d', border: '1px solid #30363d',
       borderRadius: 3, padding: '4px 6px',
     }}>
       <div style={{ color: 'var(--text-muted)', fontSize: 9, fontFamily: 'var(--font-mono)', marginBottom: 2 }}>{label}</div>

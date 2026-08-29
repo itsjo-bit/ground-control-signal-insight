@@ -33,8 +33,8 @@ import {
 // ── Style helpers ─────────────────────────────────────────────────────────────
 
 const CARD: React.CSSProperties = {
-  background: '#ffffff',
-  border: '1px solid #dde1e8',
+  background: '#161b22',
+  border: '1px solid #30363d',
   borderRadius: 4,
   padding: '10px 12px',
   marginBottom: 8,
@@ -51,22 +51,22 @@ const SANS: React.CSSProperties = {
 const LABEL: React.CSSProperties = {
   ...MONO,
   fontSize: 8,
-  color: '#b0bac9',
+  color: '#656d76',
   letterSpacing: '0.07em',
   textTransform: 'uppercase' as const,
   marginBottom: 2,
 };
 
 function levelColor(level: 'LOW' | 'MEDIUM' | 'HIGH'): string {
-  if (level === 'HIGH') return '#16a34a';
-  if (level === 'MEDIUM') return '#d97706';
-  return '#dc2626';
+  if (level === 'HIGH') return '#3fb950';
+  if (level === 'MEDIUM') return '#d29922';
+  return '#f85149';
 }
 
 function availabilityColor(label: 'AVAILABLE' | 'PARTIAL' | 'UNAVAILABLE'): string {
-  if (label === 'AVAILABLE') return '#16a34a';
-  if (label === 'PARTIAL') return '#d97706';
-  return '#b0bac9';
+  if (label === 'AVAILABLE') return '#3fb950';
+  if (label === 'PARTIAL') return '#d29922';
+  return '#656d76';
 }
 
 // Pretty-print objective names
@@ -107,13 +107,13 @@ interface StatCellProps {
 
 function StatCell({ label, value, color, dim, tooltip }: StatCellProps) {
   const effectiveColor = dim
-    ? '#b0bac9'
-    : (color ?? '#1a2035');
+    ? '#656d76'
+    : (color ?? '#e6edf3');
   return (
     <div
       style={{
-        background: '#f5f6f8',
-        border: '1px solid #dde1e8',
+        background: '#21262d',
+        border: '1px solid #30363d',
         borderRadius: 3,
         padding: '5px 7px',
         minWidth: 60,
@@ -172,9 +172,9 @@ export function GroundReceptionPanel({
   }, [executedPlan, sim, queueTotal, queueDataBits, availableCapacityBits]);
 
   const modeLabel = decisionMode === 'manual' ? 'MANUAL TRANSMISSION' : 'AI-ASSISTED TRANSMISSION';
-  const modeColor = decisionMode === 'manual' ? '#16a34a' : '#1d4ed8';
-  const modeBorderColor = decisionMode === 'manual' ? 'rgba(22,163,74,0.25)' : 'rgba(29,78,216,0.22)';
-  const modeBgColor = decisionMode === 'manual' ? 'rgba(22,163,74,0.04)' : 'rgba(29,78,216,0.04)';
+  const modeColor = decisionMode === 'manual' ? '#3fb950' : '#2f81f7';
+  const modeBorderColor = decisionMode === 'manual' ? 'rgba(63,185,80,0.25)' : 'rgba(47,129,247,0.22)';
+  const modeBgColor = decisionMode === 'manual' ? 'rgba(63,185,80,0.06)' : 'rgba(47,129,247,0.06)';
 
   const capacityFill = accounting.capacity_bits > 0
     ? Math.min(1, accounting.selected_data_bits / accounting.capacity_bits)
@@ -227,7 +227,7 @@ export function GroundReceptionPanel({
           <div style={{ ...MONO, fontSize: 10, fontWeight: 700, color: modeColor, letterSpacing: '0.08em' }}>
             {modeLabel}
           </div>
-          <div style={{ ...MONO, fontSize: 8, color: '#b0bac9', letterSpacing: '0.06em' }}>
+          <div style={{ ...MONO, fontSize: 8, color: '#656d76', letterSpacing: '0.06em' }}>
             TRANSMISSION RESULT
           </div>
         </div>
@@ -242,19 +242,19 @@ export function GroundReceptionPanel({
           <StatCell
             label="Selected"
             value={accounting.selected}
-            color="#1d4ed8"
+            color="#2f81f7"
             tooltip="Products included in the submitted transmission plan"
           />
           <StatCell
             label="Received"
             value={accounting.received}
-            color={accounting.received > 0 ? '#16a34a' : '#b0bac9'}
+            color={accounting.received > 0 ? '#3fb950' : '#656d76'}
             tooltip="Selected products successfully delivered in the modeled contact"
           />
           <StatCell
             label="Deferred"
             value={accounting.deferred}
-            color={accounting.deferred > 0 ? '#d97706' : undefined}
+            color={accounting.deferred > 0 ? '#d29922' : undefined}
             dim={accounting.deferred === 0}
             tooltip="Selected but not transmitted — contact window exhausted"
           />
@@ -271,7 +271,7 @@ export function GroundReceptionPanel({
           <StatCell
             label="Failed"
             value={accounting.failed}
-            color={accounting.failed > 0 ? '#dc2626' : undefined}
+            color={accounting.failed > 0 ? '#f85149' : undefined}
             dim={accounting.failed === 0}
             tooltip="Selected products that failed all delivery attempts"
           />
@@ -284,7 +284,7 @@ export function GroundReceptionPanel({
         </div>
 
         {/* Tooltip hint */}
-        <div style={{ ...SANS, fontSize: 9, color: '#b0bac9', lineHeight: 1.4, marginBottom: 8 }}>
+        <div style={{ ...SANS, fontSize: 9, color: '#656d76', lineHeight: 1.4, marginBottom: 8 }}>
           Deferred = selected but not transmitted. · Not Selected = remained outside this plan.
         </div>
 
@@ -293,33 +293,33 @@ export function GroundReceptionPanel({
           <div>
             <div style={{
               display: 'flex', justifyContent: 'space-between',
-              ...MONO, fontSize: 8, color: '#b0bac9',
+              ...MONO, fontSize: 8, color: '#656d76',
               textTransform: 'uppercase' as const, letterSpacing: '0.07em',
               marginBottom: 3,
             }}>
               <span>Selected Data / Capacity</span>
-              <span style={{ color: isOverCapacity ? '#dc2626' : '#b0bac9' }}>
+              <span style={{ color: isOverCapacity ? '#f85149' : '#656d76' }}>
                 {formatBitsAsMbit(accounting.selected_data_bits)} / {formatBitsAsMbit(accounting.capacity_bits)}
                 {accounting.capacity_bits > 0 && (
-                  <span style={{ marginLeft: 6, color: isOverCapacity ? '#dc2626' : '#7a8699' }}>
+                  <span style={{ marginLeft: 6, color: isOverCapacity ? '#f85149' : '#8b949e' }}>
                     ({(capacityFill * 100).toFixed(1)}% of window)
                   </span>
                 )}
                 {isOverCapacity && <span style={{ marginLeft: 4 }}>⚠ EXCEEDS CAPACITY</span>}
               </span>
             </div>
-            <div style={{ height: 4, background: '#e8eaee', borderRadius: 3, overflow: 'hidden' }}>
+            <div style={{ height: 4, background: '#21262d', borderRadius: 3, overflow: 'hidden' }}>
               <div style={{
                 height: '100%',
                 width: `${(capacityFill * 100).toFixed(1)}%`,
-                background: isOverCapacity ? '#dc2626' : capacityFill > 0.85 ? '#d97706' : '#16a34a',
+                background: isOverCapacity ? '#f85149' : capacityFill > 0.85 ? '#d29922' : '#3fb950',
                 borderRadius: 3,
                 transition: 'width 0.4s ease',
               }} />
             </div>
             {/* Queue data vs capacity context */}
             {accounting.queue_data_bits > 0 && (
-              <div style={{ ...MONO, fontSize: 8, color: '#b0bac9', marginTop: 3, letterSpacing: '0.05em' }}>
+              <div style={{ ...MONO, fontSize: 8, color: '#656d76', marginTop: 3, letterSpacing: '0.05em' }}>
                 Full queue {formatBitsAsMbit(accounting.queue_data_bits)} · Capacity {formatBitsAsMbit(accounting.capacity_bits)}
               </div>
             )}
@@ -328,26 +328,26 @@ export function GroundReceptionPanel({
       </div>
 
       {/* ── Ground station header ─────────────────────────────────────────────── */}
-      <div style={{ ...CARD, borderColor: 'rgba(22,163,74,0.22)', background: 'rgba(22,163,74,0.04)', marginBottom: 10 }}>
-        <div style={{ ...MONO, fontSize: 9, color: '#16a34a', letterSpacing: '0.08em', marginBottom: 4 }}>
+      <div style={{ ...CARD, borderColor: 'rgba(63,185,80,0.22)', background: 'rgba(63,185,80,0.05)', marginBottom: 10 }}>
+        <div style={{ ...MONO, fontSize: 9, color: '#3fb950', letterSpacing: '0.08em', marginBottom: 4 }}>
           GROUND STATION · {stationLabel}
         </div>
-        <div style={{ ...MONO, fontSize: 15, fontWeight: 700, color: '#16a34a', marginBottom: 2 }}>
+        <div style={{ ...MONO, fontSize: 15, fontWeight: 700, color: '#3fb950', marginBottom: 2 }}>
           INCOMING DOWNLINK
         </div>
-        <div style={{ ...SANS, fontSize: 10, color: '#7a8699', marginBottom: 8 }}>
+        <div style={{ ...SANS, fontSize: 10, color: '#8b949e', marginBottom: 8 }}>
           SIMULATED RECEPTION CONFIRMED — not a physical link simulation
         </div>
 
         {/* Received / Failed / Deferred / Retries (simulation outcome compact) */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6 }}>
           {[
-            { label: 'RECEIVED', value: sim.delivered_packets.length, color: '#16a34a' },
-            { label: 'FAILED', value: sim.failed_packets.length, color: sim.failed_packets.length > 0 ? '#dc2626' : '#b0bac9' },
-            { label: 'DEFERRED', value: sim.deferred_packets.length, color: sim.deferred_packets.length > 0 ? '#d97706' : '#b0bac9' },
-            { label: 'RETRIES', value: Object.values(sim.retransmission_counts ?? {}).reduce((s, v) => s + v, 0), color: '#b0bac9' },
+            { label: 'RECEIVED', value: sim.delivered_packets.length, color: '#3fb950' },
+            { label: 'FAILED', value: sim.failed_packets.length, color: sim.failed_packets.length > 0 ? '#f85149' : '#656d76' },
+            { label: 'DEFERRED', value: sim.deferred_packets.length, color: sim.deferred_packets.length > 0 ? '#d29922' : '#656d76' },
+            { label: 'RETRIES', value: Object.values(sim.retransmission_counts ?? {}).reduce((s, v) => s + v, 0), color: '#656d76' },
           ].map(({ label, value, color }) => (
-            <div key={label} style={{ background: '#f5f6f8', border: '1px solid #dde1e8', borderRadius: 3, padding: '5px 7px' }}>
+            <div key={label} style={{ background: '#21262d', border: '1px solid #30363d', borderRadius: 3, padding: '5px 7px' }}>
               <div style={LABEL}>{label}</div>
               <div style={{ ...MONO, fontSize: 16, fontWeight: 700, color }}>{value}</div>
             </div>
@@ -358,31 +358,31 @@ export function GroundReceptionPanel({
       {/* Delivered products list */}
       {sim.delivered_packets.length > 0 && (
         <div style={{ ...CARD, marginBottom: 10 }}>
-          <div style={{ ...MONO, fontSize: 9, color: '#7a8699', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 6 }}>
+          <div style={{ ...MONO, fontSize: 9, color: '#8b949e', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 6 }}>
             Priority Products Received
           </div>
           <div style={{ maxHeight: 180, overflowY: 'auto' }}>
             {sim.delivered_packets.slice(0, 20).map((pid) => (
-              <div key={pid} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '3px 0', borderBottom: '1px solid #e8eaee' }}>
-                <span style={{ color: '#16a34a', fontSize: 10, flexShrink: 0 }}>✓</span>
-                <span style={{ ...MONO, fontSize: 10, color: '#1a2035', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div key={pid} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '3px 0', borderBottom: '1px solid #30363d' }}>
+                <span style={{ color: '#3fb950', fontSize: 10, flexShrink: 0 }}>✓</span>
+                <span style={{ ...MONO, fontSize: 10, color: '#e6edf3', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {pid}
                 </span>
               </div>
             ))}
             {sim.delivered_packets.length > 20 && (
-              <div style={{ ...SANS, fontSize: 10, color: '#b0bac9', padding: '4px 0', textAlign: 'center' }}>
+              <div style={{ ...SANS, fontSize: 10, color: '#656d76', padding: '4px 0', textAlign: 'center' }}>
                 …and {sim.delivered_packets.length - 20} more
               </div>
             )}
           </div>
           {sim.failed_packets.length > 0 && (
-            <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #e8eaee' }}>
-              <div style={{ ...MONO, fontSize: 9, color: '#dc2626', letterSpacing: '0.07em', marginBottom: 4 }}>FAILED ATTEMPTS</div>
+            <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #30363d' }}>
+              <div style={{ ...MONO, fontSize: 9, color: '#f85149', letterSpacing: '0.07em', marginBottom: 4 }}>FAILED ATTEMPTS</div>
               {sim.failed_packets.map((pid) => (
                 <div key={pid} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '2px 0' }}>
-                  <span style={{ color: '#dc2626', fontSize: 10, flexShrink: 0 }}>✕</span>
-                  <span style={{ ...MONO, fontSize: 10, color: '#dc2626', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ color: '#f85149', fontSize: 10, flexShrink: 0 }}>✕</span>
+                  <span style={{ ...MONO, fontSize: 10, color: '#f85149', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {pid}
                   </span>
                 </div>
@@ -395,7 +395,7 @@ export function GroundReceptionPanel({
       {/* Ground information objectives — BEFORE / AFTER */}
       {objectiveCoverages && overallFraction !== null && (
         <div style={{ ...CARD, marginBottom: 10 }}>
-          <div style={{ ...MONO, fontSize: 9, color: '#7a8699', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 8 }}>
+          <div style={{ ...MONO, fontSize: 9, color: '#8b949e', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 8 }}>
             Ground Information Objectives — Before / After
           </div>
 
@@ -403,23 +403,23 @@ export function GroundReceptionPanel({
           <div style={{
             display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8,
             marginBottom: 10, paddingBottom: 10,
-            borderBottom: '1px solid #e8eaee',
+            borderBottom: '1px solid #30363d',
           }}>
-            <div style={{ background: '#f5f6f8', border: '1px solid #dde1e8', borderRadius: 3, padding: '7px 10px' }}>
-              <div style={{ ...MONO, fontSize: 8, color: '#b0bac9', marginBottom: 3 }}>BEFORE CONTACT</div>
+            <div style={{ background: '#21262d', border: '1px solid #30363d', borderRadius: 3, padding: '7px 10px' }}>
+              <div style={{ ...MONO, fontSize: 8, color: '#656d76', marginBottom: 3 }}>BEFORE CONTACT</div>
               <div style={{ ...MONO, fontSize: 12, fontWeight: 700, color: levelColor(beforeLevel) }}>
                 {beforeLevel} · {(beforeFraction * 100).toFixed(0)}%
               </div>
-              <div style={{ ...SANS, fontSize: 10, color: '#7a8699', marginTop: 2 }}>
+              <div style={{ ...SANS, fontSize: 10, color: '#8b949e', marginTop: 2 }}>
                 Ground evidence coverage
               </div>
             </div>
-            <div style={{ background: overallLevel === 'HIGH' ? 'rgba(22,163,74,0.04)' : overallLevel === 'MEDIUM' ? 'rgba(217,119,6,0.04)' : 'rgba(220,38,38,0.04)', border: `1px solid ${overallLevel === 'HIGH' ? 'rgba(22,163,74,0.22)' : overallLevel === 'MEDIUM' ? 'rgba(217,119,6,0.22)' : 'rgba(220,38,38,0.18)'}`, borderRadius: 3, padding: '7px 10px' }}>
-              <div style={{ ...MONO, fontSize: 8, color: '#b0bac9', marginBottom: 3 }}>AFTER RECEPTION</div>
+            <div style={{ background: overallLevel === 'HIGH' ? 'rgba(63,185,80,0.06)' : overallLevel === 'MEDIUM' ? 'rgba(210,153,34,0.06)' : 'rgba(248,81,73,0.06)', border: `1px solid ${overallLevel === 'HIGH' ? 'rgba(63,185,80,0.25)' : overallLevel === 'MEDIUM' ? 'rgba(210,153,34,0.25)' : 'rgba(248,81,73,0.22)'}`, borderRadius: 3, padding: '7px 10px' }}>
+              <div style={{ ...MONO, fontSize: 8, color: '#656d76', marginBottom: 3 }}>AFTER RECEPTION</div>
               <div style={{ ...MONO, fontSize: 12, fontWeight: 700, color: levelColor(overallLevel!) }}>
                 {overallLevel} · {(overallFraction * 100).toFixed(0)}%
               </div>
-              <div style={{ ...SANS, fontSize: 10, color: '#7a8699', marginTop: 2 }}>
+              <div style={{ ...SANS, fontSize: 10, color: '#8b949e', marginTop: 2 }}>
                 Ground evidence coverage
               </div>
             </div>
@@ -433,16 +433,16 @@ export function GroundReceptionPanel({
               return (
                 <div key={obj.name} style={{
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  padding: '4px 6px', borderBottom: '1px solid #e8eaee',
+                  padding: '4px 6px', borderBottom: '1px solid #30363d',
                 }}>
-                  <span style={{ ...SANS, fontSize: 11, color: '#4a5568' }}>
+                  <span style={{ ...SANS, fontSize: 11, color: '#8b949e' }}>
                     {prettyObjectiveName(obj.name)}
                   </span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ ...SANS, fontSize: 10, color: '#b0bac9' }}>
+                    <span style={{ ...SANS, fontSize: 10, color: '#656d76' }}>
                       BEFORE: UNAVAILABLE
                     </span>
-                    <span style={{ color: '#b0bac9', fontSize: 10 }}>→</span>
+                    <span style={{ color: '#656d76', fontSize: 10 }}>→</span>
                     <span style={{ ...MONO, fontSize: 10, fontWeight: 600, color }}>{label}</span>
                   </div>
                 </div>
@@ -455,10 +455,10 @@ export function GroundReceptionPanel({
       {/* Mission update text */}
       {missionUpdateText && (
         <div style={{ ...CARD, marginBottom: 10 }}>
-          <div style={{ ...MONO, fontSize: 9, color: '#7a8699', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 6 }}>
+          <div style={{ ...MONO, fontSize: 9, color: '#8b949e', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 6 }}>
             Ground Mission Update
           </div>
-          <div style={{ ...SANS, fontSize: 12, color: '#4a5568', lineHeight: 1.6 }}>
+          <div style={{ ...SANS, fontSize: 12, color: '#8b949e', lineHeight: 1.6 }}>
             {missionUpdateText}
           </div>
         </div>
@@ -471,21 +471,21 @@ export function GroundReceptionPanel({
           borderColor: 'rgba(220,38,38,0.22)',
           background: 'rgba(220,38,38,0.04)',
         }}>
-          <div style={{ ...MONO, fontSize: 9, color: '#dc2626', letterSpacing: '0.07em', marginBottom: 4 }}>
+          <div style={{ ...MONO, fontSize: 9, color: '#f85149', letterSpacing: '0.07em', marginBottom: 4 }}>
             ⚠ SPACECRAFT ANOMALY — STILL ACTIVE
           </div>
-          <div style={{ ...MONO, fontSize: 11, color: '#dc2626', marginBottom: 3 }}>
+          <div style={{ ...MONO, fontSize: 11, color: '#f85149', marginBottom: 3 }}>
             {thermalAnomaly.anomaly_id}
           </div>
-          <div style={{ ...SANS, fontSize: 11, color: '#4a5568', lineHeight: 1.5, marginBottom: 6 }}>
+          <div style={{ ...SANS, fontSize: 11, color: '#8b949e', lineHeight: 1.5, marginBottom: 6 }}>
             Ground received data products but the spacecraft thermal anomaly has not been physically resolved.
             Transmission improves ground knowledge — it does not repair onboard hardware.
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <span style={{ ...MONO, fontSize: 9, background: 'rgba(220,38,38,0.08)', color: '#dc2626', border: '1px solid rgba(220,38,38,0.22)', borderRadius: 3, padding: '2px 6px' }}>
+            <span style={{ ...MONO, fontSize: 9, background: 'rgba(248,81,73,0.1)', color: '#f85149', border: '1px solid rgba(248,81,73,0.25)', borderRadius: 3, padding: '2px 6px' }}>
               ACTIVE
             </span>
-            <span style={{ ...MONO, fontSize: 9, color: '#7a8699' }}>
+            <span style={{ ...MONO, fontSize: 9, color: '#8b949e' }}>
               SEVERITY {(thermalAnomaly.severity * 100).toFixed(0)}%
             </span>
           </div>
@@ -495,7 +495,7 @@ export function GroundReceptionPanel({
       {/* No objectives available for generic scenario */}
       {!groundInformationObjectives && (
         <div style={{ ...CARD }}>
-          <div style={{ ...SANS, fontSize: 12, color: '#7a8699', lineHeight: 1.5 }}>
+          <div style={{ ...SANS, fontSize: 12, color: '#8b949e', lineHeight: 1.5 }}>
             Ground information objectives are not defined for this scenario.
           </div>
         </div>

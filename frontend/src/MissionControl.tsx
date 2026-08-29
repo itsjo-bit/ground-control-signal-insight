@@ -87,8 +87,8 @@ const styles = `
   }
   body {
     font-family: 'IBM Plex Sans', system-ui, sans-serif;
-    background: #f5f6f8;
-    color: #1a2035;
+    background: #0d1117;
+    color: #e6edf3;
     font-size: 13px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
@@ -100,61 +100,63 @@ const styles = `
   /* Subtle scrollbars */
   ::-webkit-scrollbar { width: 4px; height: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: rgba(29,78,216,0.18); border-radius: 2px; }
-  ::-webkit-scrollbar-thumb:hover { background: rgba(29,78,216,0.32); }
+  ::-webkit-scrollbar-thumb { background: rgba(47,129,247,0.22); border-radius: 2px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(47,129,247,0.40); }
 
-  /* ── V4.0 Scientific Mission Analysis design tokens ── */
+  /* ── V4.1 Restrained dark engineering design tokens ── */
   :root {
     /* shell */
-    --bg:            #f5f6f8;
-    --shell-bg:      #ffffff;
-    --shell-border:  #dde1e8;
-    --panel-bg:      #ffffff;
-    --panel-border:  #dde1e8;
+    --bg:            #0d1117;
+    --shell-bg:      #161b22;
+    --shell-border:  #30363d;
+    --panel-bg:      #161b22;
+    --panel-border:  #30363d;
     --panel-radius:  4px;
-    --section-border: #e8eaee;
+    --section-border: #30363d;
     /* text */
-    --text:          #1a2035;
-    --text-secondary: #4a5568;
-    --text-muted:    #7a8699;
-    --text-dim:      #b0bac9;
+    --text:          #e6edf3;
+    --text-secondary: #8b949e;
+    --text-muted:    #8b949e;
+    --text-dim:      #656d76;
     /* accent */
-    --accent:        #1d4ed8;
-    --accent-light:  #eef3fc;
-    --accent-mid:    rgba(29,78,216,0.12);
+    --accent:        #2f81f7;
+    --accent-light:  rgba(47,129,247,0.12);
+    --accent-mid:    rgba(47,129,247,0.10);
     /* borders */
-    --border:        #dde1e8;
-    --border-strong: #c8cdd7;
+    --border:        #30363d;
+    --border-strong: #444c56;
+    /* input surface */
+    --input-bg:      #21262d;
     /* semantic */
-    --signal:   #16a34a;
-    --warn:     #d97706;
-    --critical: #dc2626;
-    --ai:       #1d4ed8;
+    --signal:   #3fb950;
+    --warn:     #d29922;
+    --critical: #f85149;
+    --ai:       #2f81f7;
     /* fonts */
     --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
     --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
     /* risk */
-    --risk-low-bg:       rgba(22,163,74,0.07);
-    --risk-low-color:    #16a34a;
-    --risk-low-border:   rgba(22,163,74,0.25);
+    --risk-low-bg:       rgba(63,185,80,0.10);
+    --risk-low-color:    #3fb950;
+    --risk-low-border:   rgba(63,185,80,0.30);
     --risk-low-glow:     none;
-    --risk-medium-bg:    rgba(217,119,6,0.08);
-    --risk-medium-color: #d97706;
-    --risk-medium-border: rgba(217,119,6,0.28);
+    --risk-medium-bg:    rgba(210,153,34,0.10);
+    --risk-medium-color: #d29922;
+    --risk-medium-border: rgba(210,153,34,0.30);
     --risk-medium-glow:  none;
-    --risk-high-bg:      rgba(234,88,12,0.08);
-    --risk-high-color:   #ea580c;
-    --risk-high-border:  rgba(234,88,12,0.28);
+    --risk-high-bg:      rgba(248,81,73,0.10);
+    --risk-high-color:   #f85149;
+    --risk-high-border:  rgba(248,81,73,0.30);
     --risk-high-glow:    none;
-    --risk-critical-bg:      rgba(220,38,38,0.08);
-    --risk-critical-color:   #dc2626;
-    --risk-critical-border:  rgba(220,38,38,0.28);
+    --risk-critical-bg:      rgba(248,81,73,0.12);
+    --risk-critical-color:   #f85149;
+    --risk-critical-border:  rgba(248,81,73,0.32);
     --risk-critical-glow:    none;
-    --btn-primary-bg:    #1d4ed8;
+    --btn-primary-bg:    #2f81f7;
     --btn-primary-color: #ffffff;
     --btn-primary-glow:  none;
     --tab-active-glow:   none;
-    --ai-panel-border:   rgba(29,78,216,0.18);
+    --ai-panel-border:   rgba(47,129,247,0.22);
     --ai-panel-glow:     none;
   }
 
@@ -199,7 +201,7 @@ const styles = `
     color: var(--text-secondary);
   }
   .waveform-wrap {
-    background: rgba(0,0,0,0.03);
+    background: rgba(0,0,0,0.25);
     border: 1px solid var(--border);
     border-radius: 3px;
     padding: 6px 10px;
@@ -231,9 +233,9 @@ const styles = `
   }
   .ai-hero {
     border-color: var(--ai-panel-border);
-    background: #fafbfd;
+    background: #1a2030;
   }
-  .ai-hero h2 { color: var(--accent); border-bottom-color: rgba(29,78,216,0.12); }
+  .ai-hero h2 { color: var(--accent); border-bottom-color: rgba(47,129,247,0.18); }
   .approval-bar {
     background: var(--panel-bg);
     border: 1px solid var(--panel-border);
@@ -254,9 +256,9 @@ const styles = `
     cursor: pointer;
     letter-spacing: 0.01em;
   }
-  .btn-approve:hover { background: #1e40af; border-color: #1e40af; }
+  .btn-approve:hover { background: #1a6fe8; border-color: #1a6fe8; }
   .btn-override {
-    background: #f5f6f8;
+    background: #21262d;
     color: var(--text-secondary);
     border: 1px solid var(--border-strong);
     border-radius: 3px;
@@ -266,7 +268,7 @@ const styles = `
     font-weight: 500;
     cursor: pointer;
   }
-  .btn-override:hover { background: #e8eaee; }
+  .btn-override:hover { background: #30363d; }
   .btn-reset {
     background: transparent;
     color: var(--text-muted);
@@ -277,7 +279,7 @@ const styles = `
     font-size: 12px;
     cursor: pointer;
   }
-  .btn-reset:hover { background: #f5f6f8; }
+  .btn-reset:hover { background: #21262d; }
 
   /* ── ApprovalBar drag list ── */
   .drag-list {
@@ -289,7 +291,7 @@ const styles = `
     border: 1px solid var(--border);
     border-radius: 3px;
     padding: 4px;
-    background: #f5f6f8;
+    background: #0d1117;
   }
   .drag-item {
     display: flex;
@@ -332,9 +334,9 @@ const styles = `
     font-family: var(--font-mono);
     font-size: 9px;
     font-weight: 700;
-    background: rgba(217,119,6,0.08);
+    background: rgba(210,153,34,0.12);
     color: var(--warn);
-    border: 1px solid rgba(217,119,6,0.25);
+    border: 1px solid rgba(210,153,34,0.30);
     border-radius: 2px;
     padding: 1px 5px;
     letter-spacing: 0.06em;
@@ -352,7 +354,7 @@ const styles = `
     font-size: 11px;
     padding: 2px 7px;
   }
-  .whatif-reset:hover { background: #f5f6f8; }
+  .whatif-reset:hover { background: #21262d; }
 
   /* ── Section header — analytical workspace style ── */
   .section-hd {
@@ -1340,8 +1342,8 @@ export default function MissionControl() {
       {/* ── Top bar — flat scientific mission header ──────────────────────── */}
       <div style={{
         height: 44,
-        background: '#ffffff',
-        borderBottom: '1px solid #dde1e8',
+        background: '#161b22',
+        borderBottom: '1px solid #30363d',
         display: 'flex',
         alignItems: 'center',
         paddingLeft: 16,
@@ -1356,14 +1358,14 @@ export default function MissionControl() {
           <span style={{
             fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
             fontSize: 13, fontWeight: 700, letterSpacing: '0.03em',
-            color: '#1a2035',
+            color: '#e6edf3',
             lineHeight: 1.1,
           }}>
             GCSI
           </span>
           <span style={{
             fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-            fontSize: 9, color: '#7a8699',
+            fontSize: 9, color: '#8b949e',
             fontWeight: 400,
             letterSpacing: '0.01em',
             lineHeight: 1.2,
@@ -1373,7 +1375,7 @@ export default function MissionControl() {
         </div>
 
         {/* Thin divider */}
-        <div style={{ width: 1, height: 22, background: '#dde1e8', marginRight: 16, flexShrink: 0 }} />
+        <div style={{ width: 1, height: 22, background: '#30363d', marginRight: 16, flexShrink: 0 }} />
 
         {/* Source mode indicator — semantic only */}
         {(() => {
@@ -1383,9 +1385,9 @@ export default function MissionControl() {
               data-testid="source-mode-badge"
               style={{
                 padding: '2px 6px',
-                background: isHistorical ? '#eef3fc' : 'rgba(217,119,6,0.08)',
-                color: isHistorical ? '#1d4ed8' : '#d97706',
-                border: `1px solid ${isHistorical ? 'rgba(29,78,216,0.22)' : 'rgba(217,119,6,0.25)'}`,
+                background: isHistorical ? 'rgba(47,129,247,0.14)' : 'rgba(210,153,34,0.12)',
+                color: isHistorical ? '#2f81f7' : '#d29922',
+                border: `1px solid ${isHistorical ? 'rgba(47,129,247,0.30)' : 'rgba(210,153,34,0.30)'}`,
                 borderRadius: 3,
                 fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
                 fontSize: 9, fontWeight: 700, letterSpacing: '0.06em',
@@ -1403,9 +1405,9 @@ export default function MissionControl() {
         {whatIfEvals !== null && (
           <span style={{
             padding: '2px 6px',
-            background: 'rgba(217,119,6,0.07)',
-            color: '#d97706',
-            border: '1px solid rgba(217,119,6,0.25)',
+            background: 'rgba(210,153,34,0.10)',
+            color: '#d29922',
+            border: '1px solid rgba(210,153,34,0.30)',
             borderRadius: 3,
             fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
             fontSize: 9, fontWeight: 700,
@@ -1427,9 +1429,9 @@ export default function MissionControl() {
           const titleText = isLocal
             ? 'Deterministic local fallback — not an AI model'
             : undefined;
-          const color = isError ? '#dc2626' : isLocal ? '#d97706' : isAnalyzing ? '#1d4ed8' : isReady ? '#16a34a' : '#7a8699';
-          const bg = isError ? 'rgba(220,38,38,0.07)' : isLocal ? 'rgba(217,119,6,0.07)' : isAnalyzing ? '#eef3fc' : isReady ? 'rgba(22,163,74,0.07)' : 'transparent';
-          const bdr = isError ? 'rgba(220,38,38,0.25)' : isLocal ? 'rgba(217,119,6,0.25)' : isAnalyzing ? 'rgba(29,78,216,0.22)' : isReady ? 'rgba(22,163,74,0.22)' : '#dde1e8';
+          const color = isError ? '#f85149' : isLocal ? '#d29922' : isAnalyzing ? '#2f81f7' : isReady ? '#3fb950' : '#8b949e';
+          const bg = isError ? 'rgba(248,81,73,0.10)' : isLocal ? 'rgba(210,153,34,0.10)' : isAnalyzing ? 'rgba(47,129,247,0.12)' : isReady ? 'rgba(63,185,80,0.10)' : 'transparent';
+          const bdr = isError ? 'rgba(248,81,73,0.30)' : isLocal ? 'rgba(210,153,34,0.30)' : isAnalyzing ? 'rgba(47,129,247,0.30)' : isReady ? 'rgba(63,185,80,0.28)' : '#30363d';
           return (
             <span style={{
               padding: '2px 6px', background: bg, color,
@@ -1455,7 +1457,7 @@ export default function MissionControl() {
         />
 
         {/* Thin divider */}
-        <div style={{ width: 1, height: 22, background: '#dde1e8', marginLeft: 12, marginRight: 8, flexShrink: 0 }} />
+        <div style={{ width: 1, height: 22, background: '#30363d', marginLeft: 12, marginRight: 8, flexShrink: 0 }} />
 
         {/* Action buttons — flat */}
         <button
@@ -1463,8 +1465,8 @@ export default function MissionControl() {
           disabled={loading || resetting}
           style={{
             background: 'transparent',
-            color: '#7a8699',
-            border: '1px solid #dde1e8',
+            color: '#8b949e',
+            border: '1px solid #30363d',
             borderRadius: 3, padding: '4px 11px',
             fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
             fontSize: 11, fontWeight: 500,
@@ -1473,8 +1475,8 @@ export default function MissionControl() {
             marginRight: 4,
           }}
           title="Reload scenario from backend with randomized link conditions"
-          onMouseEnter={(e) => { if (!loading && !resetting) { (e.currentTarget as HTMLButtonElement).style.color = '#dc2626'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(220,38,38,0.35)'; } }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = '#7a8699'; (e.currentTarget as HTMLButtonElement).style.borderColor = '#dde1e8'; }}
+          onMouseEnter={(e) => { if (!loading && !resetting) { (e.currentTarget as HTMLButtonElement).style.color = '#f85149'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(248,81,73,0.35)'; } }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = '#8b949e'; (e.currentTarget as HTMLButtonElement).style.borderColor = '#30363d'; }}
         >
           Reset
         </button>
@@ -1483,8 +1485,8 @@ export default function MissionControl() {
           disabled={loading || resetting}
           style={{
             background: 'transparent',
-            color: '#4a5568',
-            border: '1px solid #dde1e8',
+            color: '#8b949e',
+            border: '1px solid #30363d',
             borderRadius: 3, padding: '4px 11px',
             fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
             fontSize: 11, fontWeight: 500,
@@ -1500,9 +1502,9 @@ export default function MissionControl() {
       {loading && (
         <div style={{
           flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: '#f5f6f8',
+          background: '#0d1117',
           fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-          fontSize: 12, color: '#7a8699',
+          fontSize: 12, color: '#8b949e',
           letterSpacing: '0.02em',
         }}>
           Loading mission data…
@@ -1512,23 +1514,23 @@ export default function MissionControl() {
       {!loading && error && (
         <div style={{
           flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: '#f5f6f8',
+          background: '#0d1117',
           flexDirection: 'column', gap: 12,
         }}>
           <div style={{
             fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-            fontSize: 12, color: '#dc2626',
-            padding: '10px 20px', background: 'rgba(220,38,38,0.05)',
-            border: '1px solid rgba(220,38,38,0.18)', borderRadius: 4,
+            fontSize: 12, color: '#f85149',
+            padding: '10px 20px', background: 'rgba(248,81,73,0.08)',
+            border: '1px solid rgba(248,81,73,0.25)', borderRadius: 4,
           }}>
             Error: {error}
           </div>
           <button
             onClick={refresh}
             style={{
-              background: '#eef3fc',
-              color: '#1d4ed8',
-              border: '1px solid rgba(29,78,216,0.22)',
+              background: 'rgba(47,129,247,0.12)',
+              color: '#2f81f7',
+              border: '1px solid rgba(47,129,247,0.30)',
               borderRadius: 3, padding: '6px 16px',
               fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
               fontSize: 12, fontWeight: 500, cursor: 'pointer',
@@ -1550,8 +1552,8 @@ export default function MissionControl() {
       {/* ── Legacy mode banner ───────────────────────────────────────────── */}
       {!loading && !error && !hasDataProducts && dataProductsCount === 0 && (
         <div style={{
-          background: 'rgba(217,119,6,0.05)',
-          borderBottom: '1px solid rgba(217,119,6,0.18)',
+          background: 'rgba(210,153,34,0.06)',
+          borderBottom: '1px solid rgba(210,153,34,0.22)',
           padding: '8px 16px',
           display: 'flex',
           alignItems: 'center',
@@ -1562,13 +1564,13 @@ export default function MissionControl() {
           <span style={{
             fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
             fontSize: 9, fontWeight: 700, letterSpacing: '0.07em',
-            color: '#d97706', flexShrink: 0,
+            color: '#d29922', flexShrink: 0,
           }}>
             LIMITED DEMO MODE
           </span>
           <span style={{
             fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-            fontSize: 11, color: '#4a5568', flex: 1,
+            fontSize: 11, color: '#8b949e', flex: 1,
           }}>
             {missionState ? `${missionState.current_event} — ` : ''}
             Legacy packet scenario active. High-volume AI prioritization, anomaly analysis, and spacecraft geometry are unavailable.
@@ -1578,9 +1580,9 @@ export default function MissionControl() {
             disabled={scenarioSwitching}
             style={{
               padding: '4px 12px',
-              background: '#eef3fc',
-              color: '#1d4ed8',
-              border: '1px solid rgba(29,78,216,0.28)',
+              background: 'rgba(47,129,247,0.12)',
+              color: '#2f81f7',
+              border: '1px solid rgba(47,129,247,0.30)',
               borderRadius: 3, cursor: 'pointer', flexShrink: 0,
               fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
               fontSize: 11, fontWeight: 600,
@@ -1652,19 +1654,19 @@ export default function MissionControl() {
                 width: 4,
                 flexShrink: 0,
                 background: 'transparent',
-                borderLeft: '1px solid #dde1e8',
+                borderLeft: '1px solid #30363d',
                 cursor: 'col-resize',
                 position: 'relative',
                 zIndex: 30,
                 transition: 'background 0.15s, border-color 0.15s',
               }}
               onMouseEnter={(e) => {
-                (e.currentTarget as HTMLDivElement).style.background = 'rgba(29,78,216,0.06)';
-                (e.currentTarget as HTMLDivElement).style.borderLeftColor = 'rgba(29,78,216,0.35)';
+                (e.currentTarget as HTMLDivElement).style.background = 'rgba(47,129,247,0.08)';
+                (e.currentTarget as HTMLDivElement).style.borderLeftColor = 'rgba(47,129,247,0.40)';
               }}
               onMouseLeave={(e) => {
                 (e.currentTarget as HTMLDivElement).style.background = 'transparent';
-                (e.currentTarget as HTMLDivElement).style.borderLeftColor = '#dde1e8';
+                (e.currentTarget as HTMLDivElement).style.borderLeftColor = '#30363d';
               }}
             >
               {/* grip dots */}
@@ -1678,7 +1680,7 @@ export default function MissionControl() {
                 {[0,1,2].map((i) => (
                   <div key={i} style={{
                     width: 2, height: 2, borderRadius: '50%',
-                    background: 'rgba(29,78,216,0.25)',
+                    background: 'rgba(47,129,247,0.30)',
                   }} />
                 ))}
               </div>

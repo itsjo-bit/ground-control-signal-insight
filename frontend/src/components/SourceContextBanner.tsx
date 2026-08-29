@@ -4,7 +4,7 @@
  * Pure presentation component. Accepts source summary from MissionControl
  * (populated from GET /state). Never calls APIs directly.
  *
- * V4.0: Analytical document header style.
+ * V4.1: Restrained dark engineering theme. Same analytical layout as V4.0.
  * Historical replay reads like a precise mission brief, not a marketing banner.
  * Provenance counts use typographic hierarchy, not boxed cards.
  */
@@ -32,14 +32,14 @@ function ProvenanceCount({ label, count, title }: { label: string; count: number
     >
       <span style={{
         fontFamily: MONO, fontSize: 15, fontWeight: 700,
-        color: '#1a2035',
+        color: '#e6edf3',
         lineHeight: 1,
       }}>
         {count}
       </span>
       <span style={{
         fontFamily: SANS, fontSize: 9, fontWeight: 500,
-        color: '#7a8699',
+        color: '#656d76',
         textTransform: 'uppercase', letterSpacing: '0.06em',
         lineHeight: 1,
       }}>
@@ -58,8 +58,8 @@ export function SourceContextBanner({ source, missionId }: SourceContextBannerPr
       <div
         aria-label="Source mode: synthetic scenario"
         style={{
-          background: '#fff9f0',
-          borderBottom: '1px solid rgba(217,119,6,0.18)',
+          background: 'rgba(210,153,34,0.07)',
+          borderBottom: '1px solid rgba(210,153,34,0.20)',
           padding: '5px 16px',
           display: 'flex',
           alignItems: 'center',
@@ -70,12 +70,12 @@ export function SourceContextBanner({ source, missionId }: SourceContextBannerPr
       >
         <span style={{
           fontFamily: MONO, fontSize: 9, fontWeight: 700,
-          letterSpacing: '0.07em', color: '#d97706',
+          letterSpacing: '0.07em', color: '#d29922',
         }}>
           SYNTHETIC SCENARIO
         </span>
         <span style={{
-          fontFamily: SANS, fontSize: 10, color: '#7a8699',
+          fontFamily: SANS, fontSize: 10, color: '#8b949e',
         }}>
           Simulated data — not real mission telemetry
         </span>
@@ -94,8 +94,8 @@ export function SourceContextBanner({ source, missionId }: SourceContextBannerPr
       <section
         aria-label="Historical replay active — not live telemetry"
         style={{
-          background: '#eef3fc',
-          borderBottom: '1px solid rgba(29,78,216,0.15)',
+          background: '#0f172a',
+          borderBottom: '1px solid rgba(47,129,247,0.20)',
           padding: '8px 16px',
           display: 'flex',
           flexWrap: 'wrap',
@@ -110,14 +110,14 @@ export function SourceContextBanner({ source, missionId }: SourceContextBannerPr
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{
               fontFamily: MONO, fontSize: 9, fontWeight: 700,
-              letterSpacing: '0.08em', color: '#1d4ed8',
+              letterSpacing: '0.08em', color: '#2f81f7',
             }}>
               HISTORICAL REPLAY
             </span>
             {missionId && (
               <span style={{
                 fontFamily: MONO, fontSize: 9, fontWeight: 600,
-                color: '#1d4ed8',
+                color: '#2f81f7',
                 opacity: 0.7,
               }}>
                 {missionId}
@@ -125,18 +125,18 @@ export function SourceContextBanner({ source, missionId }: SourceContextBannerPr
             )}
           </div>
           <span style={{
-            fontFamily: SANS, fontSize: 10, color: '#4a5568',
+            fontFamily: SANS, fontSize: 10, color: '#8b949e',
           }}>
             Reconstructed scenario — not live telemetry
           </span>
         </div>
 
         {/* Thin divider */}
-        <div style={{ width: 1, height: 28, background: 'rgba(29,78,216,0.15)', marginRight: 16, flexShrink: 0 }} />
+        <div style={{ width: 1, height: 28, background: 'rgba(47,129,247,0.20)', marginRight: 16, flexShrink: 0 }} />
 
         {/* Context note */}
         <span style={{
-          fontFamily: SANS, fontSize: 10, color: '#7a8699',
+          fontFamily: SANS, fontSize: 10, color: '#656d76',
           flex: '1 1 140px', minWidth: 0, marginRight: 16,
         }}>
           Verified NASA/JPL/PDS source facts + explicit GCSI modeled communications policy.
@@ -170,13 +170,13 @@ export function SourceContextBanner({ source, missionId }: SourceContextBannerPr
         {source.source_ref && (
           <div style={{
             fontFamily: SANS, fontSize: 9,
-            color: '#b0bac9',
+            color: '#484f58',
             marginLeft: 16,
             flexShrink: 0,
             alignSelf: 'flex-end',
           }}>
             <code style={{
-              fontFamily: MONO, fontSize: 9, color: '#a0aab8',
+              fontFamily: MONO, fontSize: 9, color: '#484f58',
               background: 'transparent', padding: 0,
             }}>
               {source.source_ref}

@@ -4,6 +4,8 @@
  * Compact dropdown in the top header.  Calls GET /sources on mount and
  * POST /sources/select on selection.  Never sends filesystem paths.
  *
+ * V4.1: Restrained dark engineering theme. Same behavior as V4.0.
+ *
  * Props
  * -----
  * activeSources:   loaded sources list (or null while loading)
@@ -30,11 +32,6 @@ export interface ScenarioSwitcherProps {
 /**
  * Build a compact label for the currently active source, suitable for the
  * dropdown trigger button.
- *
- * Examples:
- *   ASTERIA-7 · SYNTHETIC
- *   JUNO PJ62 · HISTORICAL V1
- *   JUNO PJ62 · HISTORICAL V2
  */
 function buildActiveLabel(source: MissionSourceInfo | null, switching: boolean): string {
   if (switching) return 'Switching…';
@@ -86,7 +83,7 @@ export function ScenarioSwitcher({
       <span style={{
         fontFamily: SANS,
         fontSize: 10,
-        color: '#7a8699',
+        color: '#656d76',
         fontWeight: 400,
         letterSpacing: '0.01em',
         flexShrink: 0,
@@ -107,11 +104,11 @@ export function ScenarioSwitcher({
           alignItems: 'center',
           gap: 6,
           padding: '3px 9px',
-          background: switching ? '#eef3fc' : '#f5f6f8',
-          color: switching ? '#1d4ed8' : '#1a2035',
+          background: switching ? 'rgba(47,129,247,0.12)' : '#21262d',
+          color: switching ? '#2f81f7' : '#e6edf3',
           border: switching
-            ? '1px solid rgba(29,78,216,0.28)'
-            : '1px solid #dde1e8',
+            ? '1px solid rgba(47,129,247,0.35)'
+            : '1px solid #444c56',
           borderRadius: 3,
           fontFamily: MONO,
           fontSize: 10,
@@ -130,7 +127,7 @@ export function ScenarioSwitcher({
         </span>
         <span style={{
           fontSize: 8,
-          color: switching ? '#6EA8FF' : 'rgba(122,143,168,0.5)',
+          color: switching ? '#2f81f7' : '#656d76',
           marginLeft: 2,
         }}>
           ▼
@@ -148,11 +145,11 @@ export function ScenarioSwitcher({
             left: 0,
             marginTop: 4,
             minWidth: 240,
-            background: '#ffffff',
-            border: '1px solid #c8cdd7',
+            background: '#21262d',
+            border: '1px solid #444c56',
             borderRadius: 4,
             zIndex: 1000,
-            boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.40)',
             padding: '4px 0',
             overflow: 'hidden',
           }}
@@ -161,9 +158,9 @@ export function ScenarioSwitcher({
             const isActive = src.source_id === activeSourceId;
             const isSynthetic = src.mode === 'synthetic_scenario';
             const modeLabel = isSynthetic ? 'SYNTHETIC' : 'HIST';
-            const modeColor = isSynthetic ? '#d97706' : '#1d4ed8';
-            const modeBg = isSynthetic ? 'rgba(217,119,6,0.07)' : '#eef3fc';
-            const modeBdr = isSynthetic ? 'rgba(217,119,6,0.22)' : 'rgba(29,78,216,0.22)';
+            const modeColor = isSynthetic ? '#d29922' : '#2f81f7';
+            const modeBg = isSynthetic ? 'rgba(210,153,34,0.10)' : 'rgba(47,129,247,0.12)';
+            const modeBdr = isSynthetic ? 'rgba(210,153,34,0.28)' : 'rgba(47,129,247,0.30)';
             return (
               <button
                 key={src.source_id}
@@ -176,30 +173,30 @@ export function ScenarioSwitcher({
                   width: '100%',
                   textAlign: 'left',
                   padding: '8px 12px',
-                  background: isActive ? '#eef3fc' : 'transparent',
+                  background: isActive ? 'rgba(47,129,247,0.12)' : 'transparent',
                   border: 'none',
-                  borderBottom: '1px solid #e8eaee',
+                  borderBottom: '1px solid #30363d',
                   cursor: 'pointer',
                   transition: 'background 0.10s',
                 }}
                 onMouseEnter={(e) => {
-                  if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = '#f5f6f8';
+                  if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.05)';
                 }}
                 onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLButtonElement).style.background = isActive ? '#eef3fc' : 'transparent';
+                  (e.currentTarget as HTMLButtonElement).style.background = isActive ? 'rgba(47,129,247,0.12)' : 'transparent';
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {/* Active indicator */}
                   <span style={{
                     width: 4, height: 4, borderRadius: '50%', flexShrink: 0,
-                    background: isActive ? '#1d4ed8' : 'transparent',
-                    border: isActive ? 'none' : '1px solid #c8cdd7',
+                    background: isActive ? '#2f81f7' : 'transparent',
+                    border: isActive ? 'none' : '1px solid #444c56',
                   }} />
                   {/* Name */}
                   <span style={{
                     fontFamily: SANS, fontSize: 11.5, fontWeight: isActive ? 600 : 400,
-                    color: isActive ? '#1a2035' : '#4a5568',
+                    color: isActive ? '#e6edf3' : '#8b949e',
                     flex: 1,
                   }}>
                     {src.display_name}
@@ -221,7 +218,7 @@ export function ScenarioSwitcher({
                 {/* Description */}
                 <div style={{
                   fontFamily: SANS, fontSize: 10,
-                  color: '#7a8699',
+                  color: '#656d76',
                   marginTop: 2, marginLeft: 12,
                   lineHeight: 1.4,
                 }}>
@@ -243,12 +240,12 @@ export function ScenarioSwitcher({
             left: 0,
             marginTop: 6,
             padding: '4px 10px',
-            background: 'rgba(220,38,38,0.06)',
-            border: '1px solid rgba(220,38,38,0.25)',
+            background: 'rgba(248,81,73,0.08)',
+            border: '1px solid rgba(248,81,73,0.28)',
             borderRadius: 3,
             fontFamily: SANS,
             fontSize: 10.5,
-            color: '#dc2626',
+            color: '#f85149',
             whiteSpace: 'nowrap',
             zIndex: 1001,
           }}
