@@ -132,6 +132,9 @@ _XML_ENCODING_DECL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Normalizer ID for provenance binding (Section O).
+_PDS4_NORMALIZER_ID: str = "gcsi.generic_pds4_label.v1"
+
 
 # ---------------------------------------------------------------------------
 # GenericPds4AdapterProfile
@@ -250,11 +253,12 @@ class GenericPds4AdapterProfile(BaseModel):
 # Pre-built profiles for Phase 6F-B1 target families
 # ---------------------------------------------------------------------------
 
-#: JIRAM calibrated/derived products — PDS4 label, pds.nasa.gov
+#: JIRAM calibrated/derived products — PDS4 label, Atmospheres Node
+#: Section D: Updated to official Atmospheres Node path (atmos.nmsu.edu)
 JIRAM_PDS4_PROFILE = GenericPds4AdapterProfile(
     profile_id="jiram_pds4",
-    allowed_hosts=frozenset({"pds.nasa.gov"}),
-    allowed_path_prefixes=("/ds-view/pds/viewBundle.jsp", "/api/", "/pds/"),
+    allowed_hosts=frozenset({"atmos.nmsu.edu"}),
+    allowed_path_prefixes=("/PDS/data/PDS4/juno_jiram_bundle/",),
     expected_mission="JUNO",
     expected_spacecraft="JNO",
     expected_instrument="JIRAM",
@@ -265,11 +269,12 @@ JIRAM_PDS4_PROFILE = GenericPds4AdapterProfile(
     allowed_processing_levels=frozenset({"Calibrated", "Derived"}),
 )
 
-#: UVS calibrated products — PDS4 label
+#: UVS calibrated products — PDS4 label, Atmospheres Node
+#: Section D: Updated to official Atmospheres Node path (atmos.nmsu.edu)
 UVS_PDS4_PROFILE = GenericPds4AdapterProfile(
     profile_id="uvs_pds4",
-    allowed_hosts=frozenset({"pds.nasa.gov"}),
-    allowed_path_prefixes=("/api/", "/pds/"),
+    allowed_hosts=frozenset({"atmos.nmsu.edu"}),
+    allowed_path_prefixes=("/PDS/data/jnouvs_3001/",),
     expected_mission="JUNO",
     expected_spacecraft="JNO",
     expected_instrument="UVS",
@@ -426,17 +431,27 @@ def _validate_label_url_trust(label_url: str, profile: GenericPds4AdapterProfile
 
 
 # ---------------------------------------------------------------------------
-# Provenance helpers
+# Section O — Provenance helpers (profile + normalizer binding)
 # ---------------------------------------------------------------------------
 
 
-def _build_pds4_provenance_id_input(source_record_id: str, label_url: str) -> str:
-    """Return the deterministic JSON identity string for provenance_id computation."""
+def _build_pds4_provenance_id_input(
+    source_record_id: str,
+    label_url: str,
+    profile_id: str,
+    normalizer_id: str,
+) -> str:
+    """Return the deterministic JSON identity string for provenance_id computation.
+
+    Includes profile_id and normalizer_id so that provenance IDs are bound
+    to both the label content AND the normalizer+profile that produced them.
+    """
     return json.dumps(
         {
-            "adapter": "gcsi:generic_pds4_label:v1",
-            "source_record_id": source_record_id,
+            "adapter": normalizer_id,
             "label_url": label_url,
+            "profile_id": profile_id,
+            "source_record_id": source_record_id,
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -501,6 +516,13 @@ def parse_generic_pds4_label(
             "retrieved_at must be timezone-aware."
         )
     retrieved_at_utc = retrieved_at.astimezone(timezone.utc)
+
+    # 0. Source URL trust validation — enforced on the public production path.
+    #    This ensures production normalization cannot record evil.example/label.xml
+    #    as EXTERNAL_AUTHORITATIVE provenance.  The live adapter calls this too,
+    #    but the pure parser also enforces it so the contract holds regardless of
+    #    how the parser is invoked.
+    _validate_label_url_trust(label_url, profile)
 
     # 1. Size limit.
     if len(raw_bytes) > MAX_PDS4_LABEL_BYTES:
@@ -610,7 +632,7 @@ def parse_generic_pds4_label(
     # 8. File_Area_Observational — extract data file metadata.
     data_files = _extract_pds4_data_files(root, label_url)
 
-    total_size = sum(f.file_size_bytes for f in data_files)
+    total_size = sum(f.file_size_bytes or 0 for f in data_files)
 
     # 9. Build ArchiveScienceProduct.
     import pydantic
@@ -638,8 +660,10 @@ def parse_generic_pds4_label(
             "PDS4 normalized product failed internal validation."
         ) from exc
 
-    # 10. Build provenance.
-    identity = _build_pds4_provenance_id_input(source_record_id, label_url)
+    # 10. Build provenance (Section O — includes profile_id and normalizer_id).
+    identity = _build_pds4_provenance_id_input(
+        source_record_id, label_url, profile.profile_id, _PDS4_NORMALIZER_ID
+    )
     provenance_id = _compute_pds4_provenance_id(identity, content_sha256)
     provenance = ProvenanceRecord(
         provenance_id=provenance_id,
@@ -763,8 +787,8 @@ def _extract_pds4_data_files(
 
     # File size.
     fsize_elem = file_elem.find(f"{_PDS_NS_BRACED}file_size")
-    file_size_bytes: int = 0
-    size_certainty = ArchiveDataFileSizeCertainty.SIZE_DISCOVERED_APPROXIMATE
+    file_size_bytes: Optional[int] = None
+    size_certainty = ArchiveDataFileSizeCertainty.SIZE_UNKNOWN
     if fsize_elem is not None:
         fsize_raw = (fsize_elem.text or "").strip()
         fsize_unit = (fsize_elem.get("unit") or "").strip().lower()
@@ -804,3 +828,132 @@ def _extract_pds4_data_files(
         return []
 
     return [data_file]
+
+
+# ---------------------------------------------------------------------------
+# Section B — Live Adapter
+# ---------------------------------------------------------------------------
+
+
+class GenericPds4SourceRequest(BaseModel):
+    """Request object for a live PDS4 label fetch."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    label_url: str = Field(description="HTTPS URL to the PDS4 XML label file.")
+
+    @field_validator("label_url", mode="after")
+    @classmethod
+    def _non_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("label_url must not be empty.")
+        return v
+
+
+class GenericPds4ObservationalLabelAdapter:
+    """Live HTTP adapter for PDS4 observational label acquisition.
+
+    Validates URL trust BEFORE making any network request.
+    Uses httpx with bounded streaming read and no redirect following.
+
+    Maps HTTP status to adapter errors:
+    - 3xx → GenericPds4AdapterValidationError (no redirects)
+    - 404, 429, 5xx → GenericPds4AdapterUnavailableError
+    - other 4xx → GenericPds4AdapterValidationError
+
+    Returns ArchiveCaptureRecord on success.
+    Zero network calls in parse_generic_pds4_label (the pure parser).
+    """
+
+    @staticmethod
+    def fetch(
+        request: GenericPds4SourceRequest,
+        profile: GenericPds4AdapterProfile,
+        retrieved_at: datetime,
+    ) -> "ArchiveCaptureRecord":
+        """Fetch a PDS4 label from the archive and return a capture record.
+
+        Parameters
+        ----------
+        request:
+            Source URL to fetch.
+        profile:
+            Instrument-family validation profile.
+        retrieved_at:
+            Timezone-aware UTC datetime for provenance.
+
+        Returns
+        -------
+        ArchiveCaptureRecord
+            Fully validated capture.
+
+        Raises
+        ------
+        GenericPds4AdapterValidationError
+            Trust violation, redirect, or label validation failure.
+        GenericPds4AdapterUnavailableError
+            Network error or HTTP 404/429/5xx.
+        """
+        import httpx
+
+        label_url = request.label_url
+
+        # Trust validation BEFORE any network request.
+        _validate_label_url_trust(label_url, profile)
+
+        try:
+            with httpx.Client(follow_redirects=False, timeout=30.0) as client:
+                response = client.get(label_url)
+        except httpx.TransportError as exc:
+            raise GenericPds4AdapterUnavailableError(
+                "PDS4 label fetch failed due to a network transport error."
+            ) from exc
+
+        status = response.status_code
+
+        # Reject redirects.
+        if 300 <= status < 400:
+            raise GenericPds4AdapterValidationError(
+                f"PDS4 label URL returned an unexpected redirect (HTTP {status}). "
+                "Redirects are not followed."
+            )
+
+        # Map unavailability codes.
+        if status in (404, 429) or status >= 500:
+            raise GenericPds4AdapterUnavailableError(
+                f"PDS4 label is not available (HTTP {status})."
+            )
+
+        # Other client errors → validation error.
+        if status >= 400:
+            raise GenericPds4AdapterValidationError(
+                f"PDS4 label URL returned an unexpected client error (HTTP {status})."
+            )
+
+        if status != 200:
+            raise GenericPds4AdapterValidationError(
+                f"PDS4 label URL returned unexpected status (HTTP {status})."
+            )
+
+        # Bounded read.
+        raw_bytes = response.content
+        if len(raw_bytes) > MAX_PDS4_LABEL_BYTES:
+            raise GenericPds4AdapterValidationError(
+                f"PDS4 label response exceeds maximum allowed size "
+                f"({MAX_PDS4_LABEL_BYTES} bytes)."
+            )
+
+        # Parse and validate.
+        product, provenance = parse_generic_pds4_label(
+            raw_bytes=raw_bytes,
+            label_url=label_url,
+            profile=profile,
+            retrieved_at=retrieved_at,
+        )
+
+        return ArchiveCaptureRecord(
+            source_label_ref=label_url,
+            product=product,
+            provenance=provenance,
+            raw_label_bytes=raw_bytes,
+        )

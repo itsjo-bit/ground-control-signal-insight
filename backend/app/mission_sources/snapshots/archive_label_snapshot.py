@@ -23,11 +23,13 @@ only by:
         ↓  SHA-256(raw bytes) == raw_label_sha256
         ↓  SHA-256(raw bytes) == provenance.content_sha256
         ↓  retrieved_at == provenance.retrieved_at  (UTC-normalised)
-        ↓  raw bytes re-validated by the SAME parser (PDS3 or PDS4)
+        ↓  normalizer_id + profile_id resolved via CONTROLLED registry
+        ↓  raw bytes re-validated by the resolved registered parser
         ↓  re-derived product == stored product
         ↓  re-derived provenance == stored provenance
         ↓  source_record_id consistency check
         ↓  recomputed snapshot_id == stored snapshot_id
+        ↓  snapshot_source_standard cross-check
     VERIFIED SNAPSHOT ACCEPTED
 
 Zero network activity during load
@@ -37,6 +39,23 @@ from the local snapshot file plus the same shared offline parsers.
 
 Both PDS3 and PDS4 snapshots share this store.  The snapshot_source_standard
 field distinguishes them.
+
+Parser registry (Section N)
+-----------------------------
+Callers cannot inject an arbitrary reparser at load time.  All parsers are
+registered via ``register_parser(normalizer_id, profile_id, reparser)`` before
+any snapshot loading.  ``load()`` resolves the reparser from the envelope's
+``normalizer_id`` + ``profile_id`` fields using the controlled registry.
+
+The write path retains an explicit ``reparser`` parameter for consistency
+checking at write time, but also stores ``normalizer_id`` and ``profile_id``
+in the envelope for future registry-based reload.
+
+Backward compatibility
+----------------------
+``load_from_explicit_reparser()`` is provided for callers that pass a reparser
+directly (e.g. existing tests).  It bypasses the registry but is intended only
+for testing/migration purposes.
 """
 
 from __future__ import annotations
@@ -87,7 +106,8 @@ class ArchiveSnapshotValidationError(
     Raised for: oversized file, malformed UTF-8, malformed JSON,
     wrong schema/version, invalid Base64, hash mismatch, retrieved_at
     mismatch, re-validation failure, product/provenance mismatch,
-    snapshot_id mismatch, capture write failure.
+    snapshot_id mismatch, capture write failure, unknown normalizer/profile,
+    source_standard cross-check failure.
     """
 
 
@@ -107,6 +127,71 @@ def _validate_sha256_local(v: str) -> str:
     if not _SHA256_RE_LOCAL.match(v):
         raise ValueError("SHA-256 field must be exactly 64 lowercase hex chars.")
     return v
+
+
+# ---------------------------------------------------------------------------
+# Re-parser type alias
+# ---------------------------------------------------------------------------
+
+# A re-parser is a callable that takes (raw_bytes, source_ref, retrieved_at)
+# and returns (ArchiveScienceProduct, ProvenanceRecord).
+# This is the SAME parser used for both live acquisition and snapshot reload.
+ReparserFn = Callable[
+    [bytes, str, datetime],
+    tuple[ArchiveScienceProduct, ProvenanceRecord],
+]
+
+
+# ---------------------------------------------------------------------------
+# Section N — Controlled parser registry
+# ---------------------------------------------------------------------------
+
+# The registry maps (normalizer_id, profile_id) → ReparserFn.
+# Callers register parsers before loading snapshots; load() resolves via
+# this registry rather than accepting arbitrary callable injection.
+_PARSER_REGISTRY: dict[tuple[str, str], ReparserFn] = {}
+
+
+def register_parser(
+    normalizer_id: str, profile_id: str, reparser: ReparserFn
+) -> None:
+    """Register a reparser for a specific normalizer_id + profile_id pair.
+
+    Must be called BEFORE loading any snapshot that uses this combination.
+    Re-registering the same key with a new callable overwrites the previous.
+
+    Parameters
+    ----------
+    normalizer_id:
+        Normalizer identifier, e.g. ``"gcsi.generic_pds3_label.v1"``.
+    profile_id:
+        Profile identifier, e.g. ``"waves_burst_pds3"``.
+    reparser:
+        Callable accepting (raw_bytes, source_ref, retrieved_at) and
+        returning (ArchiveScienceProduct, ProvenanceRecord).
+    """
+    if not normalizer_id.strip():
+        raise ValueError("normalizer_id must not be empty.")
+    if not profile_id.strip():
+        raise ValueError("profile_id must not be empty.")
+    _PARSER_REGISTRY[(normalizer_id, profile_id)] = reparser
+
+
+def _resolve_reparser(normalizer_id: str, profile_id: str) -> ReparserFn:
+    """Resolve a reparser from the controlled registry.
+
+    Raises
+    ------
+    ArchiveSnapshotValidationError
+        If the (normalizer_id, profile_id) pair is not registered.
+    """
+    key = (normalizer_id, profile_id)
+    if key not in _PARSER_REGISTRY:
+        raise ArchiveSnapshotValidationError(
+            f"Unknown normalizer_id {normalizer_id!r} / profile_id {profile_id!r}. "
+            "Register the parser via register_parser() before loading snapshots."
+        )
+    return _PARSER_REGISTRY[key]
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +237,14 @@ class ArchiveLabelSnapshotEnvelope(BaseModel):
 
     provenance
         Stored ProvenanceRecord for offline verification.
+
+    normalizer_id
+        Normalizer identifier used to produce this snapshot,
+        e.g. ``"gcsi.generic_pds3_label.v1"``.
+
+    profile_id
+        Profile identifier used to produce this snapshot,
+        e.g. ``"waves_burst_pds3"``.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -172,6 +265,18 @@ class ArchiveLabelSnapshotEnvelope(BaseModel):
     raw_label_sha256: str = Field(description="SHA-256 of raw label bytes.")
     product: ArchiveScienceProduct = Field(description="Stored normalized product.")
     provenance: ProvenanceRecord = Field(description="Stored provenance record.")
+    normalizer_id: str = Field(
+        description=(
+            "Normalizer identifier used to produce this snapshot, "
+            "e.g. 'gcsi.generic_pds3_label.v1'."
+        )
+    )
+    profile_id: str = Field(
+        description=(
+            "Profile identifier used to produce this snapshot, "
+            "e.g. 'waves_burst_pds3'."
+        )
+    )
 
     @field_validator("snapshot_schema", mode="after")
     @classmethod
@@ -212,6 +317,13 @@ class ArchiveLabelSnapshotEnvelope(BaseModel):
             raise ValueError("retrieved_at must be timezone-aware.")
         return v
 
+    @field_validator("normalizer_id", "profile_id", mode="after")
+    @classmethod
+    def _check_non_empty_ids(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("normalizer_id and profile_id must not be empty.")
+        return v
+
 
 # ---------------------------------------------------------------------------
 # Snapshot ID formula
@@ -246,19 +358,6 @@ def _canonical_retrieved_at(dt: datetime) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Re-parser type alias
-# ---------------------------------------------------------------------------
-
-# A re-parser is a callable that takes (raw_bytes, source_ref, retrieved_at)
-# and returns (ArchiveScienceProduct, ProvenanceRecord).
-# This is the SAME parser used for both live acquisition and snapshot reload.
-ReparserFn = Callable[
-    [bytes, str, datetime],
-    tuple[ArchiveScienceProduct, ProvenanceRecord],
-]
-
-
-# ---------------------------------------------------------------------------
 # ArchiveLabelSnapshotStore
 # ---------------------------------------------------------------------------
 
@@ -274,18 +373,25 @@ class ArchiveLabelSnapshotStore:
     Write
     -----
     :meth:`write` performs full self-consistency verification, re-runs the
-    shared parser, and writes atomically via temp file + ``os.replace()``.
+    shared parser, stores ``normalizer_id`` and ``profile_id`` in the envelope,
+    and writes atomically via temp file + ``os.replace()``.
 
-    Load
-    ----
-    :meth:`load` performs a genuinely bounded file read (at most
-    ``_MAX_SNAPSHOT_BYTES + 1``), full structural validation, strict
-    Base64 decode, hash verification, re-runs the same shared parser,
-    compares re-derived values, and verifies snapshot_id.
+    Load (registry-based — recommended)
+    ------------------------------------
+    :meth:`load` performs a genuinely bounded file read, full structural
+    validation, strict Base64 decode, hash verification, resolves the
+    reparser from the CONTROLLED registry using the envelope's
+    ``normalizer_id`` + ``profile_id``, re-runs the parser, compares
+    re-derived values, verifies snapshot_id, and checks source_standard.
+
+    Load (explicit reparser — backward compatible)
+    -----------------------------------------------
+    :meth:`load_from_explicit_reparser` accepts a direct reparser callable.
+    Intended for test fixtures and migration; does NOT use the registry.
 
     Zero network activity during load
     ----------------------------------
-    :meth:`load` does NOT contact PDS.
+    Both load methods do NOT contact PDS.
     """
 
     @staticmethod
@@ -296,6 +402,8 @@ class ArchiveLabelSnapshotStore:
         provenance: ProvenanceRecord,
         reparser: ReparserFn,
         path: Union[str, Path],
+        normalizer_id: str = "",
+        profile_id: str = "",
     ) -> None:
         """Atomically write a self-consistent, checksum-verified snapshot.
 
@@ -320,6 +428,16 @@ class ArchiveLabelSnapshotStore:
 
         path:
             Destination file path.  Parent directory must exist.
+
+        normalizer_id:
+            Normalizer identifier to store in the envelope,
+            e.g. ``"gcsi.generic_pds3_label.v1"``.
+            Required for registry-based reload.
+
+        profile_id:
+            Profile identifier to store in the envelope,
+            e.g. ``"waves_burst_pds3"``.
+            Required for registry-based reload.
 
         Raises
         ------
@@ -401,6 +519,8 @@ class ArchiveLabelSnapshotStore:
             "raw_label_sha256": computed_hash,
             "product": product.model_dump(mode="json"),
             "provenance": provenance.model_dump(mode="json"),
+            "normalizer_id": normalizer_id,
+            "profile_id": profile_id,
         }
 
         # 8. Serialize.
@@ -441,11 +561,51 @@ class ArchiveLabelSnapshotStore:
     @staticmethod
     def load(
         path: Union[str, Path],
-        reparser: ReparserFn,
     ) -> tuple[ArchiveScienceProduct, ProvenanceRecord]:
-        """Load and fully re-validate a checksum-verified archive snapshot.
+        """Load and fully re-validate a snapshot using the controlled parser registry.
 
         ZERO network activity.
+
+        The reparser is resolved from the envelope's ``normalizer_id`` and
+        ``profile_id`` fields via the controlled registry.  Call
+        ``register_parser()`` for all relevant (normalizer_id, profile_id)
+        pairs before loading.
+
+        Parameters
+        ----------
+        path:
+            Path to the snapshot file.
+
+        Returns
+        -------
+        tuple[ArchiveScienceProduct, ProvenanceRecord]
+            Fully re-validated product and provenance.
+
+        Raises
+        ------
+        ArchiveSnapshotUnavailableError
+            If the file is missing or cannot be read.
+
+        ArchiveSnapshotValidationError
+            If any integrity or re-validation check fails, including unknown
+            normalizer_id/profile_id pair.
+        """
+        envelope = _load_and_validate_envelope(path)
+        reparser = _resolve_reparser(envelope.normalizer_id, envelope.profile_id)
+        return _finish_load(envelope, reparser)
+
+    @staticmethod
+    def load_from_explicit_reparser(
+        path: Union[str, Path],
+        reparser: ReparserFn,
+    ) -> tuple[ArchiveScienceProduct, ProvenanceRecord]:
+        """Load and re-validate a snapshot using a directly supplied reparser.
+
+        ZERO network activity.
+
+        This method bypasses the controlled parser registry.  It is intended
+        for backward compatibility with existing test fixtures and for
+        migration purposes.  New production code should use ``load()``.
 
         Parameters
         ----------
@@ -468,144 +628,180 @@ class ArchiveLabelSnapshotStore:
         ArchiveSnapshotValidationError
             If any integrity or re-validation check fails.
         """
-        path = Path(path)
+        envelope = _load_and_validate_envelope(path)
+        return _finish_load(envelope, reparser)
 
-        # 1. Bounded file read.
-        try:
-            with open(path, "rb") as fh:
-                raw_file_bytes = fh.read(_MAX_SNAPSHOT_BYTES + 1)
-        except FileNotFoundError as exc:
-            raise ArchiveSnapshotUnavailableError(
-                "Archive label snapshot is not available."
-            ) from exc
-        except OSError as exc:
-            raise ArchiveSnapshotUnavailableError(
-                "Archive label snapshot could not be read."
-            ) from exc
 
-        # 2. Size check.
-        if len(raw_file_bytes) > _MAX_SNAPSHOT_BYTES:
-            raise ArchiveSnapshotValidationError(
-                f"Snapshot file exceeds maximum allowed size "
-                f"({_MAX_SNAPSHOT_BYTES} bytes)."
-            )
+# ---------------------------------------------------------------------------
+# Internal helpers for load path
+# ---------------------------------------------------------------------------
 
-        # 3. UTF-8 decode.
-        try:
-            text = raw_file_bytes.decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise ArchiveSnapshotValidationError(
-                "Snapshot file is not valid UTF-8."
-            ) from exc
 
-        # 4. JSON parse.
-        try:
-            raw_envelope = json.loads(text)
-        except json.JSONDecodeError as exc:
-            raise ArchiveSnapshotValidationError(
-                "Snapshot file contains malformed JSON."
-            ) from exc
+def _load_and_validate_envelope(
+    path: Union[str, Path],
+) -> ArchiveLabelSnapshotEnvelope:
+    """Read, decode, and structurally validate the snapshot envelope.
 
-        if not isinstance(raw_envelope, dict):
-            raise ArchiveSnapshotValidationError(
-                "Snapshot JSON top level is not an object."
-            )
+    Returns the validated ArchiveLabelSnapshotEnvelope.
+    Raises ArchiveSnapshotUnavailableError or ArchiveSnapshotValidationError.
+    """
+    path = Path(path)
 
-        # 5. Schema pre-check.
-        if raw_envelope.get("snapshot_schema") != SNAPSHOT_SCHEMA:
-            raise ArchiveSnapshotValidationError(
-                f"Snapshot has wrong schema name; expected {SNAPSHOT_SCHEMA!r}."
-            )
-        if raw_envelope.get("snapshot_version") != SNAPSHOT_VERSION:
-            raise ArchiveSnapshotValidationError(
-                f"Snapshot has unsupported version; expected {SNAPSHOT_VERSION}."
-            )
+    # 1. Bounded file read.
+    try:
+        with open(path, "rb") as fh:
+            raw_file_bytes = fh.read(_MAX_SNAPSHOT_BYTES + 1)
+    except FileNotFoundError as exc:
+        raise ArchiveSnapshotUnavailableError(
+            "Archive label snapshot is not available."
+        ) from exc
+    except OSError as exc:
+        raise ArchiveSnapshotUnavailableError(
+            "Archive label snapshot could not be read."
+        ) from exc
 
-        # 6. Full Pydantic envelope validation.
-        try:
-            envelope = ArchiveLabelSnapshotEnvelope.model_validate_json(text)
-        except PydanticValidationError as exc:
-            raise ArchiveSnapshotValidationError(
-                "Snapshot envelope failed structural validation."
-            ) from exc
-
-        # 7. Strict Base64 decode.
-        try:
-            decoded_raw = base64.b64decode(envelope.raw_label_base64, validate=True)
-        except (binascii.Error, ValueError) as exc:
-            raise ArchiveSnapshotValidationError(
-                "Snapshot raw_label_base64 is invalid Base64."
-            ) from exc
-
-        # 8. SHA-256 of decoded bytes.
-        computed_hash = hashlib.sha256(decoded_raw).hexdigest()
-
-        # 9. Hash == raw_label_sha256.
-        if computed_hash != envelope.raw_label_sha256:
-            raise ArchiveSnapshotValidationError(
-                "Snapshot raw label bytes do not match stored raw_label_sha256."
-            )
-
-        # 10. Hash == provenance.content_sha256.
-        if computed_hash != envelope.provenance.content_sha256:
-            raise ArchiveSnapshotValidationError(
-                "Snapshot raw label hash does not match provenance.content_sha256."
-            )
-
-        # 11. retrieved_at consistency.
-        env_ret_utc = envelope.retrieved_at.astimezone(timezone.utc)
-        prov_ret = envelope.provenance.retrieved_at
-        if prov_ret is None:
-            raise ArchiveSnapshotValidationError(
-                "Snapshot provenance.retrieved_at is missing."
-            )
-        prov_ret_utc = prov_ret.astimezone(timezone.utc)
-        if env_ret_utc != prov_ret_utc:
-            raise ArchiveSnapshotValidationError(
-                "Snapshot envelope retrieved_at does not match "
-                "provenance.retrieved_at."
-            )
-
-        # 12. Re-run the SAME shared parser.
-        effective_ref = envelope.source_ref or envelope.product.source_label_ref or ""
-        try:
-            rederived_product, rederived_provenance = reparser(
-                decoded_raw, effective_ref, envelope.retrieved_at
-            )
-        except Exception as exc:
-            raise ArchiveSnapshotValidationError(
-                "Snapshot raw label failed re-validation."
-            ) from exc
-
-        # 13. Re-derived product == stored product.
-        if rederived_product != envelope.product:
-            raise ArchiveSnapshotValidationError(
-                "Snapshot stored product does not match re-derived product."
-            )
-
-        # 14. Re-derived provenance == stored provenance.
-        if rederived_provenance != envelope.provenance:
-            raise ArchiveSnapshotValidationError(
-                "Snapshot stored provenance does not match re-derived provenance."
-            )
-
-        # 15. source_record_id consistency.
-        if rederived_product.source_record_id != rederived_provenance.source_record_id:
-            raise ArchiveSnapshotValidationError(
-                "Snapshot source_record_id mismatch between product and provenance."
-            )
-
-        # 16. Recompute snapshot_id.
-        retrieved_at_iso = _canonical_retrieved_at(envelope.retrieved_at)
-        expected_id = _compute_snapshot_id(
-            envelope.snapshot_source_standard,
-            rederived_provenance.provenance_id,
-            retrieved_at_iso,
+    # 2. Size check.
+    if len(raw_file_bytes) > _MAX_SNAPSHOT_BYTES:
+        raise ArchiveSnapshotValidationError(
+            f"Snapshot file exceeds maximum allowed size "
+            f"({_MAX_SNAPSHOT_BYTES} bytes)."
         )
-        if expected_id != envelope.snapshot_id:
-            raise ArchiveSnapshotValidationError(
-                "Snapshot ID does not match expected deterministic value."
-            )
 
-        # 17. Return verified result.
-        return rederived_product, rederived_provenance
+    # 3. UTF-8 decode.
+    try:
+        text = raw_file_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ArchiveSnapshotValidationError(
+            "Snapshot file is not valid UTF-8."
+        ) from exc
+
+    # 4. JSON parse.
+    try:
+        raw_envelope = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ArchiveSnapshotValidationError(
+            "Snapshot file contains malformed JSON."
+        ) from exc
+
+    if not isinstance(raw_envelope, dict):
+        raise ArchiveSnapshotValidationError(
+            "Snapshot JSON top level is not an object."
+        )
+
+    # 5. Schema pre-check.
+    if raw_envelope.get("snapshot_schema") != SNAPSHOT_SCHEMA:
+        raise ArchiveSnapshotValidationError(
+            f"Snapshot has wrong schema name; expected {SNAPSHOT_SCHEMA!r}."
+        )
+    if raw_envelope.get("snapshot_version") != SNAPSHOT_VERSION:
+        raise ArchiveSnapshotValidationError(
+            f"Snapshot has unsupported version; expected {SNAPSHOT_VERSION}."
+        )
+
+    # 6. Full Pydantic envelope validation.
+    try:
+        envelope = ArchiveLabelSnapshotEnvelope.model_validate_json(text)
+    except PydanticValidationError as exc:
+        raise ArchiveSnapshotValidationError(
+            "Snapshot envelope failed structural validation."
+        ) from exc
+
+    return envelope
+
+
+def _finish_load(
+    envelope: ArchiveLabelSnapshotEnvelope,
+    reparser: ReparserFn,
+) -> tuple[ArchiveScienceProduct, ProvenanceRecord]:
+    """Complete the load verification pipeline given a validated envelope + reparser.
+
+    Performs steps 7–17 of the trust chain.
+    """
+    # 7. Strict Base64 decode.
+    try:
+        decoded_raw = base64.b64decode(envelope.raw_label_base64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ArchiveSnapshotValidationError(
+            "Snapshot raw_label_base64 is invalid Base64."
+        ) from exc
+
+    # 8. SHA-256 of decoded bytes.
+    computed_hash = hashlib.sha256(decoded_raw).hexdigest()
+
+    # 9. Hash == raw_label_sha256.
+    if computed_hash != envelope.raw_label_sha256:
+        raise ArchiveSnapshotValidationError(
+            "Snapshot raw label bytes do not match stored raw_label_sha256."
+        )
+
+    # 10. Hash == provenance.content_sha256.
+    if computed_hash != envelope.provenance.content_sha256:
+        raise ArchiveSnapshotValidationError(
+            "Snapshot raw label hash does not match provenance.content_sha256."
+        )
+
+    # 11. retrieved_at consistency.
+    env_ret_utc = envelope.retrieved_at.astimezone(timezone.utc)
+    prov_ret = envelope.provenance.retrieved_at
+    if prov_ret is None:
+        raise ArchiveSnapshotValidationError(
+            "Snapshot provenance.retrieved_at is missing."
+        )
+    prov_ret_utc = prov_ret.astimezone(timezone.utc)
+    if env_ret_utc != prov_ret_utc:
+        raise ArchiveSnapshotValidationError(
+            "Snapshot envelope retrieved_at does not match "
+            "provenance.retrieved_at."
+        )
+
+    # 12. Re-run the SAME shared parser.
+    effective_ref = envelope.source_ref or envelope.product.source_label_ref or ""
+    try:
+        rederived_product, rederived_provenance = reparser(
+            decoded_raw, effective_ref, envelope.retrieved_at
+        )
+    except Exception as exc:
+        raise ArchiveSnapshotValidationError(
+            "Snapshot raw label failed re-validation."
+        ) from exc
+
+    # 13. Re-derived product == stored product.
+    if rederived_product != envelope.product:
+        raise ArchiveSnapshotValidationError(
+            "Snapshot stored product does not match re-derived product."
+        )
+
+    # 14. Re-derived provenance == stored provenance.
+    if rederived_provenance != envelope.provenance:
+        raise ArchiveSnapshotValidationError(
+            "Snapshot stored provenance does not match re-derived provenance."
+        )
+
+    # 15. source_record_id consistency.
+    if rederived_product.source_record_id != rederived_provenance.source_record_id:
+        raise ArchiveSnapshotValidationError(
+            "Snapshot source_record_id mismatch between product and provenance."
+        )
+
+    # 16. Recompute snapshot_id.
+    retrieved_at_iso = _canonical_retrieved_at(envelope.retrieved_at)
+    expected_id = _compute_snapshot_id(
+        envelope.snapshot_source_standard,
+        rederived_provenance.provenance_id,
+        retrieved_at_iso,
+    )
+    if expected_id != envelope.snapshot_id:
+        raise ArchiveSnapshotValidationError(
+            "Snapshot ID does not match expected deterministic value."
+        )
+
+    # 17. Cross-check snapshot_source_standard vs rederived product.
+    if envelope.snapshot_source_standard != rederived_product.source_standard.value:
+        raise ArchiveSnapshotValidationError(
+            f"Snapshot snapshot_source_standard {envelope.snapshot_source_standard!r} "
+            f"does not match re-derived product source_standard "
+            f"{rederived_product.source_standard.value!r}."
+        )
+
+    # 18. Return verified result.
+    return rederived_product, rederived_provenance

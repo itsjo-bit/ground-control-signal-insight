@@ -47,6 +47,7 @@ Parts A–H implemented here:
 
 A. ArchiveSourceStandard        — PDS3 / PDS4 enum
 B. ArchiveDataFileSizeCertainty — size-certainty taxonomy (Part E)
+   ArchiveSnapshotVerificationStatus — snapshot-verification state (Part E)
 C. ArchiveDataFile              — one data-file metadata record
 D. ArchiveScienceProduct        — normalized external archive fact
 E. ArchiveCaptureRecord         — raw bytes + provenance (Part H)
@@ -122,19 +123,22 @@ class ArchiveSourceStandard(str, Enum):
 
 
 # ---------------------------------------------------------------------------
-# B (Part E). ArchiveDataFileSizeCertainty
+# B (Part E). ArchiveDataFileSizeCertainty + ArchiveSnapshotVerificationStatus
 # ---------------------------------------------------------------------------
 
 
 class ArchiveDataFileSizeCertainty(str, Enum):
     """Precision level of a data-file size value.
 
+    SIZE_UNKNOWN
+        No size information is available from the archive metadata.
+        The corresponding size field will be None.
+
     SIZE_DISCOVERED_APPROXIMATE
         Size was inferred from a human-readable archive directory listing
         (e.g. HTML index) and is NOT authoritative.  This certainty level
         is NOT permitted for replay scheduler execution.  It must be
-        promoted to SIZE_METADATA_EXACT or SIZE_SNAPSHOT_VERIFIED before
-        any operational use.
+        promoted to SIZE_METADATA_EXACT before any operational use.
 
     SIZE_METADATA_EXACT
         Exact integer bytes parsed from authoritative archive metadata
@@ -143,19 +147,36 @@ class ArchiveDataFileSizeCertainty(str, Enum):
         label contract such as ``RECORD_BYTES × FILE_RECORDS`` when the
         label explicitly describes the payload).
 
-    SIZE_SNAPSHOT_VERIFIED
-        Exact source metadata is present inside a checksum/content-addressed
-        GCSI verified snapshot and can be validated offline.  This is the
-        highest certainty level.
-
     NOTE: ``SIZE_DISCOVERED_APPROXIMATE`` must NEVER be silently promoted to
     ``SIZE_METADATA_EXACT`` without explicit re-derivation from authoritative
     label metadata.
+
+    NOTE: ``SIZE_SNAPSHOT_VERIFIED`` has been moved to
+    ``ArchiveSnapshotVerificationStatus`` where it belongs semantically.
     """
 
+    SIZE_UNKNOWN = "size_unknown"
     SIZE_DISCOVERED_APPROXIMATE = "size_discovered_approximate"
     SIZE_METADATA_EXACT = "size_metadata_exact"
-    SIZE_SNAPSHOT_VERIFIED = "size_snapshot_verified"
+
+
+class ArchiveSnapshotVerificationStatus(str, Enum):
+    """Snapshot verification state for an archive source record.
+
+    Tracks whether a source record has been independently verified by
+    loading a checksum-addressed snapshot.  This is separate from the
+    source metadata size certainty (ArchiveDataFileSizeCertainty).
+
+    UNVERIFIED
+        No snapshot verification has been performed yet.
+
+    SNAPSHOT_VERIFIED
+        The source record has been verified against a checksum-addressed
+        GCSI snapshot (the highest trust level for offline use).
+    """
+
+    UNVERIFIED = "unverified"
+    SNAPSHOT_VERIFIED = "snapshot_verified"
 
 
 # ---------------------------------------------------------------------------
@@ -171,8 +192,9 @@ class ArchiveDataFile(BaseModel):
     file_name : str
         Data-file name as reported in the archive label.  Must be non-empty.
 
-    file_size_bytes : int
-        Data-file size in bytes.  Must be >= 0.
+    file_size_bytes : int | None
+        Data-file size in bytes.  None when size is unknown
+        (size_certainty == SIZE_UNKNOWN).  Non-None values must be >= 0.
 
     size_certainty : ArchiveDataFileSizeCertainty
         Precision level of ``file_size_bytes``.
@@ -184,7 +206,8 @@ class ArchiveDataFile(BaseModel):
     checksum_value : str | None
         Lowercase hex checksum value matching ``checksum_algorithm``.
         None if not provided.  If present, ``checksum_algorithm`` must
-        also be present.
+        also be present.  Format is validated: MD5 = 32 hex chars,
+        SHA-256 = 64 hex chars.
 
     mime_type : str | None
         MIME type of the data file, if present.
@@ -198,6 +221,7 @@ class ArchiveDataFile(BaseModel):
     -----
     - file_ref is NOT followed or downloaded.
     - Checksum cross-validation (algorithm↔value) is enforced.
+    - Checksum format is validated (MD5: 32 hex, SHA-256: 64 hex).
     - Duplicate file names within a product are rejected by
       ArchiveScienceProduct.
     """
@@ -205,8 +229,9 @@ class ArchiveDataFile(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     file_name: str = Field(description="Data-file name as reported in the archive label.")
-    file_size_bytes: int = Field(
-        description="Data-file size in bytes. Must be >= 0."
+    file_size_bytes: Optional[int] = Field(
+        default=None,
+        description="Data-file size in bytes. None when unknown. Non-None must be >= 0.",
     )
     size_certainty: ArchiveDataFileSizeCertainty = Field(
         description="Precision level of file_size_bytes."
@@ -240,20 +265,44 @@ class ArchiveDataFile(BaseModel):
 
     @field_validator("file_size_bytes", mode="after")
     @classmethod
-    def _non_negative_size(cls, v: int) -> int:
-        if v < 0:
-            raise ValueError("file_size_bytes must be >= 0.")
+    def _non_negative_size(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v < 0:
+            raise ValueError("file_size_bytes must be >= 0 when not None.")
+        return v
+
+    @field_validator("checksum_value", mode="after")
+    @classmethod
+    def _normalize_checksum_value(cls, v: Optional[str]) -> Optional[str]:
+        """Normalize checksum_value to lowercase."""
+        if v is not None:
+            return v.lower()
         return v
 
     @model_validator(mode="after")
     def _validate_checksum_consistency(self) -> "ArchiveDataFile":
-        """Require algorithm↔value co-presence."""
+        """Require algorithm↔value co-presence and validate checksum format."""
         alg = self.checksum_algorithm
         val = self.checksum_value
         if (alg is None) != (val is None):
             raise ValueError(
                 "checksum_algorithm and checksum_value must both be present or both None."
             )
+        if alg is not None and val is not None:
+            alg_upper = alg.upper()
+            if alg_upper == "MD5":
+                if not re.fullmatch(r"[0-9a-fA-F]{32}", val):
+                    raise ValueError(
+                        "MD5 checksum must be exactly 32 hexadecimal characters."
+                    )
+            elif alg_upper in ("SHA-256", "SHA256"):
+                if not re.fullmatch(r"[0-9a-fA-F]{64}", val):
+                    raise ValueError(
+                        "SHA-256 checksum must be exactly 64 hexadecimal characters."
+                    )
+            else:
+                raise ValueError(
+                    f"Unsupported checksum algorithm {alg!r}. Supported: MD5, SHA-256."
+                )
         return self
 
 
@@ -391,11 +440,14 @@ class ArchiveScienceProduct(BaseModel):
     mission_name : str
         Mission name (e.g. ``"JUNO"``).
 
-    spacecraft_name : str
-        Spacecraft identifier (e.g. ``"JNO"``).
+    spacecraft_name : str | None
+        Spacecraft identifier (e.g. ``"JNO"``).  None when the archive
+        metadata does not supply it and the profile does not require it.
 
-    instrument_name : str
+    instrument_name : str | None
         Instrument identifier (e.g. ``"JIRAM"``, ``"MWR"``, ``"WAVES"``).
+        None when the archive metadata does not supply it and the profile
+        does not require it.
 
     product_family : str
         Science product family string (e.g. ``"B_BIN"``, ``"E_REC"``, ``"SURVEY"``).
@@ -420,7 +472,7 @@ class ArchiveScienceProduct(BaseModel):
 
     total_data_size_bytes : int
         Deterministic sum of all data_file sizes.  MUST equal
-        sum(f.file_size_bytes for f in data_files).
+        sum(f.file_size_bytes or 0 for f in data_files).
 
     source_label_ref : str | None
         Reference URL/path to the authoritative source label for this
@@ -433,6 +485,8 @@ class ArchiveScienceProduct(BaseModel):
     - total_data_size_bytes is derived from data_files, not from an
       independent trusted input.
     - size ≠ historical downlink bytes; replay-size proxy policy is MODELED.
+    - spacecraft_name and instrument_name may be None when genuinely absent
+      from archive metadata.  Profile validators enforce presence when required.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
@@ -458,8 +512,14 @@ class ArchiveScienceProduct(BaseModel):
         description="Product version if exposed by the archive, else None.",
     )
     mission_name: str = Field(description="Mission name, e.g. 'JUNO'.")
-    spacecraft_name: str = Field(description="Spacecraft identifier, e.g. 'JNO'.")
-    instrument_name: str = Field(description="Instrument identifier, e.g. 'JIRAM'.")
+    spacecraft_name: Optional[str] = Field(
+        default=None,
+        description="Spacecraft identifier, e.g. 'JNO'. None if genuinely absent.",
+    )
+    instrument_name: Optional[str] = Field(
+        default=None,
+        description="Instrument identifier, e.g. 'JIRAM'. None if genuinely absent.",
+    )
     product_family: str = Field(
         description="Science product family string, e.g. 'B_BIN', 'SURVEY'."
     )
@@ -486,7 +546,7 @@ class ArchiveScienceProduct(BaseModel):
     total_data_size_bytes: int = Field(
         description=(
             "Deterministic sum of all data_file sizes in bytes. "
-            "Must equal sum(f.file_size_bytes for f in data_files)."
+            "Must equal sum(f.file_size_bytes or 0 for f in data_files)."
         )
     )
     source_label_ref: Optional[str] = Field(
@@ -498,12 +558,18 @@ class ArchiveScienceProduct(BaseModel):
     )
 
     @field_validator("source_record_id", "source_dataset_id", "source_product_id",
-                     "mission_name", "spacecraft_name", "instrument_name",
-                     "product_family", mode="after")
+                     "mission_name", "product_family", mode="after")
     @classmethod
     def _non_empty_strings(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("Field must not be empty or whitespace-only.")
+        return v
+
+    @field_validator("spacecraft_name", "instrument_name", mode="after")
+    @classmethod
+    def _non_empty_optional_strings(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not v.strip():
+            raise ValueError("Field must not be empty or whitespace-only when present.")
         return v
 
     @field_validator("observation_start_utc", "observation_stop_utc", mode="after")
@@ -533,8 +599,8 @@ class ArchiveScienceProduct(BaseModel):
                     "observation_start_utc must be <= observation_stop_utc."
                 )
 
-        # 2. Total size must equal sum of data_files.
-        expected_total = sum(f.file_size_bytes for f in self.data_files)
+        # 2. Total size must equal sum of data_files (None counts as 0).
+        expected_total = sum(f.file_size_bytes or 0 for f in self.data_files)
         if self.total_data_size_bytes != expected_total:
             raise ValueError(
                 f"total_data_size_bytes ({self.total_data_size_bytes}) must equal "
@@ -884,21 +950,106 @@ class VerifiedInventoryEntry(BaseModel):
 _MAX_MANIFEST_BYTES: int = 16 * 1024 * 1024
 
 
-def _compute_manifest_id(entries: tuple[VerifiedInventoryEntry, ...]) -> str:
-    """Compute a deterministic manifest_id from all logical_product_ids.
+# ---------------------------------------------------------------------------
+# L. VerifiedSourceRecordRef — source record registry entry
+# ---------------------------------------------------------------------------
+
+
+class VerifiedSourceRecordRef(BaseModel):
+    """Lightweight registry entry for a verified source record.
+
+    Enables VerifiedInventoryManifest to prove that referenced
+    representation_record_ids actually exist and have been verified.
+
+    Fields
+    ------
+    source_record_id : str
+        Stable identity for this source record (pds3:... or pds4:...).
+    source_standard : ArchiveSourceStandard
+        Archive standard for this record.
+    snapshot_ref : str | None
+        Reference to the snapshot file/ID that captured this record.
+    provenance_id : str
+        Provenance record ID for the EXTERNAL_AUTHORITATIVE capture.
+    normalizer_id : str
+        Stable identifier for the normalizer used, e.g.
+        ``"gcsi.generic_pds3_label.v1"`` or ``"gcsi.generic_pds4_label.v1"``.
+    profile_id : str
+        Stable identifier for the validation profile used.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    source_record_id: str = Field(description="Stable source record identity.")
+    source_standard: ArchiveSourceStandard = Field(description="Archive standard.")
+    snapshot_ref: Optional[str] = Field(
+        default=None, description="Snapshot reference."
+    )
+    provenance_id: str = Field(description="EXTERNAL_AUTHORITATIVE provenance ID.")
+    normalizer_id: str = Field(description="Normalizer identifier.")
+    profile_id: str = Field(description="Profile identifier.")
+
+    @field_validator(
+        "source_record_id", "provenance_id", "normalizer_id", "profile_id",
+        mode="after",
+    )
+    @classmethod
+    def _non_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Field must not be empty.")
+        return v
+
+
+# ---------------------------------------------------------------------------
+# M. Manifest ID formula (v2 — covers all semantic content)
+# ---------------------------------------------------------------------------
+
+
+def _compute_manifest_id(
+    entries: tuple[VerifiedInventoryEntry, ...],
+    source_records: tuple[VerifiedSourceRecordRef, ...] = (),
+) -> str:
+    """Compute a deterministic manifest_id covering ALL semantic content.
 
     Formula::
 
         SHA-256(
-            "gcsi.verified_inventory_manifest:v1:"
-            + JSON-array of sorted logical_product_ids
+            "gcsi.verified_inventory_manifest:v2:"
+            + JSON-canonical-repr of sorted entry content + source records
         )
 
+    Every field in each entry and each source record contributes to the ID.
+    Entries are sorted by logical_product_id; source records by source_record_id.
     Returns 64-char lowercase hex.
+
+    The version string changed from v1 to v2 because this formula is more
+    comprehensive: it covers all entry fields and source record fields rather
+    than only logical_product_ids.
     """
-    ids_sorted = sorted(e.logical_product_id for e in entries)
-    payload = "gcsi.verified_inventory_manifest:v1:" + json.dumps(
-        ids_sorted, separators=(",", ":"), sort_keys=False
+    canonical_entries = []
+    for e in sorted(entries, key=lambda x: x.logical_product_id):
+        canonical_entries.append({
+            "logical_product_id": e.logical_product_id,
+            "representation_record_ids": list(e.representation_record_ids),
+            "availability_time_utc": e.availability_time_utc.astimezone(
+                timezone.utc
+            ).isoformat(),
+            "source_fact_provenance_ids": list(e.source_fact_provenance_ids),
+        })
+    canonical_sources = []
+    for s in sorted(source_records, key=lambda x: x.source_record_id):
+        canonical_sources.append({
+            "source_record_id": s.source_record_id,
+            "source_standard": s.source_standard.value,
+            "snapshot_ref": s.snapshot_ref,
+            "provenance_id": s.provenance_id,
+            "normalizer_id": s.normalizer_id,
+            "profile_id": s.profile_id,
+        })
+    payload = "gcsi.verified_inventory_manifest:v2:" + json.dumps(
+        {"entries": canonical_entries, "source_records": canonical_sources},
+        separators=(",", ":"),
+        sort_keys=True,
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -914,11 +1065,17 @@ class VerifiedInventoryManifest(BaseModel):
     1. ``logical_product_id`` values are unique across all entries.
     2. No duplicate ``representation_record_ids`` across different entries
        (a source record may not belong to two logical products).
-    3. ``manifest_id`` is a deterministic SHA-256 over the sorted
-       ``logical_product_id`` values.
+    3. ``manifest_id`` is a deterministic SHA-256 over all semantic content
+       (entry fields + source record fields).
     4. Serialized manifest must not exceed ``_MAX_MANIFEST_BYTES`` (16 MiB).
     5. All ``availability_time_utc`` values are timezone-aware (enforced
        per-entry by VerifiedInventoryEntry).
+    6. When ``source_records`` is non-empty:
+       - No duplicate ``source_record_id`` values.
+       - Every ``representation_record_id`` in every entry must resolve to
+         exactly one ``source_record_id`` in ``source_records``.
+       - Every ``source_fact_provenance_id`` in every entry must resolve to
+         exactly one ``provenance_id`` in ``source_records``.
 
     Design decisions
     ----------------
@@ -928,15 +1085,18 @@ class VerifiedInventoryManifest(BaseModel):
       a source/inventory artifact.
     - Empty manifests (0 entries) are rejected — a manifest must have at
       least one entry.
+    - ``source_records`` defaults to empty tuple for backward compatibility
+      with existing test fixtures; referential integrity is only enforced
+      when source_records is non-empty.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     manifest_id: str = Field(
         description=(
-            "Deterministic SHA-256 fingerprint. "
-            "Formula: SHA-256('gcsi.verified_inventory_manifest:v1:' "
-            "+ JSON-array of sorted logical_product_ids)"
+            "Deterministic SHA-256 fingerprint over all semantic manifest content. "
+            "Formula: SHA-256('gcsi.verified_inventory_manifest:v2:' "
+            "+ JSON-canonical of sorted entries + source records)"
         )
     )
     entries: tuple[VerifiedInventoryEntry, ...] = Field(
@@ -944,6 +1104,14 @@ class VerifiedInventoryManifest(BaseModel):
             "All logical inventory entries. "
             "Must be non-empty. logical_product_id values must be unique."
         )
+    )
+    source_records: tuple[VerifiedSourceRecordRef, ...] = Field(
+        default_factory=tuple,
+        description=(
+            "Registry of verified source records referenced by entries. "
+            "When non-empty, all representation_record_ids and "
+            "source_fact_provenance_ids in entries must resolve here."
+        ),
     )
 
     @field_validator("manifest_id", mode="after")
@@ -984,12 +1152,46 @@ class VerifiedInventoryManifest(BaseModel):
                 seen_rids[rid] = entry.logical_product_id
 
         # Rule 3: manifest_id must match deterministic recomputation.
-        expected_id = _compute_manifest_id(self.entries)
+        expected_id = _compute_manifest_id(self.entries, self.source_records)
         if self.manifest_id != expected_id:
             raise ValueError(
                 "manifest_id does not match expected deterministic value. "
                 f"Expected: {expected_id!r}. Got: {self.manifest_id!r}."
             )
+
+        # Rules 4–6: source_records referential integrity (only when non-empty).
+        if self.source_records:
+            # Rule 4: no duplicate source_record_id in source_records.
+            seen_srids: set[str] = set()
+            seen_prov_ids: set[str] = set()
+            for sr in self.source_records:
+                if sr.source_record_id in seen_srids:
+                    raise ValueError(
+                        f"Duplicate source_record_id {sr.source_record_id!r} "
+                        "in VerifiedInventoryManifest.source_records."
+                    )
+                seen_srids.add(sr.source_record_id)
+                seen_prov_ids.add(sr.provenance_id)
+
+            # Rule 5: every representation_record_id must resolve.
+            for entry in self.entries:
+                for rid in entry.representation_record_ids:
+                    if rid not in seen_srids:
+                        raise ValueError(
+                            f"representation_record_id {rid!r} in entry "
+                            f"{entry.logical_product_id!r} does not resolve to "
+                            "any source_record_id in source_records."
+                        )
+
+            # Rule 6: every source_fact_provenance_id must resolve.
+            for entry in self.entries:
+                for prov_id in entry.source_fact_provenance_ids:
+                    if prov_id not in seen_prov_ids:
+                        raise ValueError(
+                            f"source_fact_provenance_id {prov_id!r} in entry "
+                            f"{entry.logical_product_id!r} does not resolve to "
+                            "any provenance_id in source_records."
+                        )
 
         return self
 
@@ -997,6 +1199,10 @@ class VerifiedInventoryManifest(BaseModel):
     def build(
         cls,
         entries: tuple[VerifiedInventoryEntry, ...] | list[VerifiedInventoryEntry],
+        source_records: (
+            tuple[VerifiedSourceRecordRef, ...]
+            | list[VerifiedSourceRecordRef]
+        ) = (),
     ) -> "VerifiedInventoryManifest":
         """Construct a manifest with auto-computed manifest_id.
 
@@ -1004,6 +1210,11 @@ class VerifiedInventoryManifest(BaseModel):
         ----------
         entries:
             Non-empty collection of VerifiedInventoryEntry objects.
+
+        source_records:
+            Optional collection of VerifiedSourceRecordRef objects.
+            When provided and non-empty, referential integrity is enforced.
+            Defaults to empty tuple for backward compatibility.
 
         Returns
         -------
@@ -1018,5 +1229,14 @@ class VerifiedInventoryManifest(BaseModel):
         entries_tuple: tuple[VerifiedInventoryEntry, ...] = (
             tuple(entries) if not isinstance(entries, tuple) else entries
         )
-        manifest_id = _compute_manifest_id(entries_tuple)
-        return cls(manifest_id=manifest_id, entries=entries_tuple)
+        source_records_tuple: tuple[VerifiedSourceRecordRef, ...] = (
+            tuple(source_records)
+            if not isinstance(source_records, tuple)
+            else source_records
+        )
+        manifest_id = _compute_manifest_id(entries_tuple, source_records_tuple)
+        return cls(
+            manifest_id=manifest_id,
+            entries=entries_tuple,
+            source_records=source_records_tuple,
+        )
