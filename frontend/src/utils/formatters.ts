@@ -9,6 +9,17 @@ export function formatBitsAsDataVolume(bits: number): string {
   return `${Math.round(bytes)} B`;
 }
 
+/**
+ * Format a bit count as Mbit / Gbit (decimal, not bytes).
+ * Used for transmission/capacity values where bits are the authoritative unit.
+ */
+export function formatBitsAsMbit(bits: number): string {
+  if (bits >= 1_000_000_000) return `${(bits / 1_000_000_000).toFixed(2)} Gbit`;
+  if (bits >= 1_000_000) return `${(bits / 1_000_000).toFixed(1)} Mbit`;
+  if (bits >= 1_000) return `${(bits / 1_000).toFixed(1)} kbit`;
+  return `${Math.round(bits)} bit`;
+}
+
 /** Format bits/s as human-readable */
 export function formatBitRate(bps: number): string {
   if (bps >= 1_000_000) return `${(bps / 1_000_000).toFixed(2)} Mbps`;

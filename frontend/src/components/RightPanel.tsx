@@ -2038,6 +2038,10 @@ function LogSection(props: CommonProps) {
                 anomalies={props.anomalies}
                 groundInformationObjectives={props.experienceManifest?.ground_information_objectives ?? null}
                 groundStationName={props.experienceManifest?.display.ground_station_name}
+                queueTotal={props.dataProductsCount}
+                queueDataBits={props.queuedDataBits}
+                availableCapacityBits={props.availableCapacityBits}
+                decisionMode={props.decisionMode}
               />
             ) : (
               <div style={{ color: 'rgba(147,160,180,0.4)', fontSize: 12, padding: '20px 0', textAlign: 'center' }}>
