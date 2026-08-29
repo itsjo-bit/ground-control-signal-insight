@@ -757,17 +757,17 @@ def _classify_fgm_candidate(lbl_filename: str) -> tuple[str, bool]:
 
     Returns (classification, selected).
 
-    Classification logic:
+    Classification logic (§4.6 fail-safe order: R1S checked FIRST):
+    - Contains _r1s_: R1S_OR_DOWNSAMPLED_ALTERNATE → excluded (checked first)
     - Contains _pj62: FULL_RESOLUTION_PJ62 → selected
-    - Contains _r1s_: R1S_OR_DOWNSAMPLED_ALTERNATE → excluded
     - Contains date anchor without _r1s_ or _pj62: FULL_RESOLUTION_STANDARD → selected
     - Other: OTHER_RELEVANT_VARIANT → excluded
     """
     fn_lower = lbl_filename.lower()
+    if _FGM_R1S_PATTERN.search(fn_lower):  # CHECK R1S FIRST (§4.6 fail-safe)
+        return "R1S_OR_DOWNSAMPLED_ALTERNATE", False
     if _FGM_PJ62_PATTERN.search(fn_lower):
         return "FULL_RESOLUTION_PJ62", True
-    if _FGM_R1S_PATTERN.search(fn_lower):
-        return "R1S_OR_DOWNSAMPLED_ALTERNATE", False
     if _FGM_DATE_ANCHOR in fn_lower:
         return "FULL_RESOLUTION_STANDARD", True
     return "OTHER_RELEVANT_VARIANT", False

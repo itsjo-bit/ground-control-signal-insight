@@ -4,10 +4,10 @@ All tests are OFFLINE. No live PDS requests are made.
 No product-label files are fetched. No science payload downloads.
 
 Coverage (per spec section X):
-- Exact 411 logical products
-- Exact 535 source refs
-- PDS4 refs = 156, PDS3 refs = 379
-- Per-instrument logical counts: 102/46/8/124/2/8/28/2/91
+- Exact 403 logical products (B2.2: was 411; 8 products confirmed ineligible by label)
+- Exact 527 source refs (B2.2: was 535)
+- PDS4 refs = 154, PDS3 refs = 373 (B2.2: was 156/379)
+- Per-instrument logical counts: 102/46/6/124/2/8/22/2/91 (B2.2: UVS 8→6, JEDI 28→22)
 - JunoCam: 124 EDR, 124 RDR
 - No duplicate logical IDs
 - No duplicate source URLs
@@ -15,7 +15,7 @@ Coverage (per spec section X):
 - EXACT entries: all stops inside frozen window
 - PENDING entries: all discovery_availability_time_utc = None
 - No placeholder SHA values in discovery evidence
-- exact_count + pending_count == 411
+- exact_count + pending_count == 403 (B2.2: was 411; 8 products confirmed ineligible)
 - All source URLs pass production profile trust
 - All production normalizer/profile pairs known
 - Canonical plan ID (B2.1.1 value)
@@ -26,7 +26,7 @@ Coverage (per spec section X):
 - Path traversal / wrong plan path rejected where loader accepts a path
 - Discovery evidence binding resolution
 - Instrument semantic roles
-- JEDI reconciliation (14+14=28, PRE=0, POST=0)
+- JEDI reconciliation (13+9=22 after B2.2 temporal exclusions, was 14+14=28)
 - WAVES Burst reconciliation (41+41+3+3+3=91)
 - JunoCam MAX stop time
 - Plan schema / schema_version
@@ -115,31 +115,35 @@ class TestExactCounts:
     """Spec section Y reconciliation checks."""
 
     def test_total_logical_entries(self, all_entries):
-        assert len(all_entries) == 411, (
-            f"Expected 411 logical entries, got {len(all_entries)}. "
-            "6F_B21_STATUS = INVENTORY_PLAN_RECONCILIATION_REQUIRED"
+        # B2.2 temporal reconciliation: 403 (reduced from 411 after authoritative label verification)
+        assert len(all_entries) == 403, (
+            f"Expected 403 logical entries, got {len(all_entries)}. "
+            "6F_B22_STATUS = SOURCE_INVENTORY_RECONCILIATION_REQUIRED"
         )
 
     def test_total_source_refs(self, all_refs):
-        assert len(all_refs) == 535, (
-            f"Expected 535 source refs, got {len(all_refs)}. "
-            "6F_B21_STATUS = INVENTORY_PLAN_RECONCILIATION_REQUIRED"
+        # B2.2 temporal reconciliation: 527 (reduced from 535)
+        assert len(all_refs) == 527, (
+            f"Expected 527 source refs, got {len(all_refs)}. "
+            "6F_B22_STATUS = SOURCE_INVENTORY_RECONCILIATION_REQUIRED"
         )
 
     def test_pds4_ref_count(self, all_refs):
+        # B2.2: 2 UVS PDS4 excluded → 154 PDS4 (was 156)
         pds4 = [r for r in all_refs if r.source_standard == AcquisitionSourceStandard.PDS4]
-        assert len(pds4) == 156, f"Expected 156 PDS4 refs, got {len(pds4)}."
+        assert len(pds4) == 154, f"Expected 154 PDS4 refs, got {len(pds4)}."
 
     def test_pds3_ref_count(self, all_refs):
+        # B2.2: 6 JEDI PDS3 excluded → 373 PDS3 (was 379)
         pds3 = [r for r in all_refs if r.source_standard == AcquisitionSourceStandard.PDS3]
-        assert len(pds3) == 379, f"Expected 379 PDS3 refs, got {len(pds3)}."
+        assert len(pds3) == 373, f"Expected 373 PDS3 refs, got {len(pds3)}."
 
     def test_pds3_plus_pds4_equals_total(self, all_refs):
         pds4 = sum(1 for r in all_refs if r.source_standard == AcquisitionSourceStandard.PDS4)
         pds3 = sum(1 for r in all_refs if r.source_standard == AcquisitionSourceStandard.PDS3)
-        assert pds4 + pds3 == 535
-        assert pds4 == 156
-        assert pds3 == 379
+        assert pds4 + pds3 == 527
+        assert pds4 == 154
+        assert pds3 == 373
 
 
 # ===========================================================================
@@ -150,14 +154,15 @@ class TestExactCounts:
 class TestPerInstrumentCounts:
     """Spec section Y per-instrument breakdown."""
 
+    # B2.2: JEDI 28→22 (6 excluded), UVS 8→6 (2 excluded)
     EXPECTED = {
         "JIRAM": 102,
         "MWR": 46,
-        "UVS": 8,
+        "UVS": 6,
         "JUNOCAM": 124,
         "FGM": 2,
         "JADE": 8,
-        "JEDI": 28,
+        "JEDI": 22,
         "WAVES_SURVEY": 2,
         "WAVES_BURST": 91,
     }
@@ -171,8 +176,9 @@ class TestPerInstrumentCounts:
         assert n == 46, f"MWR: expected 46, got {n}."
 
     def test_uvs_count(self, all_entries):
+        # B2.2: 6 (was 8; 2 P62SY1 POST-epoch excluded)
         n = sum(1 for e in all_entries if e.instrument == "UVS")
-        assert n == 8, f"UVS: expected 8, got {n}."
+        assert n == 6, f"UVS: expected 6, got {n}."
 
     def test_junocam_count(self, all_entries):
         n = sum(1 for e in all_entries if e.instrument == "JUNOCAM")
@@ -187,8 +193,9 @@ class TestPerInstrumentCounts:
         assert n == 8, f"JADE: expected 8, got {n}."
 
     def test_jedi_count(self, all_entries):
+        # B2.2: 22 (was 28; 6 excluded: 5 DOY-166 LOER POST-epoch + 1 DOY-165 LOERSISP PRE-epoch)
         n = sum(1 for e in all_entries if e.instrument == "JEDI")
-        assert n == 28, f"JEDI: expected 28, got {n}."
+        assert n == 22, f"JEDI: expected 22, got {n}."
 
     def test_waves_survey_count(self, all_entries):
         n = sum(1 for e in all_entries if e.instrument == "WAVES_SURVEY")
@@ -205,10 +212,11 @@ class TestPerInstrumentCounts:
         extra = seen - known
         assert not extra, f"Unexpected instruments: {extra!r}."
 
-    def test_sum_equals_411(self, all_entries):
+    def test_sum_equals_403(self, all_entries):
+        # B2.2: 403 after temporal reconciliation (was 411)
         inst_counts = Counter(e.instrument for e in all_entries)
         total = sum(inst_counts.values())
-        assert total == 411
+        assert total == 403
 
 
 # ===========================================================================
@@ -303,11 +311,12 @@ class TestJunoCamRepresentations:
 
 
 class TestJediReconciliation:
-    """Spec section O: JEDI_DISCOVERED=28, PRE=0, ELIGIBLE=28, POST=0."""
+    """JEDI B2.2 temporal reconciliation: 22 eligible (was 28, 6 excluded after label verification)."""
 
     def test_jedi_eligible_count(self, all_entries):
+        # B2.2: 22 (was 28)
         n = sum(1 for e in all_entries if e.instrument == "JEDI")
-        assert n == 28, f"JEDI eligible: expected 28, got {n}."
+        assert n == 22, f"JEDI eligible: expected 22, got {n}."
 
     def test_jedi_pre_window_zero(self, all_entries):
         """All JEDI entries are PENDING; they have no discovery stop to violate window.
@@ -339,22 +348,25 @@ class TestJediReconciliation:
         )
 
     def test_jedi_doy165_count(self, all_entries):
+        # B2.2: 13 (was 14; JED_270_LOERSISP_CDR_2024165 excluded as PRE-epoch)
         doy165 = [
             e for e in all_entries
             if e.instrument == "JEDI"
             and "2024165" in e.representations[0].label_url
         ]
-        assert len(doy165) == 14, f"JEDI DOY165: expected 14, got {len(doy165)}."
+        assert len(doy165) == 13, f"JEDI DOY165: expected 13, got {len(doy165)}."
 
     def test_jedi_doy166_count(self, all_entries):
+        # B2.2: 9 (was 14; 5 DOY-166 LOER products excluded as POST-epoch)
         doy166 = [
             e for e in all_entries
             if e.instrument == "JEDI"
             and "2024166" in e.representations[0].label_url
         ]
-        assert len(doy166) == 14, f"JEDI DOY166: expected 14, got {len(doy166)}."
+        assert len(doy166) == 9, f"JEDI DOY166: expected 9, got {len(doy166)}."
 
     def test_jedi_total_equals_doy165_plus_doy166(self, all_entries):
+        # B2.2 authoritative: 13 DOY-165 + 9 DOY-166 = 22 (was 28; 6 excluded as outside window)
         doy165 = sum(
             1 for e in all_entries
             if e.instrument == "JEDI" and "2024165" in e.representations[0].label_url
@@ -363,7 +375,9 @@ class TestJediReconciliation:
             1 for e in all_entries
             if e.instrument == "JEDI" and "2024166" in e.representations[0].label_url
         )
-        assert doy165 + doy166 == 28
+        assert doy165 == 13, f"Expected 13 DOY-165 JEDI products, got {doy165}"
+        assert doy166 == 9, f"Expected 9 DOY-166 JEDI products, got {doy166}"
+        assert doy165 + doy166 == 22
 
     def test_jedi_semantic_role(self, all_entries):
         for e in (e for e in all_entries if e.instrument == "JEDI"):
@@ -458,7 +472,7 @@ class TestNoDuplicates:
         seen: set[str] = set()
         dups = [u for u in urls if u in seen or seen.add(u)]  # type: ignore
         assert not dups, (
-            f"Duplicate label_urls across 535 representations (first 5): {dups[:5]!r}."
+            f"Duplicate label_urls across 527 representations (first 5): {dups[:5]!r}."
         )
 
     def test_no_duplicate_source_urls_count_matches(self, all_refs):
@@ -491,11 +505,12 @@ class TestTemporalEvidenceStatus:
             if e.temporal_evidence_status == TemporalEvidenceStatus.LABEL_VERIFICATION_PENDING
         ]
 
-    def test_exact_plus_pending_equals_411(self, exact_entries, pending_entries):
+    def test_exact_plus_pending_equals_403(self, exact_entries, pending_entries):
+        # B2.2: 403 after temporal reconciliation (was 411)
         total = len(exact_entries) + len(pending_entries)
-        assert total == 411, (
+        assert total == 403, (
             f"EXACT ({len(exact_entries)}) + PENDING ({len(pending_entries)}) "
-            f"= {total}, expected 411."
+            f"= {total}, expected 403."
         )
 
     def test_exact_count_is_223(self, exact_entries):
@@ -504,10 +519,10 @@ class TestTemporalEvidenceStatus:
             f"EXACT entries: expected 223 (JunoCam+WAVES_BURST+JADE), got {len(exact_entries)}."
         )
 
-    def test_pending_count_is_188(self, pending_entries):
-        """B2.1.3: JIRAM(102)+MWR(46)+UVS(8)+FGM(2)+JEDI(28)+WAVES_SURVEY(2) = 188."""
-        assert len(pending_entries) == 188, (
-            f"PENDING entries: expected 188, got {len(pending_entries)}."
+    def test_pending_count_is_180(self, pending_entries):
+        """B2.2: JIRAM(102)+MWR(46)+UVS(6)+FGM(2)+JEDI(22)+WAVES_SURVEY(2) = 180 (was 188)."""
+        assert len(pending_entries) == 180, (
+            f"PENDING entries: expected 180, got {len(pending_entries)}."
         )
 
     def test_exact_entries_have_non_null_time(self, exact_entries):
@@ -685,7 +700,7 @@ class TestUrlTrustValidation:
 
 class TestPlanId:
     # B2.1.4: plan_id updated after FGM two-stage discovery (fgm_peri62_directory_html evidence added)
-    EXPECTED_PLAN_ID = "9854b028a49369ba8b452b49d65789d6ee1270bc597645db25736c391ae8a0b0"
+    EXPECTED_PLAN_ID = "7ede995fb67e0597a399f1b77ad8268f3f5525eb43f89edbf819a4615e213103"
 
     def test_plan_id_matches_expected(self, plan):
         assert plan.plan_id == self.EXPECTED_PLAN_ID, (
@@ -810,8 +825,9 @@ class TestBoundedPlanLoader:
         if not _ARTIFACT_PATH.exists():
             pytest.skip(f"Frozen artifact not present at {_ARTIFACT_PATH}.")
         loaded = load_acquisition_plan(str(_ARTIFACT_PATH))
-        assert len(loaded.logical_entries) == 411
-        assert sum(len(e.representations) for e in loaded.logical_entries) == 535
+        # B2.2: 403 logical / 527 reps after temporal reconciliation
+        assert len(loaded.logical_entries) == 403
+        assert sum(len(e.representations) for e in loaded.logical_entries) == 527
 
     def test_loaded_plan_id_matches_expected(self):
         """Plan ID from file must match the deterministic expected value."""
@@ -1419,7 +1435,7 @@ class TestNoBulkDownload:
     _SCIENCE_EXTENSIONS = {".img", ".dat", ".fit", ".csv", ".sts"}
 
     def test_no_science_payload_extensions_in_urls(self, all_refs):
-        """None of the 535 planned URLs should point at science payload files."""
+        """None of the 527 planned URLs should point at science payload files."""
         violations = []
         for r in all_refs:
             url_lower = r.label_url.lower()

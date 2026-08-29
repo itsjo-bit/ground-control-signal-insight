@@ -91,6 +91,103 @@ _REPLAY_ID = "juno_pj62_large_replay_v2"
 _JUNOCAM_SCIENCE_OBS_TYPES: frozenset[str] = frozenset({"C", "G", "M", "R", "T"})
 
 # ---------------------------------------------------------------------------
+# §4.7 Evidence source URL contract
+# ---------------------------------------------------------------------------
+
+# Maps evidence_id → (expected_host, expected_path_prefix).
+# Each committed evidence source must match its registered host and path prefix.
+_EVIDENCE_URL_CONTRACTS: dict[str, tuple[str, str]] = {
+    "fgm_jupiter_pl_directory_html": (
+        "pds-ppi.igpp.ucla.edu", "/data/JNO-J-3-FGM-CAL-V1.0/"
+    ),
+    "fgm_peri62_directory_html": (
+        "pds-ppi.igpp.ucla.edu", "/data/JNO-J-3-FGM-CAL-V1.0/"
+    ),
+    "jade_index_lbl": (
+        "pds-ppi.igpp.ucla.edu", "/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/"
+    ),
+    "jade_index_tab": (
+        "pds-ppi.igpp.ucla.edu", "/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/"
+    ),
+    "jedi_165_directory_html": (
+        "pds-ppi.igpp.ucla.edu", "/data/JNO-J-JED-3-CDR-V1.0/"
+    ),
+    "jedi_166_directory_html": (
+        "pds-ppi.igpp.ucla.edu", "/data/JNO-J-JED-3-CDR-V1.0/"
+    ),
+    "jiram_orbit62_directory_html": (
+        "atmos.nmsu.edu", "/PDS/data/PDS4/juno_jiram_bundle/"
+    ),
+    "junocam_jnojnc_0029_index_lbl": (
+        "planetarydata.jpl.nasa.gov", "/img/data/juno/JNOJNC_0029/"
+    ),
+    "junocam_jnojnc_0029_index_tab": (
+        "planetarydata.jpl.nasa.gov", "/img/data/juno/JNOJNC_0029/"
+    ),
+    "mwr_grdr_2024165_directory_html": (
+        "pds-atmospheres.nmsu.edu", "/PDS/data/jnomwr_1100/"
+    ),
+    "mwr_grdr_2024166_directory_html": (
+        "pds-atmospheres.nmsu.edu", "/PDS/data/jnomwr_1100/"
+    ),
+    "mwr_irdr_2024165_directory_html": (
+        "pds-atmospheres.nmsu.edu", "/PDS/data/jnomwr_1100/"
+    ),
+    "mwr_irdr_2024166_directory_html": (
+        "pds-atmospheres.nmsu.edu", "/PDS/data/jnomwr_1100/"
+    ),
+    "uvs_orbit62_directory_html": (
+        "atmos.nmsu.edu", "/PDS/data/jnouvs_3001/"
+    ),
+    "waves_burst_bstfull_index_lbl": (
+        "pds-ppi.igpp.ucla.edu", "/data/JNO-E_J_SS-WAV-3-CDR-BSTFULL-V2.0/"
+    ),
+    "waves_burst_bstfull_index_tab": (
+        "pds-ppi.igpp.ucla.edu", "/data/JNO-E_J_SS-WAV-3-CDR-BSTFULL-V2.0/"
+    ),
+    "waves_survey_orbit62_directory_html": (
+        "pds-ppi.igpp.ucla.edu", "/data/JNO-E_J_SS-WAV-3-CDR-SRVFULL-V2.0/"
+    ),
+}
+
+
+def validate_evidence_source_contracts(
+    sidecar: "HistoricalReplayV2DiscoveryEvidenceSidecar",
+) -> None:
+    """§4.7: Validate that every evidence record's source_url matches the stable
+    semantic contract (expected host + path prefix) registered for its evidence_id.
+
+    Raises ValueError if any evidence record violates its contract.
+    Evidence records whose evidence_id is not in the contract table are silently
+    accepted (forward-compatible: new evidence sources not yet registered).
+    """
+    from urllib.parse import urlsplit
+
+    for ev in sidecar.discovery_evidence:
+        contract = _EVIDENCE_URL_CONTRACTS.get(ev.evidence_id)
+        if contract is None:
+            continue  # Not registered — no contract to enforce.
+        expected_host, expected_path_prefix = contract
+        try:
+            parsed = urlsplit(ev.source_url)
+        except Exception as exc:
+            raise ValueError(
+                f"Evidence {ev.evidence_id!r}: source_url {ev.source_url!r} "
+                f"could not be parsed: {exc}."
+            ) from exc
+        if parsed.hostname != expected_host:
+            raise ValueError(
+                f"Evidence {ev.evidence_id!r}: source_url host "
+                f"{parsed.hostname!r} does not match expected {expected_host!r}."
+            )
+        if not parsed.path.startswith(expected_path_prefix):
+            raise ValueError(
+                f"Evidence {ev.evidence_id!r}: source_url path "
+                f"{parsed.path!r} does not start with expected prefix "
+                f"{expected_path_prefix!r}."
+            )
+
+# ---------------------------------------------------------------------------
 # Sidecar loader
 # ---------------------------------------------------------------------------
 
@@ -191,6 +288,14 @@ def _load_sidecar() -> HistoricalReplayV2DiscoveryEvidenceSidecar:
         raise ValueError(
             f"Sidecar replay_id {sidecar.replay_id!r} != expected {_REPLAY_ID!r}."
         )
+
+    # §4.7: Evidence source URL contract validation
+    try:
+        validate_evidence_source_contracts(sidecar)
+    except ValueError as exc:
+        raise ValueError(
+            f"Sidecar evidence source URL contract violation: {exc}"
+        ) from exc
 
     return sidecar
 
@@ -333,14 +438,39 @@ def _build_mwr_entries(
 
 _UVS_BASE_URL = "https://atmos.nmsu.edu/PDS/data/jnouvs_3001/DATA/ORBIT-62/"
 
+# ---------------------------------------------------------------------------
+# UVS authoritative label temporal exclusions (B2.2 source fact).
+#
+# After authoritative label acquisition, the following UVS P62SY1 (synoptic)
+# products were confirmed POST-epoch:
+#
+#   UVS_S02_771613347_2024166_P62SY1_V01: stop=2024-06-14T11:57:55.215Z (POST)
+#   UVS_S03_771613347_2024166_P62SY1_V01: stop=2024-06-15T00:50:45.152Z (POST)
+#
+# UVS_S01_771613347_2024166_P62SY1_V01: stop=2024-06-14T08:29:35.232Z (ELIGIBLE)
+# All 5 P62OBS products: confirmed ELIGIBLE.
+# ---------------------------------------------------------------------------
+
+_UVS_AUTHORITATIVE_INELIGIBLE_FILENAMES: frozenset[str] = frozenset({
+    # Sidecar stores filename WITHOUT .xml extension
+    "UVS_S02_771613347_2024166_P62SY1_V01",
+    "UVS_S03_771613347_2024166_P62SY1_V01",
+})
+
 
 def _build_uvs_entries(
     evidence_id: str,
     sidecar: NormalizedDiscoveryExtractions,
 ) -> list[AcquisitionLogicalProductEntry]:
-    """Build UVS entries from typed sidecar normalized extraction rows."""
+    """Build UVS entries from typed sidecar normalized extraction rows.
+
+    Products in _UVS_AUTHORITATIVE_INELIGIBLE_FILENAMES are excluded after
+    B2.2 authoritative label acquisition confirmed temporal ineligibility.
+    """
     entries = []
     for row in sidecar.uvs_orbit62_filenames:
+        if row.filename in _UVS_AUTHORITATIVE_INELIGIBLE_FILENAMES:
+            continue
         url = f"{_UVS_BASE_URL}{row.relative_label_path}"
         logical_id = (
             f"gcsi.uvs.pj62.{row.sensor.lower()}_{row.sclk}_{row.doy_str}_{row.obs_type.lower()}"
@@ -528,7 +658,7 @@ def _build_fgm_entries(
 # ---------------------------------------------------------------------------
 
 _JADE_BASE_URL = (
-    "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/"
+    "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/"
 )
 
 
@@ -584,14 +714,49 @@ _JEDI_BASE_URL = (
 )
 
 
+# ---------------------------------------------------------------------------
+# JEDI authoritative label temporal exclusions (B2.2 source fact).
+#
+# After authoritative label acquisition, the following JEDI product types
+# were confirmed OUTSIDE the eligibility window:
+#
+# POST-epoch (stop > 2024-06-14T09:35:17.546Z):
+#   - All DOY-166 LOER-family products: stop=2024-06-14T23:59:57 (full-day)
+#     Affected product types: LOERSESP, LOERSISP (all sensors)
+#
+# PRE-epoch (stop <= 2024-06-13T10:00:00Z):
+#   - JED_270_LOERSISP_CDR_2024165: stop=2024-06-13T09:53:07 (before start)
+#
+# These are deterministic archive facts established by authoritative labels.
+# ---------------------------------------------------------------------------
+
+# Product-ID stems known to be temporally ineligible after label fetch.
+_JEDI_AUTHORITATIVE_INELIGIBLE_PRODUCT_IDS: frozenset[str] = frozenset({
+    # DOY-166 LOER full-day products (POST-epoch: stop=2024-06-14T23:59:57)
+    "JED_090_LOERSESP_CDR_2024166_V04",
+    "JED_090_LOERSISP_CDR_2024166_V04",
+    "JED_180_LOERSESP_CDR_2024166_V04",
+    "JED_180_LOERSISP_CDR_2024166_V04",
+    "JED_270_LOERSESP_CDR_2024166_V04",
+    # DOY-165 product confirmed PRE-epoch: stop=2024-06-13T09:53:07
+    "JED_270_LOERSISP_CDR_2024165_V04",
+})
+
+
 def _build_jedi_entries(
     ev_165: str,
     ev_166: str,
     sidecar: NormalizedDiscoveryExtractions,
 ) -> list[AcquisitionLogicalProductEntry]:
-    """Build JEDI entries from typed sidecar normalized extraction rows."""
+    """Build JEDI entries from typed sidecar normalized extraction rows.
+
+    Products in _JEDI_AUTHORITATIVE_INELIGIBLE_PRODUCT_IDS are excluded after
+    B2.2 authoritative label acquisition confirmed temporal ineligibility.
+    """
     entries = []
     for row in sidecar.jedi_165_labels:
+        if row.product_id.upper() in _JEDI_AUTHORITATIVE_INELIGIBLE_PRODUCT_IDS:
+            continue
         url = f"{_JEDI_BASE_URL}{row.relative_label_path}"
         logical_id = f"gcsi.jedi.pj62.{row.product_id.lower()}"
         rep = AcquisitionSourceRepresentation(
@@ -615,6 +780,8 @@ def _build_jedi_entries(
         ))
 
     for row in sidecar.jedi_166_labels:
+        if row.product_id.upper() in _JEDI_AUTHORITATIVE_INELIGIBLE_PRODUCT_IDS:
+            continue
         url = f"{_JEDI_BASE_URL}{row.relative_label_path}"
         logical_id = f"gcsi.jedi.pj62.{row.product_id.lower()}"
         rep = AcquisitionSourceRepresentation(
@@ -680,7 +847,9 @@ def _build_waves_survey_entries(
             label_url=url,
             normalizer_id="gcsi.generic_pds3_label.v1",
             profile_id="waves_survey_pds3",
-            expected_archive_identity=row.stem,
+            # WAVES PRODUCT_ID excludes the version suffix (_Vxx) from the filename
+            # stem — the authoritative identity is established from the label itself.
+            expected_archive_identity=None,
             discovery_evidence_id=evidence_id,
         )
         validate_representation_url_trust(rep)
@@ -740,7 +909,9 @@ def _build_waves_burst_entries(
             label_url=url,
             normalizer_id="gcsi.generic_pds3_label.v1",
             profile_id="waves_burst_pds3",
-            expected_archive_identity=stem,
+            # WAVES PRODUCT_ID excludes the version suffix (_Vxx) from the filename
+            # stem — the authoritative identity is established from the label itself.
+            expected_archive_identity=None,
             discovery_evidence_id=evidence_id,
         )
         validate_representation_url_trust(rep)
@@ -761,7 +932,11 @@ def _build_waves_burst_entries(
 # ---------------------------------------------------------------------------
 
 def build_plan() -> HistoricalReplayV2AcquisitionPlan:
-    """Build and return the full 411-entry acquisition plan.
+    """Build and return the full 403-entry acquisition plan.
+
+    B2.2 temporal reconciliation: 403 logical entries / 527 source refs
+    (reduced from 411/535 after authoritative label verification confirmed
+    8 products outside the eligibility window).
 
     Loads the discovery evidence sidecar, then enumerates all instruments.
     The sidecar must exist at data/replays/juno_pj62_large_replay_v2_discovery_evidence.json.
@@ -812,18 +987,20 @@ def build_plan() -> HistoricalReplayV2AcquisitionPlan:
     ))
 
     # Reconciliation check
+    # B2.2 authoritative label temporal reconciliation:
+    # 8 products confirmed ineligible (6 JEDI + 2 UVS); plan updated from 411→403 / 535→527.
     total = len(entries)
-    if total != 411:
+    if total != 403:
         raise RuntimeError(
-            f"SOURCE_ENUMERATION_CHANGED: expected 411 logical entries, got {total}. "
-            f"6F_B214_STATUS = SOURCE_ENUMERATION_RECONCILIATION_REQUIRED"
+            f"SOURCE_ENUMERATION_CHANGED: expected 403 logical entries, got {total}. "
+            f"6F_B22_STATUS = SOURCE_INVENTORY_RECONCILIATION_REQUIRED"
         )
 
     total_refs = sum(len(e.representations) for e in entries)
-    if total_refs != 535:
+    if total_refs != 527:
         raise RuntimeError(
-            f"SOURCE_ENUMERATION_CHANGED: expected 535 source refs, got {total_refs}. "
-            f"6F_B214_STATUS = SOURCE_ENUMERATION_RECONCILIATION_REQUIRED"
+            f"SOURCE_ENUMERATION_CHANGED: expected 527 source refs, got {total_refs}. "
+            f"6F_B22_STATUS = SOURCE_INVENTORY_RECONCILIATION_REQUIRED"
         )
 
     plan_id = _compute_plan_id(

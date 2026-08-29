@@ -1,0 +1,17 @@
+{
+  "acquisition_ledger_id": "306302e0baebb9845bf7b670ac0b7a590e4c70710b390fd3f92de881ce1f9153",
+  "acquisition_plan_id": "7ede995fb67e0597a399f1b77ad8268f3f5525eb43f89edbf819a4615e213103",
+  "bundle_id": "0c1da4ed6679ee0723983c796f6105443f2f4fe636a66badcb20c99506a0e4aa",
+  "decision_epoch_utc": "2024-06-14T09:35:17.546000+00:00",
+  "discovery_evidence_artifact_id": "3eb9f16df6c92c1cede71feb6b3ed111d2154452491cbaf1625aff6c24b4661f",
+  "horizons_snapshot_id": "b2e0f7a6f4b8a3221c7f74ea6f71c15a96a4210e76c5711be3c0d08b4442a3f1",
+  "horizons_snapshot_ref": "data/verified_snapshots/horizons/juno/juno_spk_-61_2024-06-14T093517.546000Z.json",
+  "label_snapshot_count": 527,
+  "logical_product_count": 403,
+  "replay_id": "juno_pj62_large_replay_v2",
+  "schema": "gcsi.v2_source_bundle",
+  "schema_version": 1,
+  "source_record_count": 527,
+  "verified_inventory_manifest_id": "a0a2aff31eb96e5f649288d0f38c07cef3fcc19d5520fe30d5785a9b4b80a48b",
+  "verified_inventory_manifest_ref": "data/replays/juno_pj62_large_replay_v2_verified_inventory.json"
+}

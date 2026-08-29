@@ -938,6 +938,12 @@ def load_acquisition_plan(path: str) -> HistoricalReplayV2AcquisitionPlan:
             f"Acquisition plan path must not contain path traversal sequences: {path!r}."
         )
 
+    # Must not be a symlink before resolving (original path symlink check).
+    if p.is_symlink():
+        raise ValueError(
+            f"Acquisition plan path must not be a symlink: {path!r}."
+        )
+
     # Resolve the path.
     try:
         resolved = p.resolve()
@@ -946,10 +952,10 @@ def load_acquisition_plan(path: str) -> HistoricalReplayV2AcquisitionPlan:
             f"Acquisition plan path could not be resolved: {path!r}: {exc}"
         ) from exc
 
-    # Must not be a symlink (resolved target of symlink could be outside boundary).
+    # Must not be a symlink at the resolved target either (defense in depth).
     if resolved.is_symlink():
         raise ValueError(
-            f"Acquisition plan path must not be a symlink: {path!r}."
+            f"Acquisition plan resolved path must not be a symlink: {path!r}."
         )
 
     # Must resolve inside the allowed directory.

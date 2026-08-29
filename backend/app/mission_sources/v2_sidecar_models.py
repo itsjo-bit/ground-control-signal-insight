@@ -36,6 +36,61 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+# ---------------------------------------------------------------------------
+# Temporal partition boundaries (imported lazily to avoid circular imports;
+# duplicated here as module-level constants for use in row validators).
+# ---------------------------------------------------------------------------
+
+# Accumulation start: PRE if stop_time <= this
+_ACCUMULATION_START_UTC: datetime = datetime(2024, 6, 13, 10, 0, 0, tzinfo=timezone.utc)
+
+# Decision epoch: POST if stop_time > this
+_DECISION_EPOCH_UTC: datetime = datetime(
+    2024, 6, 14, 9, 35, 17, 546000, tzinfo=timezone.utc
+)
+
+
+# ---------------------------------------------------------------------------
+# UTC datetime parsing helper (4.3)
+# ---------------------------------------------------------------------------
+
+
+def _parse_utc_datetime(value: str, field_name: str) -> datetime:
+    """Parse an ISO-8601 string as a timezone-aware UTC datetime.
+
+    Accepts strings ending in 'Z', with explicit +00:00 offset, or implicit
+    naive timestamps (treated as UTC — PDS archive convention).  Naive timestamps
+    are NOT silently accepted as arbitrary local time; they are explicitly
+    coerced to UTC under the archive contract that all timestamps are UTC.
+
+    Rejects truly invalid date strings (unparseable, malformed, etc.).
+    """
+    if not value or not value.strip():
+        raise ValueError(f"{field_name} must not be empty.")
+    normalised = value.strip()
+    # Normalise 'Z' suffix to '+00:00' for fromisoformat compatibility
+    if normalised.endswith("Z"):
+        normalised = normalised[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(normalised)
+    except ValueError as exc:
+        raise ValueError(
+            f"{field_name} {value!r} is not a valid ISO-8601 datetime: {exc}."
+        ) from exc
+    # Coerce naive timestamps to UTC explicitly (PDS archive convention)
+    if dt.tzinfo is None or dt.utcoffset() is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _classify_temporal_partition(stop_utc: datetime) -> str:
+    """Classify a stop time into PRE / ELIGIBLE / POST partition string."""
+    if stop_utc <= _ACCUMULATION_START_UTC:
+        return "PRE"
+    if stop_utc > _DECISION_EPOCH_UTC:
+        return "POST"
+    return "ELIGIBLE"
+
 
 # ---------------------------------------------------------------------------
 # Path security helpers
@@ -681,6 +736,14 @@ class JadeDiscoveryLabel(BaseModel):
                 f"JADE product_id {self.product_id!r} must appear in "
                 f"relative_label_path {self.relative_label_path!r}."
             )
+        # §4.3: Parse and validate UTC datetimes; enforce stop >= start.
+        start_dt = _parse_utc_datetime(self.start_time_utc, "start_time_utc")
+        stop_dt = _parse_utc_datetime(self.stop_time_utc, "stop_time_utc")
+        if stop_dt < start_dt:
+            raise ValueError(
+                f"JADE stop_time_utc ({self.stop_time_utc!r}) must be >= "
+                f"start_time_utc ({self.start_time_utc!r})."
+            )
         return self
 
 
@@ -834,6 +897,21 @@ class JunoCamDiscoveryRow(BaseModel):
                 raise ValueError(
                     f"JunoCam RDR product_id must start with 'JNCR_': {pid!r}."
                 )
+        # §4.3: Parse and validate UTC datetimes; enforce stop >= start and
+        # partition consistency.
+        start_dt = _parse_utc_datetime(self.start_time_utc, "start_time_utc")
+        stop_dt = _parse_utc_datetime(self.stop_time_utc, "stop_time_utc")
+        if stop_dt < start_dt:
+            raise ValueError(
+                f"JunoCam stop_time_utc ({self.stop_time_utc!r}) must be >= "
+                f"start_time_utc ({self.start_time_utc!r})."
+            )
+        expected_partition = _classify_temporal_partition(stop_dt)
+        if self.partition.value != expected_partition:
+            raise ValueError(
+                f"JunoCam partition {self.partition.value!r} is inconsistent with "
+                f"stop_time_utc {self.stop_time_utc!r}: expected {expected_partition!r}."
+            )
         return self
 
 
@@ -879,6 +957,21 @@ class WavesBurstDiscoveryRow(BaseModel):
             raise ValueError(
                 f"WAVES Burst product_id {self.product_id!r} must appear in "
                 f"file_specification_name {self.file_specification_name!r}."
+            )
+        # §4.3: Parse and validate UTC datetimes; enforce stop >= start and
+        # partition consistency.
+        start_dt = _parse_utc_datetime(self.start_time, "start_time")
+        stop_dt = _parse_utc_datetime(self.stop_time, "stop_time")
+        if stop_dt < start_dt:
+            raise ValueError(
+                f"WAVES Burst stop_time ({self.stop_time!r}) must be >= "
+                f"start_time ({self.start_time!r})."
+            )
+        expected_partition = _classify_temporal_partition(stop_dt)
+        if self.partition.value != expected_partition:
+            raise ValueError(
+                f"WAVES Burst partition {self.partition.value!r} is inconsistent with "
+                f"stop_time {self.stop_time!r}: expected {expected_partition!r}."
             )
         return self
 
@@ -935,6 +1028,78 @@ class DiscoveryPartition(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# B2.1.4 / B2.2 §4.2: Typed partition summary models
+# ---------------------------------------------------------------------------
+
+
+class JunoCamPartitionSummary(BaseModel):
+    """Typed frozen model for JunoCam partition summary.
+
+    Invariant: total_orbit62_rows == pre_rows + eligible_rows + post_rows
+    Spec: 426 = 112 + 248 + 66
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    instrument: str = Field(description="Instrument name.")
+    total_orbit62_rows: int = Field(description="Total orbit-62 rows (must == 426).")
+    pre_rows: int = Field(description="PRE partition rows (must == 112).")
+    eligible_rows: int = Field(description="ELIGIBLE partition rows (must == 248).")
+    post_rows: int = Field(description="POST partition rows (must == 66).")
+    source_evidence_id: Optional[str] = Field(default=None, description="Source evidence_id.")
+    note: Optional[str] = Field(default=None, description="Free-form note (backward compat).")
+
+    @model_validator(mode="after")
+    def _invariant(self) -> "JunoCamPartitionSummary":
+        total = self.pre_rows + self.eligible_rows + self.post_rows
+        if total != self.total_orbit62_rows:
+            raise ValueError(
+                f"JunoCamPartitionSummary invariant violated: "
+                f"pre({self.pre_rows}) + eligible({self.eligible_rows}) + "
+                f"post({self.post_rows}) = {total} != "
+                f"total_orbit62_rows({self.total_orbit62_rows})."
+            )
+        return self
+
+
+class WavesBurstPartitionSummary(BaseModel):
+    """Typed frozen model for WAVES Burst partition summary.
+
+    Invariant: total_orbit62_rows == pre_rows + eligible_rows + post_rows
+    Invariant: sum(eligible_families.values()) == eligible_rows
+    Spec: 282 = 175 + 91 + 16; eligible_families sum = 41+41+3+3+3 = 91
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    instrument: str = Field(description="Instrument name.")
+    total_orbit62_rows: int = Field(description="Total orbit-62 rows (must == 282).")
+    pre_rows: int = Field(description="PRE partition rows (must == 175).")
+    eligible_rows: int = Field(description="ELIGIBLE partition rows (must == 91).")
+    post_rows: int = Field(description="POST partition rows (must == 16).")
+    eligible_families: dict = Field(description="Per-family eligible row counts (backward compat).")
+    source_evidence_id: Optional[str] = Field(default=None, description="Source evidence_id.")
+
+    @model_validator(mode="after")
+    def _invariant(self) -> "WavesBurstPartitionSummary":
+        total = self.pre_rows + self.eligible_rows + self.post_rows
+        if total != self.total_orbit62_rows:
+            raise ValueError(
+                f"WavesBurstPartitionSummary invariant violated: "
+                f"pre({self.pre_rows}) + eligible({self.eligible_rows}) + "
+                f"post({self.post_rows}) = {total} != "
+                f"total_orbit62_rows({self.total_orbit62_rows})."
+            )
+        families_sum = sum(self.eligible_families.values())
+        if families_sum != self.eligible_rows:
+            raise ValueError(
+                f"WavesBurstPartitionSummary eligible_families sum {families_sum} != "
+                f"eligible_rows {self.eligible_rows}."
+            )
+        return self
+
+
+# ---------------------------------------------------------------------------
 # B2.1.4: NormalizedDiscoveryExtractions typed model
 # ---------------------------------------------------------------------------
 
@@ -944,8 +1109,8 @@ class PartitionSummaries(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    junocam: dict = Field(description="JunoCam partition summary.")
-    waves_burst: dict = Field(description="WAVES Burst partition summary.")
+    junocam: JunoCamPartitionSummary = Field(description="JunoCam partition summary.")
+    waves_burst: WavesBurstPartitionSummary = Field(description="WAVES Burst partition summary.")
 
 
 class NormalizedDiscoveryExtractions(BaseModel):
@@ -1164,12 +1329,66 @@ class HistoricalReplayV2DiscoveryEvidenceSidecar(BaseModel):
 
     @model_validator(mode="after")
     def _validate_sidecar(self) -> "HistoricalReplayV2DiscoveryEvidenceSidecar":
-        # 1. No duplicate evidence_ids
+        # 1. No duplicate evidence_ids; no empty evidence_ids
         ev_ids = [ev.evidence_id for ev in self.discovery_evidence]
+        for eid in ev_ids:
+            if not eid or not eid.strip():
+                raise ValueError("discovery_evidence contains an empty evidence_id.")
         if len(ev_ids) != len(set(ev_ids)):
             seen: set[str] = set()
             dups = [x for x in ev_ids if x in seen or seen.add(x)]  # type: ignore
             raise ValueError(
                 f"Duplicate evidence_id values in discovery_evidence: {dups!r}."
             )
+
+        # 2. §4.1 Referential integrity: every row's discovery_evidence_id must
+        #    resolve to exactly one TypedDiscoveryEvidence.evidence_id.
+        ev_id_set: frozenset[str] = frozenset(ev_ids)
+        ext = self.normalized_extractions
+
+        _ROW_COLLECTIONS = (
+            ext.jiram_orbit62_filenames,
+            ext.mwr_orbit62_filenames,
+            ext.uvs_orbit62_filenames,
+            ext.fgm_peri62_filenames,
+            ext.jade_orbit62_labels,
+            ext.jedi_165_labels,
+            ext.jedi_166_labels,
+            ext.waves_survey_orbit62_labels,
+            ext.junocam_index_tab_orbit62_all,
+            ext.waves_burst_index_tab_orbit62_all,
+        )
+
+        for collection in _ROW_COLLECTIONS:
+            for row in collection:
+                eid = row.discovery_evidence_id
+                if not eid or not eid.strip():
+                    raise ValueError(
+                        f"Row {row!r} has an empty discovery_evidence_id."
+                    )
+                if eid not in ev_id_set:
+                    raise ValueError(
+                        f"Orphan discovery_evidence_id {eid!r} in row "
+                        f"{getattr(row, 'relative_label_path', None) or getattr(row, 'file_specification_name', None) or repr(row)!r}: "
+                        "no matching evidence record."
+                    )
+
+        # 3. Partition summaries: source_evidence_id (when not None) must resolve.
+        ps = ext.partition_summaries
+        for summary_name, summary in (
+            ("junocam", ps.junocam),
+            ("waves_burst", ps.waves_burst),
+        ):
+            src_ev = summary.source_evidence_id
+            if src_ev is not None:
+                if not src_ev.strip():
+                    raise ValueError(
+                        f"partition_summaries.{summary_name} has an empty source_evidence_id."
+                    )
+                if src_ev not in ev_id_set:
+                    raise ValueError(
+                        f"Orphan source_evidence_id {src_ev!r} in "
+                        f"partition_summaries.{summary_name}: no matching evidence record."
+                    )
+
         return self

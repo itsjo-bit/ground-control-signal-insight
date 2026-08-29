@@ -151,10 +151,22 @@ _ASCII_DECIMAL_RE = re.compile(r"^[0-9]+$")
 _MD5_RE = re.compile(r"^[0-9a-f]{32}$", re.IGNORECASE)
 
 # PDS3 keyword = value line (top-level assignment).
-_KV_LINE_RE = re.compile(r"^\s*([A-Z_\^][A-Z0-9_\^]*)\s*=\s*(.+?)\s*$", re.IGNORECASE)
+# Allows namespace-prefixed keys like JNO:TDI_STAGES_COUNT.
+_KV_LINE_RE = re.compile(r"^\s*([A-Z_\^][A-Z0-9_\^\:]*)\s*=\s*(.*)$", re.IGNORECASE)
+
+# Keyword-only line (value on next line or empty – should not normally appear, but guard).
+_KEY_ONLY_RE = re.compile(r"^\s*([A-Z_\^][A-Z0-9_\^\:]*)\s*=\s*$", re.IGNORECASE)
 
 # Comment line (/* ... */ or # comment).
 _COMMENT_RE = re.compile(r"^\s*/\*.*$|^\s*#.*$")
+
+# Inline comment pattern: /* ... */ that may appear after a value.
+_INLINE_COMMENT_RE = re.compile(r"/\*[^*]*\*/")
+
+# Structural keyword patterns (allow arbitrary whitespace around =).
+_STRUCT_OBJECT_START_RE = re.compile(r"^(OBJECT|GROUP)\s*=\s*(\S+)", re.IGNORECASE)
+_STRUCT_OBJECT_END_RE = re.compile(r"^(END_OBJECT|END_GROUP)(\s*=\s*\S+)?$", re.IGNORECASE)
+_STRUCT_END_RE = re.compile(r"^END\s*$", re.IGNORECASE)
 
 
 # ---------------------------------------------------------------------------
@@ -317,7 +329,8 @@ WAVES_SURVEY_PDS3_PROFILE = GenericPds3AdapterProfile(
 JUNOCAM_PDS3_PROFILE = GenericPds3AdapterProfile(
     profile_id="junocam_pds3",
     expected_mission="JUNO",
-    expected_spacecraft="JNO",
+    # JunoCam labels use SPACECRAFT_NAME = "JUNO" (full name, not abbreviation)
+    expected_spacecraft="JUNO",
     expected_instrument="JNC",
     product_family="JUNOCAM",
     require_start_stop_time=True,
@@ -333,7 +346,8 @@ JUNOCAM_PDS3_PROFILE = GenericPds3AdapterProfile(
 FGM_PDS3_PROFILE = GenericPds3AdapterProfile(
     profile_id="fgm_pds3",
     expected_mission="JUNO",
-    expected_spacecraft="JNO",
+    # FGM labels use SPACECRAFT_NAME = "JUNO" (full name, not abbreviation)
+    expected_spacecraft="JUNO",
     expected_instrument="FGM",
     product_family="FGM",
     require_start_stop_time=True,
@@ -363,7 +377,8 @@ JADE_PDS3_PROFILE = GenericPds3AdapterProfile(
 JEDI_PDS3_PROFILE = GenericPds3AdapterProfile(
     profile_id="jedi_pds3",
     expected_mission="JUNO",
-    expected_spacecraft="JNO",
+    # JEDI labels use INSTRUMENT_HOST_NAME = "JUNO" (full name, not abbreviation)
+    expected_spacecraft="JUNO",
     expected_instrument="JED",
     product_family="JEDI",
     require_start_stop_time=True,
@@ -464,13 +479,46 @@ def _validate_pds3_source_url_trust(
 # ---------------------------------------------------------------------------
 
 
+def _strip_inline_comment(raw_val: str) -> str:
+    """Strip trailing inline PVL comments (/* ... */) from a raw value string.
+
+    Handles:
+    - Unquoted values: ``2024-165T00:00:33 /* UTC */`` → ``2024-165T00:00:33``
+    - Quoted values with trailing comment: ``"JAD" /* JADE */`` → ``"JAD"``
+    - Multi-line values (not yet accumulated): called only for single lines.
+    """
+    v = raw_val.strip()
+    if not v:
+        return v
+
+    if v.startswith('"') or v.startswith("'"):
+        q = v[0]
+        # Find the closing quote character (last occurrence after first).
+        close_pos = v.rfind(q, 1)
+        if close_pos > 0 and close_pos < len(v) - 1:
+            # Content after the closing quote — strip if it's whitespace/comments.
+            tail = v[close_pos + 1:].strip()
+            if not tail or _INLINE_COMMENT_RE.fullmatch(tail):
+                return v[:close_pos + 1]
+        # Otherwise return as-is (either terminated correctly or will be caught later).
+        return v
+    else:
+        # Unquoted or set/paren: strip any inline comment.
+        return _INLINE_COMMENT_RE.sub("", v).strip()
+
+
 def _parse_pvl_value(raw_value: str) -> str | list[str]:
-    """Parse a PDS3 PVL value into a Python string or list of strings.
+    """Parse a fully-accumulated PDS3 PVL value into a Python string or list.
+
+    At this point ``raw_value`` is the complete (possibly multi-line) value
+    string as accumulated by ``_parse_pds3_label``.
 
     Handles:
     - Quoted strings: ``"value"`` or ``'value'`` → ``str``
     - Bare unquoted tokens: ``VALUE``, ``123``, etc. → ``str``
     - Sets/sequences: ``{ val1, val2, "val3" }`` → ``list[str]``
+    - Parenthesis sequences: ``( 'A', 'B' )`` → ``list[str]``
+    - Multi-line quoted strings: already collapsed by caller
     - ``N/A``, ``"N/A"`` → ``"N/A"`` (preserved)
     - Unit suffixes like ``<km>`` are stripped.
 
@@ -481,44 +529,47 @@ def _parse_pvl_value(raw_value: str) -> str | list[str]:
 
     Returns ``str`` or ``list[str]``.
     """
+    # Caller (_parse_pds3_label) has already applied _strip_inline_comment to
+    # single-line values before calling this function.  For multi-line
+    # accumulated values, inline comments inside the content are not stripped
+    # (they are part of the raw string content).
     v = raw_value.strip()
 
-    # Set/sequence: must start with { and end with }
+    # Set/sequence: starts with { and ends with } (may have been multi-line)
     if v.startswith("{"):
-        if "}" not in v:
+        if not v.endswith("}"):
             raise GenericPds3AdapterValidationError(
                 "PDS3 label has unterminated set/sequence value "
                 "(opening '{' without closing '}')."
             )
-        inner = v[v.index("{") + 1 : v.rindex("}")].strip()
-        items = []
-        for item in inner.split(","):
-            item = item.strip()
-            if item.startswith('"') and item.endswith('"'):
-                item = item[1:-1]
-            elif item.startswith("'") and item.endswith("'"):
-                item = item[1:-1]
-            # Strip unit suffix like <km>
-            item = re.sub(r"\s*<[^>]+>$", "", item).strip()
-            if item:
-                items.append(item)
-        return items
+        inner = v[1 : len(v) - 1].strip()
+        return _parse_sequence_inner(inner)
 
-    # Quoted string — verify terminated.
+    # Parenthesis sequence: ( 'BLUE', 'GREEN', 'RED' )
+    if v.startswith("("):
+        if not v.endswith(")"):
+            raise GenericPds3AdapterValidationError(
+                "PDS3 label has unterminated parenthesis sequence "
+                "(opening '(' without closing ')')."
+            )
+        inner = v[1 : len(v) - 1].strip()
+        return _parse_sequence_inner(inner)
+
+    # Quoted string — must be fully terminated (caller accumulated all lines).
     if v.startswith('"'):
-        if not v.endswith('"') or len(v) < 2:
+        if len(v) < 2 or not v.endswith('"'):
             raise GenericPds3AdapterValidationError(
                 "PDS3 label has unterminated double-quoted string value."
             )
         return v[1:-1]
     if v.startswith("'"):
-        if not v.endswith("'") or len(v) < 2:
+        if len(v) < 2 or not v.endswith("'"):
             raise GenericPds3AdapterValidationError(
                 "PDS3 label has unterminated single-quoted string value."
             )
         return v[1:-1]
 
-    # Unsupported multiline continuation (backslash at end of raw_value).
+    # Backslash continuation is not supported.
     if raw_value.rstrip().endswith("\\"):
         raise GenericPds3AdapterValidationError(
             "PDS3 label contains unsupported multiline value continuation (backslash)."
@@ -528,6 +579,51 @@ def _parse_pvl_value(raw_value: str) -> str | list[str]:
     v = re.sub(r"\s*<[^>]+>$", "", v).strip()
 
     return v
+
+
+def _parse_sequence_inner(inner: str) -> list[str]:
+    """Parse comma-separated inner content of a PDS3 set/sequence.
+
+    Handles quoted items with embedded commas by scanning character by character.
+    Items may be quoted with ``"`` or ``'``, or bare unquoted tokens.
+    """
+    items: list[str] = []
+    current: list[str] = []
+    in_quote: Optional[str] = None
+
+    for ch in inner:
+        if in_quote:
+            if ch == in_quote:
+                in_quote = None
+            current.append(ch)
+        elif ch in ('"', "'"):
+            in_quote = ch
+            current.append(ch)
+        elif ch == ",":
+            token = "".join(current).strip()
+            if token:
+                items.append(_clean_sequence_item(token))
+            current = []
+        else:
+            current.append(ch)
+
+    # Final item
+    token = "".join(current).strip()
+    if token:
+        items.append(_clean_sequence_item(token))
+
+    return [i for i in items if i]
+
+
+def _clean_sequence_item(item: str) -> str:
+    """Strip outer quotes and unit suffixes from a sequence item."""
+    item = item.strip()
+    if item.startswith('"') and item.endswith('"') and len(item) >= 2:
+        return item[1:-1]
+    if item.startswith("'") and item.endswith("'") and len(item) >= 2:
+        return item[1:-1]
+    # Strip unit suffix like <km>
+    return re.sub(r"\s*<[^>]+>$", "", item).strip()
 
 
 def _parse_pds3_label(raw_bytes: bytes) -> dict[str, str | list[str]]:
@@ -578,23 +674,82 @@ def _parse_pds3_label(raw_bytes: bytes) -> dict[str, str | list[str]]:
     depth = 0
     found_end = False
 
+    # Multi-line value accumulation state.
+    # When we encounter a KV assignment whose value is not yet terminated
+    # (e.g. starts with '"' but closing '"' not on the same line, or starts
+    # with '{' but '}' not on same line), we accumulate subsequent raw lines
+    # until the closing delimiter is found.
+    ml_key: Optional[str] = None        # key being accumulated
+    ml_parts: list[str] = []            # accumulated raw value parts
+    ml_close: Optional[str] = None      # closing delimiter: '"', '}', ')'
+
+    # Maximum continuation lines for multi-line values (bounded, fail-closed).
+    _ML_MAX_LINES = 128
+
+    def _flush_multiline(parts: list[str], close: str, key: str) -> None:
+        """Join accumulated parts and store in result.  Validates terminator."""
+        combined = "\n".join(parts)
+        if not combined.strip().endswith(close):
+            raise GenericPds3AdapterValidationError(
+                f"PDS3 label multi-line value for key {key!r} is not terminated "
+                f"by {close!r} within {_ML_MAX_LINES} continuation lines."
+            )
+        result[key] = _parse_pvl_value(combined.strip())
+
     for line in text.splitlines():
+        # ---------------------------------------------------------------
+        # If we are inside a multi-line value accumulation, continue it.
+        # ---------------------------------------------------------------
+        if ml_key is not None:
+            ml_parts.append(line)
+            if len(ml_parts) > _ML_MAX_LINES:
+                raise GenericPds3AdapterValidationError(
+                    f"PDS3 label multi-line value for key {ml_key!r} exceeded "
+                    f"{_ML_MAX_LINES} continuation lines (not terminated)."
+                )
+            # Check whether the close delimiter has appeared.
+            combined_so_far = "\n".join(ml_parts)
+            # For quoted strings, the closing delimiter is the same quote char.
+            # For sets/sequences, it's '}' or ')'.
+            if ml_close in ('"', "'"):
+                # Count unescaped occurrences of the quote char to decide if
+                # we're closed.  Simple heuristic: strip the opening from the
+                # first line and check if the accumulated text ends with the
+                # quote (allowing trailing whitespace after).
+                stripped_combined = combined_so_far.strip()
+                # The combined value must start with the open quote (from first line).
+                if stripped_combined.endswith(ml_close):
+                    _flush_multiline(ml_parts, ml_close, ml_key)
+                    ml_key = None
+                    ml_parts = []
+                    ml_close = None
+            else:
+                # Set/sequence: look for the close brace/paren.
+                stripped_combined = combined_so_far.strip()
+                if stripped_combined.endswith(ml_close):
+                    _flush_multiline(ml_parts, ml_close, ml_key)
+                    ml_key = None
+                    ml_parts = []
+                    ml_close = None
+            continue
+
         stripped = line.strip()
 
         # Empty line → skip.
         if not stripped:
-            if depth > 0 and object_lines is not None:
+            if depth > 0:
                 object_lines.append(line)
             continue
 
         # Comment line → skip.
         if _COMMENT_RE.match(stripped):
-            if depth > 0 and object_lines is not None:
+            if depth > 0:
                 object_lines.append(line)
             continue
 
         # END marker: validate depth then stop.
-        if stripped.upper() == "END":
+        # Use regex to allow arbitrary whitespace (e.g. "END  ").
+        if _STRUCT_END_RE.match(stripped):
             if depth > 0:
                 raise GenericPds3AdapterValidationError(
                     f"PDS3 label END encountered with unclosed OBJECT/GROUP "
@@ -604,72 +759,95 @@ def _parse_pds3_label(raw_bytes: bytes) -> dict[str, str | list[str]]:
             found_end = True
             break
 
-        # GROUP / END_GROUP: treat same as OBJECT/END_OBJECT for depth tracking.
-        stripped_upper = stripped.upper()
+        # Use regex patterns for OBJECT/GROUP/END_OBJECT/END_GROUP detection.
+        # These allow arbitrary whitespace between keyword and '='.
+        _m_obj_start = _STRUCT_OBJECT_START_RE.match(stripped)
+        _m_obj_end = _STRUCT_OBJECT_END_RE.match(stripped)
 
-        if (
-            stripped_upper == "OBJECT"
-            or stripped_upper.startswith("OBJECT =")
-            or stripped_upper.startswith("OBJECT=")
-            or stripped_upper == "GROUP"
-            or stripped_upper.startswith("GROUP =")
-            or stripped_upper.startswith("GROUP=")
-        ):
-            kv = stripped.split("=", 1)
-            obj_name = kv[1].strip() if len(kv) == 2 else "UNKNOWN"
-            if depth == 0:
-                in_object = obj_name.upper()
-                object_lines = [line]
-                depth += 1
-            else:
-                # Nested OBJECT/GROUP (depth > 0) is explicitly rejected.
-                raise GenericPds3AdapterValidationError(
-                    f"PDS3 label has nested OBJECT/GROUP {obj_name!r} "
-                    f"(depth={depth + 1}). Nested constructs are not supported."
-                )
-            continue
-
-        if (
-            stripped_upper == "END_OBJECT"
-            or stripped_upper.startswith("END_OBJECT")
-            or stripped_upper == "END_GROUP"
-            or stripped_upper.startswith("END_GROUP")
-        ):
-            if depth <= 0:
-                raise GenericPds3AdapterValidationError(
-                    "PDS3 label has unmatched END_OBJECT/END_GROUP "
-                    "(depth underflow). Malformed label structure."
-                )
-            depth -= 1
-            if depth == 0 and in_object is not None:
-                object_lines.append(line)
-                result[f"_OBJECT_{in_object}"] = "\n".join(object_lines)
-                in_object = None
-                object_lines = []
-            else:
-                object_lines.append(line)
-            continue
-
-        # Inside an OBJECT block at depth > 0 — collect and continue.
+        # Inside an OBJECT block (depth > 0): collect all lines as raw text
+        # but still track nested depth so we know when the top-level block ends.
         if depth > 0:
-            object_lines.append(line)
+            if _m_obj_start:
+                depth += 1
+                object_lines.append(line)
+            elif _m_obj_end:
+                depth -= 1
+                if depth == 0 and in_object is not None:
+                    object_lines.append(line)
+                    result[f"_OBJECT_{in_object}"] = "\n".join(object_lines)
+                    in_object = None
+                    object_lines = []
+                else:
+                    object_lines.append(line)
+            else:
+                object_lines.append(line)
             continue
+
+        # At top-level (depth == 0): process structural keywords.
+        if _m_obj_start:
+            obj_name = _m_obj_start.group(2).strip().upper()
+            in_object = obj_name
+            object_lines = [line]
+            depth += 1
+            continue
+
+        if _m_obj_end:
+            raise GenericPds3AdapterValidationError(
+                "PDS3 label has unmatched END_OBJECT/END_GROUP "
+                "at top level (depth underflow). Malformed label structure."
+            )
 
         # Top-level: must be a valid keyword = value line.
         m = _KV_LINE_RE.match(stripped)
         if m:
             key = m.group(1).upper()
-            raw_val = m.group(2)
+            raw_val = m.group(2).strip()
+
+            # Pre-strip single-line inline comments (/* ... */) from raw_val
+            # BEFORE multi-line detection.  This handles values like:
+            #   INSTRUMENT_ID = "JAD" /* JADE */
+            #   START_TIME = 2024-165T00:00:33 /* UTC */
+            # We must NOT strip from inside a quoted string — only strip
+            # content that appears AFTER the value.
+            raw_val = _strip_inline_comment(raw_val)
+
             # Ambiguous pointer check (pointer must be a simple filename or
             # ("filename", n) form; nested complex syntax is rejected).
             if key.startswith("^"):
                 # Allow: "filename", 'filename', ("filename", n), plain token.
                 # Reject: nested parens or complex expressions.
-                rv = raw_val.strip()
-                if rv.count("(") > 1 or rv.count(")") > 1:
+                if raw_val.count("(") > 1 or raw_val.count(")") > 1:
                     raise GenericPds3AdapterValidationError(
                         f"PDS3 label has ambiguous pointer syntax for key {key!r}."
                     )
+                result[key] = _parse_pvl_value(raw_val)
+                continue
+
+            # Check whether this value is a multi-line construct.
+            # Case 1: Quoted string not yet terminated.
+            if raw_val.startswith('"') and not (raw_val.endswith('"') and len(raw_val) > 1):
+                ml_key = key
+                ml_parts = [raw_val]
+                ml_close = '"'
+                continue
+            if raw_val.startswith("'") and not (raw_val.endswith("'") and len(raw_val) > 1):
+                ml_key = key
+                ml_parts = [raw_val]
+                ml_close = "'"
+                continue
+            # Case 2: Set/sequence not yet closed.
+            if raw_val.startswith("{") and not raw_val.endswith("}"):
+                ml_key = key
+                ml_parts = [raw_val]
+                ml_close = "}"
+                continue
+            if raw_val.startswith("(") and not raw_val.endswith(")"):
+                ml_key = key
+                ml_parts = [raw_val]
+                ml_close = ")"
+                continue
+
+            # Value is complete on this line.
             result[key] = _parse_pvl_value(raw_val)
         else:
             # A non-blank, non-comment, non-structural line that doesn't
@@ -679,6 +857,13 @@ def _parse_pds3_label(raw_bytes: bytes) -> dict[str, str | list[str]]:
                 "a valid keyword=value assignment, OBJECT/END_OBJECT, "
                 "GROUP/END_GROUP, comment, or END."
             )
+
+    # If we're still accumulating a multi-line value at end, it's unterminated.
+    if ml_key is not None:
+        raise GenericPds3AdapterValidationError(
+            f"PDS3 label ended while accumulating multi-line value for "
+            f"key {ml_key!r} (closing {ml_close!r} not found)."
+        )
 
     return result
 
@@ -1073,6 +1258,8 @@ def parse_generic_pds3_label(
     spacecraft_id = (
         _extract_pds3_str(kv, "INSTRUMENT_HOST_ID")
         or _extract_pds3_str(kv, "SPACECRAFT_ID")
+        or _extract_pds3_str(kv, "INSTRUMENT_HOST_NAME")
+        or _extract_pds3_str(kv, "SPACECRAFT_NAME")
     )
 
     # Enforce presence if profile requires it (Section G).

@@ -1165,19 +1165,21 @@ class TestScopeEnforcement:
                 f"Science payload in plan: {ref.label_url!r}"
             )
 
-    def test_plan_has_exactly_535_source_refs(self, all_entries):
+    def test_plan_has_exactly_527_source_refs(self, all_entries):
+        # B2.2 authoritative: 527 refs (was 535; -6 JEDI PDS3 -2 UVS PDS4)
         all_refs_local = [r for e in all_entries for r in e.representations]
-        assert len(all_refs_local) == 535
+        assert len(all_refs_local) == 527
 
-    def test_plan_has_exactly_411_logical_entries(self, all_entries):
-        assert len(all_entries) == 411
+    def test_plan_has_exactly_403_logical_entries(self, all_entries):
+        # B2.2 authoritative: 403 logical entries (was 411; -6 JEDI -2 UVS)
+        assert len(all_entries) == 403
 
-    def test_plan_pds4_is_156(self, all_refs):
+    def test_plan_pds4_is_154(self, all_refs):
         from backend.app.mission_sources.v2_acquisition_plan import AcquisitionSourceStandard
         pds4 = [r for r in all_refs if r.source_standard == AcquisitionSourceStandard.PDS4]
-        assert len(pds4) == 156
+        assert len(pds4) == 154
 
-    def test_plan_pds3_is_379(self, all_refs):
+    def test_plan_pds3_is_373(self, all_refs):
         from backend.app.mission_sources.v2_acquisition_plan import AcquisitionSourceStandard
         pds3 = [r for r in all_refs if r.source_standard == AcquisitionSourceStandard.PDS3]
-        assert len(pds3) == 379
+        assert len(pds3) == 373

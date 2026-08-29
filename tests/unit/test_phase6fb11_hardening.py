@@ -558,15 +558,21 @@ class TestPds3FailClosedComplete:
         with pytest.raises(GenericPds3AdapterValidationError, match="[Nn]on-ASCII|[Aa]SCII"):
             _parse_pds3_label(raw)
 
-    def test_nested_object_rejected(self):
+    def test_nested_object_collected_as_raw_text(self):
+        # B2.2 parser update: real WAVES Burst labels contain nested OBJECT blocks
+        # (FILE > HEADER_TABLE > COLUMN etc.).  The parser now collects them as raw
+        # text under "_OBJECT_<NAME>" rather than raising.  A standalone OBJECT = A
+        # with a nested OBJECT = B inside is a valid PDS3 construct; the outer block
+        # is stored and the nested content is preserved verbatim.
         raw = b"OBJECT = A\nOBJECT = B\nEND_OBJECT = B\nEND_OBJECT = A\nEND\n"
-        with pytest.raises(GenericPds3AdapterValidationError, match="[Nn]ested|[Dd]epth"):
-            _parse_pds3_label(raw)
+        result = _parse_pds3_label(raw)
+        assert "_OBJECT_A" in result
 
-    def test_nested_group_rejected(self):
+    def test_nested_group_collected_as_raw_text(self):
+        # Identical policy for GROUP blocks.
         raw = b"GROUP = A\nGROUP = B\nEND_GROUP = B\nEND_GROUP = A\nEND\n"
-        with pytest.raises(GenericPds3AdapterValidationError, match="[Nn]ested|[Dd]epth"):
-            _parse_pds3_label(raw)
+        result = _parse_pds3_label(raw)
+        assert "_OBJECT_A" in result
 
     def test_unmatched_end_object(self):
         raw = b"DATA_SET_ID = DS\nEND_OBJECT = THING\nEND\n"
@@ -590,7 +596,9 @@ class TestPds3FailClosedComplete:
 
     def test_unterminated_quote(self):
         raw = b'DATA_SET_ID = "not closed\nEND\n'
-        with pytest.raises(GenericPds3AdapterValidationError, match="[Qq]uot|[Uu]nterminated"):
+        # The multi-line accumulator raises when the label ends without a closing quote.
+        # Error message: "ended while accumulating multi-line value ... closing '"' not found"
+        with pytest.raises(GenericPds3AdapterValidationError, match="accumulating|closing|not found"):
             _parse_pds3_label(raw)
 
     def test_unterminated_set(self):
@@ -705,11 +713,12 @@ END
         """If ArchiveDataFile construction fails, parse_generic_pds3_label must fail."""
         # This tests Section F: no silent data-file loss.
         # JunoCam profile uses FILE_SIZE strategy. Supply a malformed FILE_SIZE.
+        # Real JunoCam labels use SPACECRAFT_NAME = "JUNO" (not INSTRUMENT_HOST_ID = "JNO").
         raw = b"""\
 PDS_VERSION_ID = PDS3
 DATA_SET_ID = "JNO-E/J-JNC-2-EDR-L1A-V1.0"
 PRODUCT_ID = "JNCR_BADSIZE"
-INSTRUMENT_HOST_ID = "JNO"
+SPACECRAFT_NAME = "JUNO"
 INSTRUMENT_ID = "JNC"
 START_TIME = 2024-06-13T05:55:51.000
 STOP_TIME = 2024-06-13T06:00:00.000
