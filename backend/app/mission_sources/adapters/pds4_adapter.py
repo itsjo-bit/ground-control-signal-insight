@@ -781,16 +781,25 @@ def _extract_pds4_data_files(
         # No file area — return empty list (product without resolved payload).
         return []
 
+    # Section E fail-closed: File_Area_Observational exists → File must exist.
     file_elem = file_area.find(f"{_PDS_NS_BRACED}File")
     if file_elem is None:
-        return []
+        raise GenericPds4AdapterValidationError(
+            "PDS4 label has File_Area_Observational but is missing the <File> element. "
+            "A declared file area must contain a File element."
+        )
 
+    # Section E fail-closed: file_name must exist and be non-empty.
     fname_elem = file_elem.find(f"{_PDS_NS_BRACED}file_name")
     if fname_elem is None:
-        return []
+        raise GenericPds4AdapterValidationError(
+            "PDS4 label File element is missing required <file_name> element."
+        )
     file_name = (fname_elem.text or "").strip()
     if not file_name:
-        return []
+        raise GenericPds4AdapterValidationError(
+            "PDS4 label File/<file_name> is empty. A declared file name must not be empty."
+        )
 
     # File size.
     fsize_elem = file_elem.find(f"{_PDS_NS_BRACED}file_size")

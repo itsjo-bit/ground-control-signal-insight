@@ -121,6 +121,7 @@ from backend.app.mission_sources.snapshots.archive_label_snapshot import (
     ArchiveLabelSnapshotStore,
     ArchiveSnapshotValidationError,
     _PARSER_REGISTRY,
+    _register_parser_force,
     register_parser,
     _compute_snapshot_id,
 )
@@ -251,7 +252,9 @@ class TestPds3TransportSemantics:
         allowed_processing_levels=frozenset({"3"}),
         require_start_stop_time=True,
         size_derivation_strategy=Pds3SizeDerivationStrategy.RECORD_BYTES_X_FILE_RECORDS,
-        # No allowed_hosts/prefixes: transport tests bypass URL trust
+        # Section G: must have explicit trust constraints for live fetch.
+        allowed_hosts=frozenset({"test-archive.example.com"}),
+        allowed_path_prefixes=("/pds/",),
     )
     _URL = "https://test-archive.example.com/pds/waves_test.lbl"
 
@@ -962,11 +965,14 @@ class TestSnapshotNormalizerProfileBinding:
         assert data.get("profile_id") == WAVES_BURST_PDS3_PROFILE.profile_id
 
     def test_registry_load_after_register(self, tmp_path):
-        """After registering the parser, load() resolves it from the registry."""
+        """load() resolves the parser from the registry (pre-registered at import)."""
         snap_path, _, _ = _write_snapshot(tmp_path)
-        # Register the parser for waves_burst_pds3.
-        register_parser(_PDS3_NORMALIZER_ID, WAVES_BURST_PDS3_PROFILE.profile_id, _waves_reparser)
-        # load() should succeed.
+        # Production parsers are pre-registered at import; use _register_parser_force
+        # to ensure the test-local parser is in place (idempotent for the production pair).
+        _register_parser_force(
+            _PDS3_NORMALIZER_ID, WAVES_BURST_PDS3_PROFILE.profile_id, _waves_reparser
+        )
+        # load() should succeed via the registry.
         product, prov = ArchiveLabelSnapshotStore.load(snap_path)
         assert product.source_record_id.startswith("pds3:")
         assert "WAV_B11_HARD_TEST" in product.source_record_id
@@ -1067,9 +1073,10 @@ class TestRealProfileUrls:
     # These tests prove the REAL production profile trust boundaries, not copies.
 
     def test_junocam_pds3_official_url_accepted(self):
-        """JUNOCAM_PDS3_PROFILE: pds-rings.seti.org official URL accepted."""
+        """JUNOCAM_PDS3_PROFILE: planetarydata.jpl.nasa.gov PDS Imaging Node path accepted."""
         from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
-        url = "https://pds-rings.seti.org/holdings/jno-e-jnc-2-edr-l1a-v1.0/data/jncr_2024165_01m01280_v01.lbl"
+        # Official: PDS Imaging Node, JNOJNC_0029 volume (Phase 6F-B1.2.1 corrected)
+        url = "https://planetarydata.jpl.nasa.gov/img/data/juno/JNOJNC_0029/DATA/2024/jncr_2024165_01m01280_v01.lbl"
         _validate_pds3_source_url_trust(url, JUNOCAM_PDS3_PROFILE)
 
     def test_junocam_pds3_wrong_host_rejected(self):
@@ -1077,7 +1084,7 @@ class TestRealProfileUrls:
         from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
         with pytest.raises(GenericPds3AdapterValidationError, match="[Hh]ost"):
             _validate_pds3_source_url_trust(
-                "https://evil.example.com/holdings/jno-e-jnc-2-edr-l1a-v1.0/data/t.lbl",
+                "https://evil.example.com/img/data/juno/JNOJNC_0029/DATA/t.lbl",
                 JUNOCAM_PDS3_PROFILE,
             )
 
@@ -1086,21 +1093,21 @@ class TestRealProfileUrls:
         from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
         with pytest.raises(GenericPds3AdapterValidationError, match="[Pp]refix|[Pp]ath"):
             _validate_pds3_source_url_trust(
-                "https://pds-rings.seti.org/WRONG/path/t.lbl",
+                "https://planetarydata.jpl.nasa.gov/WRONG/path/t.lbl",
                 JUNOCAM_PDS3_PROFILE,
             )
 
     def test_fgm_pds3_official_url_accepted(self):
-        """FGM_PDS3_PROFILE: pds-ppi.igpp.ucla.edu official URL accepted."""
+        """FGM_PDS3_PROFILE: pds-ppi.igpp.ucla.edu official JNO-J-3-FGM-CAL-V1.0 root accepted."""
         from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
-        url = "https://pds-ppi.igpp.ucla.edu/data/juno/juno-fgm/data/fgm_2024165_orbit62.lbl"
+        url = "https://pds-ppi.igpp.ucla.edu/data/JNO-J-3-FGM-CAL-V1.0/DATA/2024/fgm_2024165_orbit62.lbl"
         _validate_pds3_source_url_trust(url, FGM_PDS3_PROFILE)
 
     def test_fgm_pds3_wrong_host_rejected(self):
         from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
         with pytest.raises(GenericPds3AdapterValidationError, match="[Hh]ost"):
             _validate_pds3_source_url_trust(
-                "https://evil.example.com/data/juno/juno-fgm/t.lbl",
+                "https://evil.example.com/data/JNO-J-3-FGM-CAL-V1.0/DATA/t.lbl",
                 FGM_PDS3_PROFILE,
             )
 
@@ -1113,44 +1120,44 @@ class TestRealProfileUrls:
             )
 
     def test_jade_pds3_official_url_accepted(self):
-        """JADE_PDS3_PROFILE: official URL accepted."""
+        """JADE_PDS3_PROFILE: official JNO-J_SW-JAD-3-CALIBRATED-V1.0 root accepted."""
         from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
-        url = "https://pds-ppi.igpp.ucla.edu/data/juno/juno-jade/data/jad_l20_lo_tof3d_2024165.lbl"
+        url = "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/jad_l20_lo_tof3d_2024165.lbl"
         _validate_pds3_source_url_trust(url, JADE_PDS3_PROFILE)
 
     def test_jade_pds3_wrong_host_rejected(self):
         from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
         with pytest.raises(GenericPds3AdapterValidationError, match="[Hh]ost"):
             _validate_pds3_source_url_trust(
-                "https://evil.example.com/data/juno/juno-jade/t.lbl",
+                "https://evil.example.com/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/t.lbl",
                 JADE_PDS3_PROFILE,
             )
 
     def test_jedi_pds3_official_url_accepted(self):
-        """JEDI_PDS3_PROFILE: official URL accepted."""
+        """JEDI_PDS3_PROFILE: official JNO-J-JED-3-CDR-V1.0 root accepted."""
         from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
-        url = "https://pds-ppi.igpp.ucla.edu/data/juno/juno-jedi/data/jed_2024165_ch0_l2.lbl"
+        url = "https://pds-ppi.igpp.ucla.edu/data/JNO-J-JED-3-CDR-V1.0/DATA/jed_2024165_ch0_l2.lbl"
         _validate_pds3_source_url_trust(url, JEDI_PDS3_PROFILE)
 
     def test_jedi_pds3_wrong_host_rejected(self):
         from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
         with pytest.raises(GenericPds3AdapterValidationError, match="[Hh]ost"):
             _validate_pds3_source_url_trust(
-                "https://evil.example.com/data/juno/juno-jedi/t.lbl",
+                "https://evil.example.com/data/JNO-J-JED-3-CDR-V1.0/DATA/t.lbl",
                 JEDI_PDS3_PROFILE,
             )
 
     def test_waves_survey_pds3_official_url_accepted(self):
-        """WAVES_SURVEY_PDS3_PROFILE: official URL accepted."""
+        """WAVES_SURVEY_PDS3_PROFILE: official JNO-E_J_SS-WAV-3-CDR-SRVFULL-V2.0 root accepted."""
         from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
-        url = "https://pds-ppi.igpp.ucla.edu/data/juno-wav-3-cdr-calibrated-v2.0/jno-e-j-ss-wav-3-cdr-srvy/data/2024/wav_2024165_srvy.lbl"
+        url = "https://pds-ppi.igpp.ucla.edu/data/JNO-E_J_SS-WAV-3-CDR-SRVFULL-V2.0/DATA/2024/wav_2024165_srvy.lbl"
         _validate_pds3_source_url_trust(url, WAVES_SURVEY_PDS3_PROFILE)
 
     def test_waves_survey_pds3_wrong_host_rejected(self):
         from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
         with pytest.raises(GenericPds3AdapterValidationError, match="[Hh]ost"):
             _validate_pds3_source_url_trust(
-                "https://evil.example.com/data/juno-wav-3-cdr-calibrated-v2.0/jno-e-j-ss-wav-3-cdr-srvy/t.lbl",
+                "https://evil.example.com/data/JNO-E_J_SS-WAV-3-CDR-SRVFULL-V2.0/DATA/t.lbl",
                 WAVES_SURVEY_PDS3_PROFILE,
             )
 
@@ -1163,16 +1170,16 @@ class TestRealProfileUrls:
             )
 
     def test_waves_burst_pds3_official_url_accepted(self):
-        """WAVES_BURST_PDS3_PROFILE: official URL accepted."""
+        """WAVES_BURST_PDS3_PROFILE: official JNO-E_J_SS-WAV-3-CDR-BSTFULL-V2.0 root accepted."""
         from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
-        url = "https://pds-ppi.igpp.ucla.edu/data/juno-wav-3-cdr-calibrated-v2.0/jno-e-j-ss-wav-3-cdr-bstfull/data/2024/wav_2024165t055551_b_bin.lbl"
+        url = "https://pds-ppi.igpp.ucla.edu/data/JNO-E_J_SS-WAV-3-CDR-BSTFULL-V2.0/DATA/2024/wav_2024165t055551_b_bin.lbl"
         _validate_pds3_source_url_trust(url, WAVES_BURST_PDS3_PROFILE)
 
     def test_waves_burst_pds3_wrong_host_rejected(self):
         from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
         with pytest.raises(GenericPds3AdapterValidationError, match="[Hh]ost"):
             _validate_pds3_source_url_trust(
-                "https://evil.example.com/data/juno-wav-3-cdr-calibrated-v2.0/jno-e-j-ss-wav-3-cdr-bstfull/t.lbl",
+                "https://evil.example.com/data/JNO-E_J_SS-WAV-3-CDR-BSTFULL-V2.0/DATA/t.lbl",
                 WAVES_BURST_PDS3_PROFILE,
             )
 

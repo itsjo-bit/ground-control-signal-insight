@@ -106,10 +106,10 @@ TARGET_NAME           = "JUPITER"
 END
 """
 
-# Official WAVES Burst source URL.
+# Official WAVES Burst source URL (Phase 6F-B1.2.1 corrected official archive root).
 _WAVES_OFFICIAL_URL = (
-    "https://pds-ppi.igpp.ucla.edu/data/juno-wav-3-cdr-calibrated-v2.0/"
-    "jno-e-j-ss-wav-3-cdr-bstfull/data/2024/wav_b12_final_test_v01.lbl"
+    "https://pds-ppi.igpp.ucla.edu/data/JNO-E_J_SS-WAV-3-CDR-BSTFULL-V2.0/"
+    "DATA/2024/wav_b12_final_test_v01.lbl"
 )
 
 
@@ -191,7 +191,9 @@ class TestTrueStreamingOversizedCutoff:
         product_family="WAVES_BURST",
         require_start_stop_time=True,
         size_derivation_strategy=Pds3SizeDerivationStrategy.RECORD_BYTES_X_FILE_RECORDS,
-        # No allowed_hosts — bypasses URL trust for transport test
+        # Section G: must have explicit trust constraints for live fetch.
+        allowed_hosts=frozenset({"test-stream.example.com"}),
+        allowed_path_prefixes=("/pds3/",),
     )
     _PDS3_URL = "https://test-stream.example.com/pds3/test.lbl"
 
@@ -337,56 +339,59 @@ class TestProductionPds3ProfileTrustBoundaries:
             _validate_pds3_source_url_trust(url, profile)
 
     # --- JUNOCAM_PDS3_PROFILE ---
+    # Official: PDS Imaging Node, planetarydata.jpl.nasa.gov, JNOJNC_0029 volume
 
     def test_junocam_official_url_accepted(self):
         self._accept(
-            "https://pds-rings.seti.org/holdings/jno-e-jnc-2-edr-l1a-v1.0/data/jncr_test.lbl",
+            "https://planetarydata.jpl.nasa.gov/img/data/juno/JNOJNC_0029/DATA/jncr_test.lbl",
             JUNOCAM_PDS3_PROFILE,
         )
 
     def test_junocam_wrong_host_rejected(self):
         self._reject_host(
-            "https://evil.example.com/holdings/jno-e-jnc-2-edr-l1a-v1.0/data/t.lbl",
+            "https://evil.example.com/img/data/juno/JNOJNC_0029/DATA/t.lbl",
             JUNOCAM_PDS3_PROFILE,
         )
 
     def test_junocam_wrong_path_rejected(self):
         self._reject_path(
-            "https://pds-rings.seti.org/WRONG/path/t.lbl",
+            "https://planetarydata.jpl.nasa.gov/WRONG/path/t.lbl",
             JUNOCAM_PDS3_PROFILE,
         )
 
     # --- FGM_PDS3_PROFILE ---
+    # Official: pds-ppi.igpp.ucla.edu, /data/JNO-J-3-FGM-CAL-V1.0/
 
     def test_fgm_official_url_accepted(self):
         self._accept(
-            "https://pds-ppi.igpp.ucla.edu/data/juno/juno-fgm/data/fgm_test.lbl",
+            "https://pds-ppi.igpp.ucla.edu/data/JNO-J-3-FGM-CAL-V1.0/DATA/fgm_test.lbl",
             FGM_PDS3_PROFILE,
         )
 
     def test_fgm_wrong_host_rejected(self):
         self._reject_host(
-            "https://evil.example.com/data/juno/juno-fgm/t.lbl",
+            "https://evil.example.com/data/JNO-J-3-FGM-CAL-V1.0/DATA/t.lbl",
             FGM_PDS3_PROFILE,
         )
 
     def test_fgm_wrong_path_rejected(self):
         self._reject_path(
-            "https://pds-ppi.igpp.ucla.edu/data/OTHER/juno-fgm/t.lbl",
+            "https://pds-ppi.igpp.ucla.edu/data/OTHER/path/t.lbl",
             FGM_PDS3_PROFILE,
         )
 
     # --- JADE_PDS3_PROFILE ---
+    # Official: pds-ppi.igpp.ucla.edu, /data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/
 
     def test_jade_official_url_accepted(self):
         self._accept(
-            "https://pds-ppi.igpp.ucla.edu/data/juno/juno-jade/data/jad_test.lbl",
+            "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/jad_test.lbl",
             JADE_PDS3_PROFILE,
         )
 
     def test_jade_wrong_host_rejected(self):
         self._reject_host(
-            "https://evil.example.com/data/juno/juno-jade/t.lbl",
+            "https://evil.example.com/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/t.lbl",
             JADE_PDS3_PROFILE,
         )
 
@@ -397,32 +402,34 @@ class TestProductionPds3ProfileTrustBoundaries:
         )
 
     # --- JEDI_PDS3_PROFILE ---
+    # Official: pds-ppi.igpp.ucla.edu, /data/JNO-J-JED-3-CDR-V1.0/
 
     def test_jedi_official_url_accepted(self):
         self._accept(
-            "https://pds-ppi.igpp.ucla.edu/data/juno/juno-jedi/data/jed_test.lbl",
+            "https://pds-ppi.igpp.ucla.edu/data/JNO-J-JED-3-CDR-V1.0/DATA/jed_test.lbl",
             JEDI_PDS3_PROFILE,
         )
 
     def test_jedi_wrong_host_rejected(self):
         self._reject_host(
-            "https://evil.example.com/data/juno/juno-jedi/t.lbl",
+            "https://evil.example.com/data/JNO-J-JED-3-CDR-V1.0/DATA/t.lbl",
             JEDI_PDS3_PROFILE,
         )
 
     # --- WAVES_SURVEY_PDS3_PROFILE ---
+    # Official: pds-ppi.igpp.ucla.edu, /data/JNO-E_J_SS-WAV-3-CDR-SRVFULL-V2.0/
 
     def test_waves_survey_official_url_accepted(self):
         self._accept(
-            "https://pds-ppi.igpp.ucla.edu/data/juno-wav-3-cdr-calibrated-v2.0/"
-            "jno-e-j-ss-wav-3-cdr-srvy/data/2024/wav_test_srvy.lbl",
+            "https://pds-ppi.igpp.ucla.edu/data/JNO-E_J_SS-WAV-3-CDR-SRVFULL-V2.0/"
+            "DATA/2024/wav_test_srvy.lbl",
             WAVES_SURVEY_PDS3_PROFILE,
         )
 
     def test_waves_survey_wrong_host_rejected(self):
         self._reject_host(
-            "https://evil.example.com/data/juno-wav-3-cdr-calibrated-v2.0/"
-            "jno-e-j-ss-wav-3-cdr-srvy/t.lbl",
+            "https://evil.example.com/data/JNO-E_J_SS-WAV-3-CDR-SRVFULL-V2.0/"
+            "DATA/t.lbl",
             WAVES_SURVEY_PDS3_PROFILE,
         )
 
@@ -434,18 +441,19 @@ class TestProductionPds3ProfileTrustBoundaries:
         )
 
     # --- WAVES_BURST_PDS3_PROFILE ---
+    # Official: pds-ppi.igpp.ucla.edu, /data/JNO-E_J_SS-WAV-3-CDR-BSTFULL-V2.0/
 
     def test_waves_burst_official_url_accepted(self):
         self._accept(
-            "https://pds-ppi.igpp.ucla.edu/data/juno-wav-3-cdr-calibrated-v2.0/"
-            "jno-e-j-ss-wav-3-cdr-bstfull/data/2024/wav_test_bst.lbl",
+            "https://pds-ppi.igpp.ucla.edu/data/JNO-E_J_SS-WAV-3-CDR-BSTFULL-V2.0/"
+            "DATA/2024/wav_test_bst.lbl",
             WAVES_BURST_PDS3_PROFILE,
         )
 
     def test_waves_burst_wrong_host_rejected(self):
         self._reject_host(
-            "https://evil.example.com/data/juno-wav-3-cdr-calibrated-v2.0/"
-            "jno-e-j-ss-wav-3-cdr-bstfull/t.lbl",
+            "https://evil.example.com/data/JNO-E_J_SS-WAV-3-CDR-BSTFULL-V2.0/"
+            "DATA/t.lbl",
             WAVES_BURST_PDS3_PROFILE,
         )
 
@@ -513,8 +521,8 @@ class TestPds3ExternalSourceRefSchemeRejection:
         with pytest.raises(GenericPds3AdapterValidationError, match="[Hh][Tt][Tt][Pp]|[Ss]cheme"):
             parse_generic_pds3_label(
                 raw,
-                "http://pds-ppi.igpp.ucla.edu/data/juno-wav-3-cdr-calibrated-v2.0/"
-                "jno-e-j-ss-wav-3-cdr-bstfull/data/2024/wav_test.lbl",
+                "http://pds-ppi.igpp.ucla.edu/data/JNO-E_J_SS-WAV-3-CDR-BSTFULL-V2.0/"
+                "DATA/2024/wav_test.lbl",
                 WAVES_BURST_PDS3_PROFILE,
                 _RETRIEVED_AT,
             )
@@ -525,7 +533,7 @@ class TestPds3ExternalSourceRefSchemeRejection:
         with pytest.raises(GenericPds3AdapterValidationError, match="[Hh][Tt][Tt][Pp]|[Ss]cheme"):
             parse_generic_pds3_label(
                 raw,
-                "ftp://pds-ppi.igpp.ucla.edu/data/test.lbl",
+                "ftp://pds-ppi.igpp.ucla.edu/data/JNO-E_J_SS-WAV-3-CDR-BSTFULL-V2.0/test.lbl",
                 WAVES_BURST_PDS3_PROFILE,
                 _RETRIEVED_AT,
             )

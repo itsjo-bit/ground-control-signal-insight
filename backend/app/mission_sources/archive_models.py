@@ -636,25 +636,35 @@ class ArchiveScienceProduct(BaseModel):
                     "observation_start_utc must be <= observation_stop_utc."
                 )
 
-        # 2. Total size semantics (Item 5: unknown size != 0):
-        #    - If any file has unknown size → total must be None.
-        #    - If all files have known size → total must equal exact sum.
+        # 2. Total size semantics (Section F — aggregate size certainty):
+        #    - If any file has unknown size (file_size_bytes is None) → total must be None.
+        #    - If any file has SIZE_DISCOVERED_APPROXIMATE → total must be None.
+        #      (An approximate constituent must NOT produce an exact-looking aggregate.)
+        #    - If all files have SIZE_METADATA_EXACT → total must equal exact sum.
         #    - If no files → total must be 0 (not None).
+        #    Zero remains distinct from unknown.
         has_unknown = any(
             f.file_size_bytes is None for f in self.data_files
         )
-        if has_unknown:
+        has_approximate = any(
+            f.size_certainty == ArchiveDataFileSizeCertainty.SIZE_DISCOVERED_APPROXIMATE
+            for f in self.data_files
+        )
+        if has_unknown or has_approximate:
             if self.total_data_size_bytes is not None:
                 raise ValueError(
                     "total_data_size_bytes must be None when any data file has "
-                    "unknown size (file_size_bytes is None)."
+                    "unknown size (file_size_bytes is None) or approximate size "
+                    "(SIZE_DISCOVERED_APPROXIMATE). An approximate constituent must "
+                    "not be exposed through a field documented as exact."
                 )
         else:
             expected_total = sum(f.file_size_bytes or 0 for f in self.data_files)
             if self.total_data_size_bytes != expected_total:
                 raise ValueError(
                     f"total_data_size_bytes ({self.total_data_size_bytes!r}) must equal "
-                    f"sum of data_files sizes ({expected_total}) when all sizes are known."
+                    f"sum of data_files sizes ({expected_total}) when all sizes are known "
+                    f"and exact (SIZE_METADATA_EXACT)."
                 )
 
         # 3. File names must be unique within this product.

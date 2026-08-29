@@ -284,7 +284,7 @@ class TestWavesBurstParsing:
     def test_valid_waves_burst(self):
         product, prov = parse_generic_pds3_label(
             _WAVES_BURST_LABEL,
-            "https://pds-ppi.igpp.ucla.edu/data/juno-wav-3-cdr-calibrated-v2.0/jno-e-j-ss-wav-3-cdr-bstfull/data/2024/wav_2024165t055551_b_bin.lbl",
+            "https://pds-ppi.igpp.ucla.edu/data/JNO-E_J_SS-WAV-3-CDR-BSTFULL-V2.0/DATA/2024/wav_2024165t055551_b_bin.lbl",
             WAVES_BURST_PDS3_PROFILE,
             _RETRIEVED_AT,
         )
@@ -298,7 +298,7 @@ class TestWavesBurstParsing:
     def test_waves_provenance(self):
         product, prov = parse_generic_pds3_label(
             _WAVES_BURST_LABEL,
-            "https://pds-ppi.igpp.ucla.edu/data/juno-wav-3-cdr-calibrated-v2.0/jno-e-j-ss-wav-3-cdr-bstfull/data/2024/wav_2024165t055551_b_bin.lbl",
+            "https://pds-ppi.igpp.ucla.edu/data/JNO-E_J_SS-WAV-3-CDR-BSTFULL-V2.0/DATA/2024/wav_2024165t055551_b_bin.lbl",
             WAVES_BURST_PDS3_PROFILE,
             _RETRIEVED_AT,
         )

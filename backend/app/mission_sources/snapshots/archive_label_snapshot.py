@@ -233,6 +233,133 @@ def _resolve_reparser(normalizer_id: str, profile_id: str) -> ReparserFn:
 
 
 # ---------------------------------------------------------------------------
+# Section C — Frozen normalizer/profile production mapping
+# ---------------------------------------------------------------------------
+#
+# The production static mapping of (normalizer_id, profile_id) pairs to the
+# exact normalizer closure bound to the exact production profile.
+#
+# Rules:
+#   - Callers cannot install arbitrary production parsers via this mapping.
+#   - No overwrite API exists for the frozen map.
+#   - Unknown (normalizer_id, profile_id) pairs are rejected.
+#   - source_standard compatibility is enforced (pds3 normalizer ↔ pds3 profile).
+#   - Every production profile used by B2 must have exactly one entry here.
+#
+# The frozen map is populated at module import time via
+# _register_frozen_production_parsers() which is called below.
+# Tests may use register_parser() or _register_parser_force() in _PARSER_REGISTRY;
+# the frozen map itself is not accessible for external mutation.
+#
+# Format: (normalizer_id, profile_id) → source_standard_value
+# The actual reparser closures are registered into _PARSER_REGISTRY at import.
+#
+_FROZEN_PRODUCTION_PROFILE_MAP: dict[tuple[str, str], str] = {
+    # PDS3 normalizer
+    ("gcsi.generic_pds3_label.v1", "fgm_pds3"):         "pds3",
+    ("gcsi.generic_pds3_label.v1", "jade_pds3"):        "pds3",
+    ("gcsi.generic_pds3_label.v1", "jedi_pds3"):        "pds3",
+    ("gcsi.generic_pds3_label.v1", "waves_burst_pds3"): "pds3",
+    ("gcsi.generic_pds3_label.v1", "waves_survey_pds3"): "pds3",
+    ("gcsi.generic_pds3_label.v1", "junocam_pds3"):     "pds3",
+    # PDS4 normalizer
+    ("gcsi.generic_pds4_label.v1", "jiram_pds4"):       "pds4",
+    ("gcsi.generic_pds4_label.v1", "uvs_pds4"):         "pds4",
+    ("gcsi.generic_pds4_label.v1", "mwr_generic_pds4"): "pds4",
+}
+
+
+def is_known_production_pair(normalizer_id: str, profile_id: str) -> bool:
+    """Return True if (normalizer_id, profile_id) is a known production pair.
+
+    This provides read-only access to the frozen production map.
+    Callers cannot mutate the map through this interface.
+    """
+    return (normalizer_id, profile_id) in _FROZEN_PRODUCTION_PROFILE_MAP
+
+
+def get_production_source_standard(normalizer_id: str, profile_id: str) -> str:
+    """Return the expected source_standard for a known production pair.
+
+    Raises
+    ------
+    ArchiveSnapshotValidationError
+        If the pair is not in the frozen production map.
+    """
+    key = (normalizer_id, profile_id)
+    if key not in _FROZEN_PRODUCTION_PROFILE_MAP:
+        raise ArchiveSnapshotValidationError(
+            f"Unknown production pair: normalizer_id={normalizer_id!r}, "
+            f"profile_id={profile_id!r}. "
+            "This pair is not declared in the frozen production mapping."
+        )
+    return _FROZEN_PRODUCTION_PROFILE_MAP[key]
+
+
+def _register_frozen_production_parsers() -> None:
+    """Register all known production (normalizer_id, profile_id) → reparser pairs.
+
+    Called once at module import time.  Uses _register_parser_force to avoid
+    duplicate-registration errors on re-import in test environments.
+
+    Importing the adapter modules here is deferred (inside the function body)
+    to avoid circular import issues.
+    """
+    # Lazy import to avoid circular dependencies.
+    from backend.app.mission_sources.adapters.pds3_adapter import (
+        FGM_PDS3_PROFILE,
+        JADE_PDS3_PROFILE,
+        JEDI_PDS3_PROFILE,
+        JUNOCAM_PDS3_PROFILE,
+        WAVES_BURST_PDS3_PROFILE,
+        WAVES_SURVEY_PDS3_PROFILE,
+        parse_generic_pds3_label,
+    )
+    from backend.app.mission_sources.adapters.pds4_adapter import (
+        JIRAM_PDS4_PROFILE,
+        MWR_GENERIC_PDS4_PROFILE,
+        UVS_PDS4_PROFILE,
+        parse_generic_pds4_label,
+    )
+
+    _PDS3_NID = "gcsi.generic_pds3_label.v1"
+    _PDS4_NID = "gcsi.generic_pds4_label.v1"
+
+    def _make_pds3_reparser(profile):
+        def _reparser(raw_bytes, source_ref, retrieved_at):
+            return parse_generic_pds3_label(raw_bytes, source_ref, profile, retrieved_at)
+        return _reparser
+
+    def _make_pds4_reparser(profile):
+        def _reparser(raw_bytes, label_url, retrieved_at):
+            return parse_generic_pds4_label(raw_bytes, label_url, profile, retrieved_at)
+        return _reparser
+
+    pds3_pairs = [
+        (FGM_PDS3_PROFILE,          "fgm_pds3"),
+        (JADE_PDS3_PROFILE,         "jade_pds3"),
+        (JEDI_PDS3_PROFILE,         "jedi_pds3"),
+        (WAVES_BURST_PDS3_PROFILE,  "waves_burst_pds3"),
+        (WAVES_SURVEY_PDS3_PROFILE, "waves_survey_pds3"),
+        (JUNOCAM_PDS3_PROFILE,      "junocam_pds3"),
+    ]
+    for profile, pid in pds3_pairs:
+        _register_parser_force(_PDS3_NID, pid, _make_pds3_reparser(profile))
+
+    pds4_pairs = [
+        (JIRAM_PDS4_PROFILE,        "jiram_pds4"),
+        (UVS_PDS4_PROFILE,          "uvs_pds4"),
+        (MWR_GENERIC_PDS4_PROFILE,  "mwr_generic_pds4"),
+    ]
+    for profile, pid in pds4_pairs:
+        _register_parser_force(_PDS4_NID, pid, _make_pds4_reparser(profile))
+
+
+# Register production parsers at module import time.
+_register_frozen_production_parsers()
+
+
+# ---------------------------------------------------------------------------
 # Snapshot envelope model
 # ---------------------------------------------------------------------------
 

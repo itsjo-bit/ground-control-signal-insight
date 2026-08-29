@@ -271,14 +271,14 @@ class GenericPds3AdapterProfile(BaseModel):
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# Official PDS node host/path constants (established during Phase 6F-A).
+# Official PDS node host/path constants (Phase 6F-B1.2.1 — corrected).
 # ---------------------------------------------------------------------------
 
 # PDS-PPI node: hosts WAVES, FGM, JADE, JEDI.
 _PPI_HOST: str = "pds-ppi.igpp.ucla.edu"
 
-# PDS Small Bodies / Rings node: hosts JunoCam EDR.
-_RINGS_HOST: str = "pds-rings.seti.org"
+# PDS Imaging Node: hosts JunoCam PJ62 (JNOJNC_0029 volume).
+_IMAGING_HOST: str = "planetarydata.jpl.nasa.gov"
 
 WAVES_BURST_PDS3_PROFILE = GenericPds3AdapterProfile(
     profile_id="waves_burst_pds3",
@@ -293,7 +293,8 @@ WAVES_BURST_PDS3_PROFILE = GenericPds3AdapterProfile(
     require_instrument_id=True,
     size_derivation_strategy=Pds3SizeDerivationStrategy.RECORD_BYTES_X_FILE_RECORDS,
     allowed_hosts=frozenset({_PPI_HOST}),
-    allowed_path_prefixes=("/data/juno-wav-3-cdr-calibrated-v2.0/jno-e-j-ss-wav-3-cdr-bstfull/",),
+    # Official archive root: JNO-E_J_SS-WAV-3-CDR-BSTFULL-V2.0
+    allowed_path_prefixes=("/data/JNO-E_J_SS-WAV-3-CDR-BSTFULL-V2.0/",),
 )
 
 WAVES_SURVEY_PDS3_PROFILE = GenericPds3AdapterProfile(
@@ -309,7 +310,8 @@ WAVES_SURVEY_PDS3_PROFILE = GenericPds3AdapterProfile(
     require_instrument_id=True,
     size_derivation_strategy=Pds3SizeDerivationStrategy.RECORD_BYTES_X_FILE_RECORDS,
     allowed_hosts=frozenset({_PPI_HOST}),
-    allowed_path_prefixes=("/data/juno-wav-3-cdr-calibrated-v2.0/jno-e-j-ss-wav-3-cdr-srvy/",),
+    # Official archive root: JNO-E_J_SS-WAV-3-CDR-SRVFULL-V2.0
+    allowed_path_prefixes=("/data/JNO-E_J_SS-WAV-3-CDR-SRVFULL-V2.0/",),
 )
 
 JUNOCAM_PDS3_PROFILE = GenericPds3AdapterProfile(
@@ -322,8 +324,10 @@ JUNOCAM_PDS3_PROFILE = GenericPds3AdapterProfile(
     require_spacecraft_id=True,
     require_instrument_id=True,
     size_derivation_strategy=Pds3SizeDerivationStrategy.FILE_SIZE,
-    allowed_hosts=frozenset({_RINGS_HOST}),
-    allowed_path_prefixes=("/holdings/jno-e-jnc-2-edr-l1a-v1.0/data/",),
+    # Official archive: PDS Imaging Node, planetarydata.jpl.nasa.gov
+    allowed_hosts=frozenset({_IMAGING_HOST}),
+    # Official PJ62 volume prefix: JNOJNC_0029
+    allowed_path_prefixes=("/img/data/juno/JNOJNC_0029/",),
 )
 
 FGM_PDS3_PROFILE = GenericPds3AdapterProfile(
@@ -337,7 +341,8 @@ FGM_PDS3_PROFILE = GenericPds3AdapterProfile(
     require_instrument_id=True,
     size_derivation_strategy=Pds3SizeDerivationStrategy.RECORD_BYTES_X_FILE_RECORDS,
     allowed_hosts=frozenset({_PPI_HOST}),
-    allowed_path_prefixes=("/data/juno/juno-fgm/",),
+    # Official archive root: JNO-J-3-FGM-CAL-V1.0
+    allowed_path_prefixes=("/data/JNO-J-3-FGM-CAL-V1.0/",),
 )
 
 JADE_PDS3_PROFILE = GenericPds3AdapterProfile(
@@ -351,7 +356,8 @@ JADE_PDS3_PROFILE = GenericPds3AdapterProfile(
     require_instrument_id=True,
     size_derivation_strategy=Pds3SizeDerivationStrategy.NONE,
     allowed_hosts=frozenset({_PPI_HOST}),
-    allowed_path_prefixes=("/data/juno/juno-jade/",),
+    # Official archive root: JNO-J_SW-JAD-3-CALIBRATED-V1.0
+    allowed_path_prefixes=("/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/",),
 )
 
 JEDI_PDS3_PROFILE = GenericPds3AdapterProfile(
@@ -365,7 +371,8 @@ JEDI_PDS3_PROFILE = GenericPds3AdapterProfile(
     require_instrument_id=True,
     size_derivation_strategy=Pds3SizeDerivationStrategy.NONE,
     allowed_hosts=frozenset({_PPI_HOST}),
-    allowed_path_prefixes=("/data/juno/juno-jedi/",),
+    # Official archive root: JNO-J-JED-3-CDR-V1.0
+    allowed_path_prefixes=("/data/JNO-J-JED-3-CDR-V1.0/",),
 )
 
 
@@ -1318,6 +1325,22 @@ class GenericPds3ObservationalLabelAdapter:
         import httpx
 
         source_url = request.source_url
+
+        # Section G: Live production fetch must always have an explicit trust
+        # boundary.  Profiles with no allowed_hosts or no allowed_path_prefixes
+        # must be rejected BEFORE making any network request.
+        if not profile.allowed_hosts:
+            raise GenericPds3AdapterValidationError(
+                f"Live PDS3 fetch rejected: profile {profile.profile_id!r} has no "
+                "allowed_hosts defined. Production fetch requires an explicit trust "
+                "boundary (allowed_hosts must be non-empty)."
+            )
+        if not profile.allowed_path_prefixes:
+            raise GenericPds3AdapterValidationError(
+                f"Live PDS3 fetch rejected: profile {profile.profile_id!r} has no "
+                "allowed_path_prefixes defined. Production fetch requires an explicit "
+                "trust boundary (allowed_path_prefixes must be non-empty)."
+            )
 
         # Trust validation BEFORE any network request.
         _validate_pds3_source_url_trust(source_url, profile)
