@@ -367,9 +367,13 @@ class TestFgmSidecar:
         assert len(selected) == 2, f"FGM selected: {len(selected)}"
 
     def test_fgm_sidecar_rows_parse_as_strict_models(self, sidecar):
+        """B2.1.4: 3 total candidates (standard + pj62 + r1s), 2 selected."""
         rows = sidecar["normalized_extractions"]["fgm_peri62_filenames"]
         parsed = [FgmDiscoveryLabel.model_validate(r, strict=False) for r in rows]
-        assert len(parsed) == 2
+        # B2.1.4: 3 candidates total (including R1S excluded variant)
+        assert len(parsed) == 3
+        selected = [r for r in parsed if r.selected]
+        assert len(selected) == 2
 
     def test_fgm_plan_entries_come_from_sidecar(self, all_entries, sidecar):
         plan_fgm = [e for e in all_entries if e.instrument == "FGM"]
@@ -1062,10 +1066,14 @@ class TestSidecarLoaderSecurity:
     """Spec O.21: sidecar loader rejects traversal/symlink escape."""
 
     def test_sidecar_loads_without_error(self):
-        """The production sidecar must load without any security violation."""
+        """The production sidecar must load without any security violation.
+
+        B2.1.4: _load_sidecar() returns HistoricalReplayV2DiscoveryEvidenceSidecar (typed model).
+        Access fields via model attributes, not dict subscripts.
+        """
         from backend.app.mission_sources import v2_acquisition_plan_builder as builder_mod
         data = builder_mod._load_sidecar()
-        assert data["schema"] == "gcsi.pj62_discovery_evidence_sidecar"
+        assert data.schema == "gcsi.pj62_discovery_evidence_sidecar"
 
     def test_sidecar_loader_rejects_traversal_path(self, tmp_path):
         """Sidecar loader with a path containing '..' must raise ValueError."""

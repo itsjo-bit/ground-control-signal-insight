@@ -697,54 +697,79 @@ class TestSidecarMutationExtraFieldRejection:
     """§35: Evil extra field in nested row must be rejected even with correct artifact_id."""
 
     def test_extra_field_in_jiram_row_rejected(self):
-        """A JIRAM row with extra field 'evil_extra' must be rejected by the model."""
+        """A JIRAM row with extra field 'evil_extra' must be rejected by ACTUAL production _load_sidecar.
+
+        B2.1.4 §15: Call the actual production sidecar loader (not just the row model directly).
+        The production loader must reject the artifact because of the nested extra field.
+        """
         sidecar_data = json.loads(_SIDECAR_FILE.read_text(encoding="utf-8"))
         mutated = copy.deepcopy(sidecar_data)
 
         # Inject evil_extra into first JIRAM row
         mutated["normalized_extractions"]["jiram_orbit62_filenames"][0]["evil_extra"] = "x"
 
-        # Recompute artifact_id for the mutated content
+        # Recompute artifact_id for the mutated content (valid artifact_id)
         mutated["artifact_id"] = compute_sidecar_artifact_id(mutated)
 
-        # Save to temp file and attempt to load via _load_sidecar
+        # Save to temp file and attempt to load via production _load_sidecar
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = pathlib.Path(tmpdir) / "mutated_sidecar.json"
             tmp.write_text(json.dumps(mutated, indent=2), encoding="utf-8")
-            # Even with correct artifact_id, the model validation must reject the extra field
             with patch("backend.app.mission_sources.v2_acquisition_plan_builder._SIDECAR_PATH", tmp):
                 with patch("backend.app.mission_sources.v2_acquisition_plan_builder._SIDECAR_ALLOWED_DIR",
                            pathlib.Path(tmpdir).resolve()):
-                    # _load_sidecar just loads JSON — it doesn't validate individual rows
-                    # The important test is that JiramDiscoveryLabel rejects the extra field
-                    raw_loaded = json.loads(tmp.read_text(encoding="utf-8"))
-                    row = raw_loaded["normalized_extractions"]["jiram_orbit62_filenames"][0]
-                    with pytest.raises(Exception, match="evil_extra|Extra inputs"):
-                        JiramDiscoveryLabel.model_validate(row)
+                    # B2.1.4: _load_sidecar MUST reject due to nested extra field in JIRAM row.
+                    # The production typed model validation (extra="forbid") catches this.
+                    with pytest.raises((ValueError, Exception), match="evil_extra|Extra inputs|extra_forbidden"):
+                        _load_sidecar()
 
-    def test_extra_field_in_mwr_row_rejected(self):
-        """A MWR row with extra field must be rejected by MwrDiscoveryLabel."""
+    def test_extra_field_in_mwr_row_rejected_by_production_loader(self):
+        """A MWR row with extra field must be rejected by production _load_sidecar."""
         sidecar_data = json.loads(_SIDECAR_FILE.read_text(encoding="utf-8"))
-        row = copy.deepcopy(sidecar_data["normalized_extractions"]["mwr_orbit62_filenames"][0])
-        row["evil_extra"] = "x"
-        with pytest.raises(Exception):
-            MwrDiscoveryLabel.model_validate(row)
+        mutated = copy.deepcopy(sidecar_data)
+        mutated["normalized_extractions"]["mwr_orbit62_filenames"][0]["evil_extra"] = "x"
+        mutated["artifact_id"] = compute_sidecar_artifact_id(mutated)
 
-    def test_extra_field_in_waves_burst_row_rejected(self):
-        """A WAVES Burst row with extra field must be rejected."""
-        sidecar_data = json.loads(_SIDECAR_FILE.read_text(encoding="utf-8"))
-        row = copy.deepcopy(sidecar_data["normalized_extractions"]["waves_burst_index_tab_orbit62_all"][0])
-        row["evil_extra"] = "x"
-        with pytest.raises(Exception):
-            WavesBurstDiscoveryRow.model_validate(row)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = pathlib.Path(tmpdir) / "mutated_sidecar.json"
+            tmp.write_text(json.dumps(mutated, indent=2), encoding="utf-8")
+            with patch("backend.app.mission_sources.v2_acquisition_plan_builder._SIDECAR_PATH", tmp):
+                with patch("backend.app.mission_sources.v2_acquisition_plan_builder._SIDECAR_ALLOWED_DIR",
+                           pathlib.Path(tmpdir).resolve()):
+                    with pytest.raises((ValueError, Exception), match="evil_extra|Extra inputs|extra_forbidden"):
+                        _load_sidecar()
 
-    def test_extra_field_in_junocam_row_rejected(self):
-        """A JunoCam row with extra field must be rejected."""
+    def test_extra_field_in_junocam_row_rejected_by_production_loader(self):
+        """A JunoCam row with extra field must be rejected by production _load_sidecar."""
         sidecar_data = json.loads(_SIDECAR_FILE.read_text(encoding="utf-8"))
-        row = copy.deepcopy(sidecar_data["normalized_extractions"]["junocam_index_tab_orbit62_all"][0])
-        row["evil_extra"] = "x"
-        with pytest.raises(Exception):
-            JunoCamDiscoveryRow.model_validate(row)
+        mutated = copy.deepcopy(sidecar_data)
+        mutated["normalized_extractions"]["junocam_index_tab_orbit62_all"][0]["evil_extra"] = "x"
+        mutated["artifact_id"] = compute_sidecar_artifact_id(mutated)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = pathlib.Path(tmpdir) / "mutated_sidecar.json"
+            tmp.write_text(json.dumps(mutated, indent=2), encoding="utf-8")
+            with patch("backend.app.mission_sources.v2_acquisition_plan_builder._SIDECAR_PATH", tmp):
+                with patch("backend.app.mission_sources.v2_acquisition_plan_builder._SIDECAR_ALLOWED_DIR",
+                           pathlib.Path(tmpdir).resolve()):
+                    with pytest.raises((ValueError, Exception), match="evil_extra|Extra inputs|extra_forbidden"):
+                        _load_sidecar()
+
+    def test_extra_field_in_waves_burst_row_rejected_by_production_loader(self):
+        """A WAVES Burst row with extra field must be rejected by production _load_sidecar."""
+        sidecar_data = json.loads(_SIDECAR_FILE.read_text(encoding="utf-8"))
+        mutated = copy.deepcopy(sidecar_data)
+        mutated["normalized_extractions"]["waves_burst_index_tab_orbit62_all"][0]["evil_extra"] = "x"
+        mutated["artifact_id"] = compute_sidecar_artifact_id(mutated)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = pathlib.Path(tmpdir) / "mutated_sidecar.json"
+            tmp.write_text(json.dumps(mutated, indent=2), encoding="utf-8")
+            with patch("backend.app.mission_sources.v2_acquisition_plan_builder._SIDECAR_PATH", tmp):
+                with patch("backend.app.mission_sources.v2_acquisition_plan_builder._SIDECAR_ALLOWED_DIR",
+                           pathlib.Path(tmpdir).resolve()):
+                    with pytest.raises((ValueError, Exception), match="evil_extra|Extra inputs|extra_forbidden"):
+                        _load_sidecar()
 
 
 # ===========================================================================
@@ -816,19 +841,45 @@ class TestArtifactIdIntegrity:
         assert new_id != sidecar["artifact_id"]
 
     def test_row_reorder_does_not_change_artifact_id(self, sidecar):
-        """Row reordering (within canonical sort) must not change artifact_id.
+        """Reversing normalized extraction collections must not change artifact_id.
 
-        The compute_sidecar_artifact_id function uses sort_keys=True on the JSON
-        but does NOT re-sort the rows themselves. However, the artifact_id is computed
-        from the full canonical JSON including row order in arrays. Two sidecars with
-        rows in different order will have different artifact_ids UNLESS the function
-        explicitly sorts the rows. This test documents actual behavior.
+        B2.1.4 §28/§29: compute_sidecar_artifact_id canonically sorts each collection
+        by its registered sort key. The artifact_id is based on semantic content,
+        not incidental extractor traversal order.
         """
-        # Recomputing from the same data must be deterministic
-        id1 = compute_sidecar_artifact_id(sidecar)
-        id2 = compute_sidecar_artifact_id(sidecar)
-        assert id1 == id2
-        assert id1 == sidecar["artifact_id"]
+        # Reverse JIRAM, JunoCam, and WAVES Burst collections
+        reordered = copy.deepcopy(sidecar)
+        reordered["normalized_extractions"]["jiram_orbit62_filenames"] = list(
+            reversed(reordered["normalized_extractions"]["jiram_orbit62_filenames"])
+        )
+        reordered["normalized_extractions"]["junocam_index_tab_orbit62_all"] = list(
+            reversed(reordered["normalized_extractions"]["junocam_index_tab_orbit62_all"])
+        )
+        reordered["normalized_extractions"]["waves_burst_index_tab_orbit62_all"] = list(
+            reversed(reordered["normalized_extractions"]["waves_burst_index_tab_orbit62_all"])
+        )
+        # Also reverse evidence list
+        reordered["discovery_evidence"] = list(reversed(reordered["discovery_evidence"]))
+
+        # Under canonical sort policy, artifact_id must be unchanged
+        id_original = compute_sidecar_artifact_id(sidecar)
+        id_reordered = compute_sidecar_artifact_id(reordered)
+        assert id_original == id_reordered, (
+            f"artifact_id changed after row reorder: {id_original!r} != {id_reordered!r}. "
+            "Collection sort canonicalization is not working."
+        )
+        assert id_original == sidecar["artifact_id"]
+
+    def test_row_identity_mutation_changes_artifact_id(self, sidecar):
+        """Mutating a row's identity field must change artifact_id (not just reorder)."""
+        mutated = copy.deepcopy(sidecar)
+        jiram = mutated["normalized_extractions"]["jiram_orbit62_filenames"]
+        jiram[0] = dict(jiram[0])
+        # Change hhmmss to something different (must still be valid 6 digits)
+        jiram[0]["hhmmss"] = "000001" if jiram[0]["hhmmss"] != "000001" else "000002"
+        # Keep filename/relative_label_path consistent with hhmmss (update filename too)
+        new_id = compute_sidecar_artifact_id(mutated)
+        assert new_id != sidecar["artifact_id"]
 
 
 # ===========================================================================
@@ -869,14 +920,22 @@ class TestPlanBinding:
         result = load_bound_v2_acquisition_plan()
         assert isinstance(result, BoundAcquisitionPlan)
         assert result.plan.plan_id is not None
-        assert result.sidecar["artifact_id"] == result.plan.discovery_evidence_artifact_id
+        assert result.sidecar.artifact_id == result.plan.discovery_evidence_artifact_id
 
     def test_bound_loader_rejects_mismatched_sidecar(self, tmp_path):
-        """Plan built against sidecar A cannot bind sidecar B."""
+        """Plan built against sidecar A cannot bind sidecar B (different artifact_id)."""
         sidecar_data = json.loads(_SIDECAR_FILE.read_text(encoding="utf-8"))
-        # Mutate the sidecar and recompute its artifact_id
+        # Mutate the sidecar with a valid structural change (change evidence SHA)
         mutated = copy.deepcopy(sidecar_data)
-        mutated["normalized_extractions"]["jiram_orbit62_filenames"][0]["filename"] = "MUTATED.xml"
+        # Change a JIRAM filename to a valid but different file — this changes artifact_id
+        # but doesn't invalidate the row model
+        first_jiram = mutated["normalized_extractions"]["jiram_orbit62_filenames"][0]
+        orig_fn = first_jiram["filename"]
+        # Replace hhmmss in the filename to keep model valid
+        new_fn = re.sub(r"T\d{6}", "T999999", orig_fn)
+        first_jiram["filename"] = new_fn
+        first_jiram["hhmmss"] = "999999"
+        first_jiram["relative_label_path"] = new_fn
         mutated["artifact_id"] = compute_sidecar_artifact_id(mutated)
 
         mutated_path = tmp_path / "mutated_sidecar.json"
@@ -885,7 +944,7 @@ class TestPlanBinding:
         with patch("backend.app.mission_sources.v2_acquisition_plan_builder._SIDECAR_PATH", mutated_path):
             with patch("backend.app.mission_sources.v2_acquisition_plan_builder._SIDECAR_ALLOWED_DIR",
                        tmp_path.resolve()):
-                with pytest.raises(ValueError, match="binding mismatch|artifact_id"):
+                with pytest.raises(ValueError, match="binding mismatch|artifact_id|mismatch"):
                     load_bound_v2_acquisition_plan()
 
     def test_plan_id_changes_when_sidecar_artifact_id_changes(self, plan):

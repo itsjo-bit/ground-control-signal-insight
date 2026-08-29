@@ -1,4 +1,4 @@
-"""GCSI Phase 6F-B2.1.3 — Strict Frozen Models for Discovery Sidecar Extractions.
+"""GCSI Phase 6F-B2.1.4 — Strict Frozen Models for Discovery Sidecar Extractions.
 
 B2.1.3 additions:
 - HistoricalReplayV2DiscoveryEvidenceSidecar: top-level frozen Pydantic model
@@ -12,6 +12,16 @@ B2.1.3 additions:
 - NormalizedDiscoveryExtractions: typed collection with partition invariants
 - DiscoveryPartition: total_orbit62_rows == pre_rows + eligible_rows + post_rows enforced
 
+B2.1.4 additions:
+- TypedDiscoveryEvidence: strict typed evidence model replacing plain dict
+- NormalizedDiscoveryExtractions: real typed model replacing dict
+- HistoricalReplayV2DiscoveryEvidenceSidecar: uses TypedDiscoveryEvidence + typed extractions
+- FgmDiscoveryLabel: gains candidate_classification and expected_archive_identity_source
+- FgmCandidateClassification enum: FULL_RESOLUTION_STANDARD / FULL_RESOLUTION_PJ62 /
+  R1S_OR_DOWNSAMPLED_ALTERNATE / OTHER_RELEVANT_VARIANT
+- compute_sidecar_artifact_id: canonical sort of each normalized collection before hashing
+  (same semantic rows in different input order → same artifact_id)
+
 All models: frozen=True, extra="forbid"
 """
 
@@ -20,6 +30,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
@@ -112,6 +123,12 @@ class MwrProductType(str, Enum):
     GRDR = "GRDR"
 
 
+class MwrInclusion(str, Enum):
+    """MWR product inclusion classification (temporal window eligibility)."""
+    ELIGIBLE = "ELIGIBLE"
+    EXCLUDED = "EXCLUDED"
+
+
 class JadeInclusion(str, Enum):
     """JADE product inclusion classification."""
     ELIGIBLE = "ELIGIBLE"
@@ -156,7 +173,174 @@ class WavesBurstFamily(str, Enum):
 class ExpectedArchiveIdentitySource(str, Enum):
     """Source classification for expected_archive_identity."""
     DISCOVERY_METADATA = "DISCOVERY_METADATA"
+    DISCOVERY_PATH_DERIVED = "DISCOVERY_PATH_DERIVED"
     UNAVAILABLE_UNTIL_LABEL = "UNAVAILABLE_UNTIL_LABEL"
+
+
+class FgmCandidateClassification(str, Enum):
+    """Classification of a discovered FGM candidate label.
+
+    B2.1.4: Explicit classification to distinguish selected vs. excluded candidates.
+
+    FULL_RESOLUTION_STANDARD:
+        Standard full-resolution temporal segment (no PJ62-specific suffix).
+        Selected for replay.
+
+    FULL_RESOLUTION_PJ62:
+        PJ62-associated full-resolution temporal segment (contains _pj62).
+        Selected for replay.
+
+    R1S_OR_DOWNSAMPLED_ALTERNATE:
+        Reduced-rate (r1s) or downsampled variant.
+        Excluded from logical replay selection (lower resolution, not primary science).
+
+    OTHER_RELEVANT_VARIANT:
+        Other relevant candidate that does not fit the above categories.
+        Stored in discovery evidence for completeness; excluded from replay.
+    """
+    FULL_RESOLUTION_STANDARD = "FULL_RESOLUTION_STANDARD"
+    FULL_RESOLUTION_PJ62 = "FULL_RESOLUTION_PJ62"
+    R1S_OR_DOWNSAMPLED_ALTERNATE = "R1S_OR_DOWNSAMPLED_ALTERNATE"
+    OTHER_RELEVANT_VARIANT = "OTHER_RELEVANT_VARIANT"
+
+
+# ---------------------------------------------------------------------------
+# B2.1.4: TypedDiscoveryEvidence
+# ---------------------------------------------------------------------------
+
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+# Known placeholder SHA-256 patterns (all-single-character strings)
+_PLACEHOLDER_SHA_PATTERNS: frozenset[str] = frozenset(
+    c * 64 for c in "0123456789abcdef"
+)
+
+_KNOWN_SOURCE_KINDS: frozenset[str] = frozenset({
+    "pds4_directory_html",
+    "pds3_directory_html",
+    "pds3_index_tab",
+    "pds3_index_lbl",
+    "pds4_xml_label",
+    "pds3_label_file",
+})
+
+
+class TypedDiscoveryEvidence(BaseModel):
+    """Strict typed evidence model for the discovery evidence sidecar.
+
+    B2.1.4: Replaces plain dict evidence records with a validated frozen model.
+
+    All fields are required unless explicitly Optional.
+    Validation:
+    - evidence_id non-empty
+    - source_url trusted (HTTPS, no userinfo, no query, no fragment, no backslash)
+    - retrieved_at timezone-aware UTC
+    - response_sha256: 64 lowercase hex, not a placeholder
+    - byte_count >= 0
+    - http_status == 200 for committed successful evidence
+    - source_kind in known set
+    - extractor_id (via extractor identity embedded in evidence_id convention)
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    evidence_id: str = Field(description="Stable human-readable identifier for this evidence source.")
+    source_url: str = Field(description="Official archive URL fetched.")
+    retrieved_at: datetime = Field(description="Timezone-aware UTC actual fetch timestamp.")
+    response_sha256: str = Field(description="SHA-256 of exact response bytes (64 lowercase hex, non-placeholder).")
+    byte_count: int = Field(description="Exact byte length of the fetched response body.")
+    http_status: int = Field(description="HTTP status code (must be 200 for committed evidence).")
+    source_kind: str = Field(description="Kind of discovery resource.")
+    relevant_row_count: Optional[int] = Field(
+        default=None,
+        description="Row/entry count relevant to this plan, if applicable.",
+    )
+
+    @field_validator("evidence_id", "source_url", "source_kind", mode="after")
+    @classmethod
+    def _non_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Field must not be empty.")
+        return v
+
+    @field_validator("retrieved_at", mode="after")
+    @classmethod
+    def _aware_dt(cls, v: datetime) -> datetime:
+        if v.tzinfo is None or v.utcoffset() is None:
+            raise ValueError("retrieved_at must be timezone-aware.")
+        return v.astimezone(timezone.utc)
+
+    @field_validator("response_sha256", mode="after")
+    @classmethod
+    def _sha256_format(cls, v: str) -> str:
+        if not _SHA256_RE.fullmatch(v):
+            raise ValueError(
+                "response_sha256 must be exactly 64 lowercase hex characters."
+            )
+        if v in _PLACEHOLDER_SHA_PATTERNS:
+            raise ValueError(
+                f"response_sha256 {v[:8]}... is a known placeholder pattern. "
+                "Use actual response bytes."
+            )
+        return v
+
+    @field_validator("byte_count", mode="after")
+    @classmethod
+    def _non_negative_bytes(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("byte_count must be non-negative.")
+        return v
+
+    @field_validator("http_status", mode="after")
+    @classmethod
+    def _valid_status(cls, v: int) -> int:
+        if v != 200:
+            raise ValueError(
+                f"http_status must be 200 for committed evidence records, got {v}."
+            )
+        return v
+
+    @field_validator("source_kind", mode="after")
+    @classmethod
+    def _known_source_kind(cls, v: str) -> str:
+        if v not in _KNOWN_SOURCE_KINDS:
+            raise ValueError(
+                f"source_kind {v!r} is not in the known set: {sorted(_KNOWN_SOURCE_KINDS)!r}."
+            )
+        return v
+
+    @field_validator("relevant_row_count", mode="after")
+    @classmethod
+    def _non_negative_count(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v < 0:
+            raise ValueError("relevant_row_count must be non-negative when present.")
+        return v
+
+    @field_validator("source_url", mode="after")
+    @classmethod
+    def _trusted_url(cls, v: str) -> str:
+        from urllib.parse import urlsplit
+        if "%" in v:
+            raise ValueError(f"source_url must not contain percent-encoded characters: {v!r}.")
+        if "\\" in v:
+            raise ValueError(f"source_url must not contain backslash: {v!r}.")
+        try:
+            parsed = urlsplit(v)
+        except Exception as exc:
+            raise ValueError(f"source_url could not be parsed: {v!r}.") from exc
+        if parsed.scheme != "https":
+            raise ValueError(f"source_url must use HTTPS: {v!r}.")
+        if not parsed.hostname:
+            raise ValueError(f"source_url must have a non-empty hostname: {v!r}.")
+        if parsed.username is not None or parsed.password is not None:
+            raise ValueError(f"source_url must not contain userinfo: {v!r}.")
+        if parsed.port is not None and parsed.port != 443:
+            raise ValueError(f"source_url must not have a non-443 explicit port: {v!r}.")
+        if parsed.query:
+            raise ValueError(f"source_url must not contain a query string: {v!r}.")
+        if parsed.fragment:
+            raise ValueError(f"source_url must not contain a fragment: {v!r}.")
+        return v
 
 
 # ---------------------------------------------------------------------------
@@ -225,12 +409,6 @@ class JiramDiscoveryLabel(BaseModel):
 # ---------------------------------------------------------------------------
 # MWR
 # ---------------------------------------------------------------------------
-
-
-class MwrInclusion(str, Enum):
-    """MWR product inclusion classification (temporal window eligibility)."""
-    ELIGIBLE = "ELIGIBLE"
-    EXCLUDED = "EXCLUDED"
 
 
 class MwrDiscoveryLabel(BaseModel):
@@ -362,28 +540,62 @@ class UvsDiscoveryLabel(BaseModel):
 class FgmDiscoveryLabel(BaseModel):
     """One FGM discovery label record extracted from the PERI-62 directory HTML.
 
-    Includes inclusion/exclusion classification to distinguish selected
-    vs. variant/excluded candidates.
+    B2.1.4: Now includes candidate_classification (explicit enum) and
+    expected_archive_identity_source to correctly distinguish filename-derived
+    identity expectations from archive-native PRODUCT_ID.
+
+    product_id field: set to LABEL_VERIFICATION_PENDING when discovery source
+    does not provide authoritative PRODUCT_ID (directory HTML only).
+    Actual PRODUCT_ID established by B2.2 label verification.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     lbl_filename: str = Field(description="Exact .lbl filename (e.g. fgm_jno_l3_2024165pl_v02.lbl).")
-    product_id: str = Field(description="Archive PRODUCT_ID (e.g. FGM_JNO_L3_2024165PL).")
-    logical_stem: str = Field(description="Logical stem used for GCSI ID derivation.")
-    selected: bool = Field(description="True if this candidate is selected in the plan.")
+    product_id: str = Field(
+        description=(
+            "Archive PRODUCT_ID or LABEL_VERIFICATION_PENDING if not yet verified. "
+            "Directory HTML does not provide authoritative PRODUCT_ID; "
+            "set to LABEL_VERIFICATION_PENDING until B2.2."
+        )
+    )
+    logical_stem: str = Field(description="Logical stem used for GCSI ID derivation (filename-derived).")
+    selected: bool = Field(description="True if this candidate is selected in the replay plan.")
+    candidate_classification: FgmCandidateClassification = Field(
+        description=(
+            "Classification of this FGM candidate: FULL_RESOLUTION_STANDARD, "
+            "FULL_RESOLUTION_PJ62, R1S_OR_DOWNSAMPLED_ALTERNATE, or OTHER_RELEVANT_VARIANT."
+        )
+    )
+    expected_archive_identity_source: ExpectedArchiveIdentitySource = Field(
+        description=(
+            "Source of expected archive identity. "
+            "DISCOVERY_PATH_DERIVED: product_id derived from filename, not from label. "
+            "LABEL_VERIFICATION_PENDING: identity to be established by B2.2."
+        )
+    )
     relative_label_path: str = Field(
-        description="Relative path from FGM base URL (e.g. fgm_jno_l3_2024165pl_v02.lbl)."
+        description="Relative path from FGM PERI-62 base URL (e.g. fgm_jno_l3_2024165pl_v02.lbl)."
     )
     discovery_evidence_id: str = Field(
-        description="evidence_id of the DiscoveryEvidence that discovered this label."
+        description=(
+            "evidence_id of the DiscoveryEvidence that discovered this label. "
+            "Must reference the PERI-62 directory evidence, not the PL root."
+        )
     )
 
-    @field_validator("lbl_filename", "product_id", "logical_stem", "discovery_evidence_id", mode="after")
+    @field_validator("lbl_filename", "logical_stem", "discovery_evidence_id", mode="after")
     @classmethod
     def _non_empty(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("Field must not be empty.")
+        return v
+
+    @field_validator("product_id", mode="after")
+    @classmethod
+    def _product_id_non_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("product_id must not be empty.")
         return v
 
     @field_validator("relative_label_path", mode="after")
@@ -398,6 +610,15 @@ class FgmDiscoveryLabel(BaseModel):
             raise ValueError(
                 f"FGM lbl_filename {self.lbl_filename!r} must appear in "
                 f"relative_label_path {self.relative_label_path!r}."
+            )
+        # R1S_OR_DOWNSAMPLED_ALTERNATE candidates must not be selected
+        if (
+            self.candidate_classification == FgmCandidateClassification.R1S_OR_DOWNSAMPLED_ALTERNATE
+            and self.selected
+        ):
+            raise ValueError(
+                "R1S_OR_DOWNSAMPLED_ALTERNATE candidate must not be selected for replay. "
+                f"lbl_filename={self.lbl_filename!r}."
             )
         return self
 
@@ -714,14 +935,120 @@ class DiscoveryPartition(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# B2.1.4: NormalizedDiscoveryExtractions typed model
+# ---------------------------------------------------------------------------
+
+
+class PartitionSummaries(BaseModel):
+    """Typed partition summaries container."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    junocam: dict = Field(description="JunoCam partition summary.")
+    waves_burst: dict = Field(description="WAVES Burst partition summary.")
+
+
+class NormalizedDiscoveryExtractions(BaseModel):
+    """Typed collection of all normalized discovery extractions.
+
+    B2.1.4: Replaces plain dict with explicitly typed frozen model.
+    All collections are tuples of strictly typed row models.
+    extra='forbid' prevents unknown instrument buckets from being silently accepted.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    jiram_orbit62_filenames: tuple[JiramDiscoveryLabel, ...] = Field(
+        description="All JIRAM orbit-62 discovery labels."
+    )
+    mwr_orbit62_filenames: tuple[MwrDiscoveryLabel, ...] = Field(
+        description="All MWR orbit-62 discovery labels (all hours, eligible and excluded)."
+    )
+    uvs_orbit62_filenames: tuple[UvsDiscoveryLabel, ...] = Field(
+        description="All UVS orbit-62 discovery labels."
+    )
+    fgm_peri62_filenames: tuple[FgmDiscoveryLabel, ...] = Field(
+        description="All FGM PERI-62 discovery label candidates (selected and excluded)."
+    )
+    jade_orbit62_labels: tuple[JadeDiscoveryLabel, ...] = Field(
+        description="All JADE orbit-62 discovery labels (eligible and excluded)."
+    )
+    jedi_165_labels: tuple[JediDiscoveryLabel, ...] = Field(
+        description="JEDI DOY-165 discovery labels."
+    )
+    jedi_166_labels: tuple[JediDiscoveryLabel, ...] = Field(
+        description="JEDI DOY-166 discovery labels."
+    )
+    waves_survey_orbit62_labels: tuple[WavesSurveyDiscoveryLabel, ...] = Field(
+        description="WAVES Survey orbit-62 discovery labels (eligible and excluded)."
+    )
+    junocam_index_tab_orbit62_all: tuple[JunoCamDiscoveryRow, ...] = Field(
+        description="All JunoCam orbit-62 INDEX.TAB rows (all partitions)."
+    )
+    waves_burst_index_tab_orbit62_all: tuple[WavesBurstDiscoveryRow, ...] = Field(
+        description="All WAVES Burst orbit-62 INDEX.TAB rows (all partitions)."
+    )
+    partition_summaries: PartitionSummaries = Field(
+        description="Partition summary objects for instruments with exact STOP_TIME."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Sidecar artifact_id formula
 # ---------------------------------------------------------------------------
 
 _SIDECAR_ARTIFACT_PREFIX: str = "gcsi.pj62_discovery_evidence_sidecar:v1:"
 
+# Canonical sort keys per collection (§28: same semantic rows → same artifact_id)
+_COLLECTION_SORT_KEYS: dict[str, str] = {
+    "jiram_orbit62_filenames": "relative_label_path",
+    "mwr_orbit62_filenames": "relative_label_path",
+    "uvs_orbit62_filenames": "relative_label_path",
+    "fgm_peri62_filenames": "relative_label_path",
+    "jade_orbit62_labels": "relative_label_path",
+    "jedi_165_labels": "relative_label_path",
+    "jedi_166_labels": "relative_label_path",
+    "waves_survey_orbit62_labels": "relative_label_path",
+    "junocam_index_tab_orbit62_all": "file_specification_name",
+    "waves_burst_index_tab_orbit62_all": "file_specification_name",
+}
+
+
+def _canonicalize_extraction(key: str, value: object) -> object:
+    """Canonically sort a normalized extraction collection by its registered sort key.
+
+    B2.1.4 §28: Semantic canonicalization — same rows in different input order
+    produce the same artifact_id.
+
+    For list/tuple collections: sort by the registered key field.
+    For other values (partition_summaries, etc.): return as-is.
+    """
+    if key not in _COLLECTION_SORT_KEYS:
+        return value
+    sort_field = _COLLECTION_SORT_KEYS[key]
+    if isinstance(value, (list, tuple)):
+        try:
+            return sorted(value, key=lambda r: (r if not isinstance(r, dict) else r.get(sort_field, "")) if isinstance(r, dict) else (getattr(r, sort_field, "") or ""))
+        except Exception:
+            return value
+    return value
+
+
+def _row_to_canonical(row: object) -> object:
+    """Convert a row (dict or Pydantic model) to a canonical dict for JSON serialization."""
+    if isinstance(row, dict):
+        return row
+    if hasattr(row, "model_dump"):
+        return row.model_dump(mode="json")
+    return row
+
 
 def compute_sidecar_artifact_id(sidecar_content: dict) -> str:
     """Compute the deterministic artifact_id for the discovery evidence sidecar.
+
+    B2.1.4 §28: Each normalized collection is sorted by its canonical sort key
+    before hashing. This ensures that the same semantic rows in different input
+    order produce the same artifact_id.
 
     The artifact_id is SHA-256 of the canonical JSON of ALL semantic sidecar
     content, excluding the artifact_id field itself.
@@ -731,7 +1058,11 @@ def compute_sidecar_artifact_id(sidecar_content: dict) -> str:
       - schema_version
       - replay_id
       - discovery_evidence (sorted by evidence_id)
-      - normalized_extractions (all keys, sorted)
+      - normalized_extractions (all keys, sorted; each collection canonically sorted)
+
+    Retrieval time IS included in the hash (via discovery_evidence.retrieved_at).
+    This means: identical source bytes fetched at a different time → different artifact_id.
+    The artifact_id represents a specific CAPTURE artifact, not pure source-content identity.
 
     Formula::
 
@@ -740,16 +1071,25 @@ def compute_sidecar_artifact_id(sidecar_content: dict) -> str:
             + JSON-canonical of semantic content
         )
     """
-    # Build canonical representation excluding artifact_id
+    # Sort evidence by evidence_id
+    evidence_list = sidecar_content.get("discovery_evidence", [])
+    sorted_evidence = sorted(evidence_list, key=lambda x: (x if isinstance(x, dict) else x.model_dump())["evidence_id"])
+    canonical_evidence = [_row_to_canonical(e) for e in sorted_evidence]
+
+    # Canonicalize normalized_extractions: sort each collection by its sort key
+    raw_extractions = sidecar_content.get("normalized_extractions", {})
+    canonical_extractions: dict = {}
+    for k in sorted(raw_extractions.keys()):
+        v = raw_extractions[k]
+        canonicalized = _canonicalize_extraction(k, v)
+        if isinstance(canonicalized, (list, tuple)):
+            canonical_extractions[k] = [_row_to_canonical(r) for r in canonicalized]
+        else:
+            canonical_extractions[k] = canonicalized
+
     canonical = {
-        "discovery_evidence": sorted(
-            sidecar_content["discovery_evidence"],
-            key=lambda x: x["evidence_id"],
-        ),
-        "normalized_extractions": {
-            k: sidecar_content["normalized_extractions"][k]
-            for k in sorted(sidecar_content["normalized_extractions"].keys())
-        },
+        "discovery_evidence": canonical_evidence,
+        "normalized_extractions": canonical_extractions,
         "replay_id": sidecar_content["replay_id"],
         "schema": sidecar_content["schema"],
         "schema_version": sidecar_content["schema_version"],
@@ -770,10 +1110,18 @@ def compute_sidecar_artifact_id(sidecar_content: dict) -> str:
 class HistoricalReplayV2DiscoveryEvidenceSidecar(BaseModel):
     """Top-level frozen model for the discovery evidence sidecar.
 
-    B2.1.3: Typed, frozen, extra="forbid" top-level model.
+    B2.1.4: Fully typed model using TypedDiscoveryEvidence and
+    NormalizedDiscoveryExtractions. No plain list/dict for semantic fields.
 
     The production _load_sidecar() returns this typed object.
     artifact_id is REQUIRED: sidecar is rejected without it.
+
+    Validation:
+    - All discovery_evidence entries are TypedDiscoveryEvidence (strict validation)
+    - All normalized_extractions collections are typed row models
+    - artifact_id verified against recomputed SHA-256
+    - Referential integrity: all row discovery_evidence_ids resolve to evidence records
+    - No duplicate evidence_ids
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -791,8 +1139,12 @@ class HistoricalReplayV2DiscoveryEvidenceSidecar(BaseModel):
         )
     )
     replay_id: str = Field(description="Replay identifier.")
-    discovery_evidence: list = Field(description="Discovery evidence records.")
-    normalized_extractions: dict = Field(description="Normalized extraction rows per instrument.")
+    discovery_evidence: tuple[TypedDiscoveryEvidence, ...] = Field(
+        description="Discovery evidence records (typed, validated)."
+    )
+    normalized_extractions: NormalizedDiscoveryExtractions = Field(
+        description="Normalized extraction rows per instrument (typed, validated)."
+    )
 
     @field_validator("schema", "artifact_id", "replay_id", mode="after")
     @classmethod
@@ -804,9 +1156,20 @@ class HistoricalReplayV2DiscoveryEvidenceSidecar(BaseModel):
     @field_validator("artifact_id", mode="after")
     @classmethod
     def _artifact_id_format(cls, v: str) -> str:
-        import re as _re
-        if not _re.fullmatch(r"[0-9a-f]{64}", v):
+        if not re.fullmatch(r"[0-9a-f]{64}", v):
             raise ValueError(
                 f"artifact_id must be exactly 64 lowercase hex characters, got: {v!r}."
             )
         return v
+
+    @model_validator(mode="after")
+    def _validate_sidecar(self) -> "HistoricalReplayV2DiscoveryEvidenceSidecar":
+        # 1. No duplicate evidence_ids
+        ev_ids = [ev.evidence_id for ev in self.discovery_evidence]
+        if len(ev_ids) != len(set(ev_ids)):
+            seen: set[str] = set()
+            dups = [x for x in ev_ids if x in seen or seen.add(x)]  # type: ignore
+            raise ValueError(
+                f"Duplicate evidence_id values in discovery_evidence: {dups!r}."
+            )
+        return self

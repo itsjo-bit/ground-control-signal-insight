@@ -684,7 +684,8 @@ class TestUrlTrustValidation:
 
 
 class TestPlanId:
-    EXPECTED_PLAN_ID = "6c05fc585653e8f6a068757851ef249f6714890a1cc50a671421bb4cf3f18e99"
+    # B2.1.4: plan_id updated after FGM two-stage discovery (fgm_peri62_directory_html evidence added)
+    EXPECTED_PLAN_ID = "9854b028a49369ba8b452b49d65789d6ee1270bc597645db25736c391ae8a0b0"
 
     def test_plan_id_matches_expected(self, plan):
         assert plan.plan_id == self.EXPECTED_PLAN_ID, (
@@ -1188,15 +1189,15 @@ class TestPlanMetadata:
     def test_discovery_evidence_is_non_empty(self, plan):
         assert len(plan.discovery_evidence) > 0
 
-    def test_discovery_evidence_count_is_15(self, plan):
-        """B2.1.3: 15 discovery evidence records.
+    def test_discovery_evidence_count_is_16(self, plan):
+        """B2.1.4: 16 discovery evidence records.
 
-        jade_calibrated_directory_html was replaced with jade_index_lbl +
-        jade_index_tab (authoritative authoritative product indices).
-        14 (B2.1.2) - 1 (removed jade_calibrated_directory_html) + 2 (added jade_index_lbl + jade_index_tab) = 15.
+        B2.1.3: 15 records.
+        B2.1.4: +1 fgm_peri62_directory_html (two-stage FGM discovery — PERI-62 directory).
+        15 (B2.1.3) + 1 (fgm_peri62_directory_html) = 16.
         """
-        assert len(plan.discovery_evidence) == 15, (
-            f"Expected 15 discovery evidence records, got {len(plan.discovery_evidence)}."
+        assert len(plan.discovery_evidence) == 16, (
+            f"Expected 16 discovery evidence records, got {len(plan.discovery_evidence)}."
         )
 
 

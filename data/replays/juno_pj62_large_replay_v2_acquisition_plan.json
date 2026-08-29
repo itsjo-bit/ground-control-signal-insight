@@ -6,11 +6,20 @@
     {
       "byte_count": 11208,
       "evidence_id": "fgm_jupiter_pl_directory_html",
-      "relevant_row_count": 2,
+      "relevant_row_count": 1,
       "response_sha256": "bb53712b82a2ad57d8362c8c89d5c61109985a3abec9baf1033e70154e4369b0",
       "retrieved_at": "2026-08-29T10:09:54.014072Z",
       "source_kind": "pds3_directory_html",
       "source_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J-3-FGM-CAL-V1.0/DATA/JUPITER/PL/"
+    },
+    {
+      "byte_count": 1186,
+      "evidence_id": "fgm_peri62_directory_html",
+      "relevant_row_count": 3,
+      "response_sha256": "426107fa83ad06678860bbe7d9fc5a5ac0898d5841e312fd9aabf009e8f3eaa7",
+      "retrieved_at": "2026-08-29T10:09:54.200000Z",
+      "source_kind": "pds3_directory_html",
+      "source_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J-3-FGM-CAL-V1.0/DATA/JUPITER/PL/PERI-62/"
     },
     {
       "byte_count": 5304,
@@ -139,7 +148,7 @@
       "source_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-E_J_SS-WAV-3-CDR-SRVFULL-V2.0/DATA/WAVES_SURVEY/2024149_ORBIT_62/"
     }
   ],
-  "discovery_evidence_artifact_id": "3a6ee02651b84a3e00125c87d7fc09a563d3a5d2b49a27da2064b2d07907b243",
+  "discovery_evidence_artifact_id": "3eb9f16df6c92c1cede71feb6b3ed111d2154452491cbaf1625aff6c24b4661f",
   "final_temporal_eligibility": "LABEL_VERIFICATION_REQUIRED",
   "logical_entries": [
     {
@@ -6580,13 +6589,13 @@
     },
     {
       "discovery_availability_time_utc": null,
-      "discovery_evidence_id": "fgm_jupiter_pl_directory_html",
+      "discovery_evidence_id": "fgm_peri62_directory_html",
       "instrument": "FGM",
       "logical_product_id": "gcsi.fgm.pj62.fgm_jno_l3_2024165pl",
       "representations": [
         {
-          "discovery_evidence_id": "fgm_jupiter_pl_directory_html",
-          "expected_archive_identity": "FGM_JNO_L3_2024165PL",
+          "discovery_evidence_id": "fgm_peri62_directory_html",
+          "expected_archive_identity": null,
           "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J-3-FGM-CAL-V1.0/DATA/JUPITER/PL/PERI-62/fgm_jno_l3_2024165pl_v02.lbl",
           "normalizer_id": "gcsi.generic_pds3_label.v1",
           "profile_id": "fgm_pds3",
@@ -6599,13 +6608,13 @@
     },
     {
       "discovery_availability_time_utc": null,
-      "discovery_evidence_id": "fgm_jupiter_pl_directory_html",
+      "discovery_evidence_id": "fgm_peri62_directory_html",
       "instrument": "FGM",
       "logical_product_id": "gcsi.fgm.pj62.fgm_jno_l3_2024165pl_pj62",
       "representations": [
         {
-          "discovery_evidence_id": "fgm_jupiter_pl_directory_html",
-          "expected_archive_identity": "FGM_JNO_L3_2024165PL_PJ62",
+          "discovery_evidence_id": "fgm_peri62_directory_html",
+          "expected_archive_identity": null,
           "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J-3-FGM-CAL-V1.0/DATA/JUPITER/PL/PERI-62/fgm_jno_l3_2024165pl_pj62_v02.lbl",
           "normalizer_id": "gcsi.generic_pds3_label.v1",
           "profile_id": "fgm_pds3",
@@ -9068,7 +9077,7 @@
       "temporal_evidence_status": "EXACT_DISCOVERY_METADATA"
     }
   ],
-  "plan_id": "6c05fc585653e8f6a068757851ef249f6714890a1cc50a671421bb4cf3f18e99",
+  "plan_id": "9854b028a49369ba8b452b49d65789d6ee1270bc597645db25736c391ae8a0b0",
   "replay_id": "juno_pj62_large_replay_v2",
   "schema": "gcsi.historical_replay_v2_acquisition_plan",
   "schema_version": 1
