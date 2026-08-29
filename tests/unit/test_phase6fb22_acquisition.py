@@ -775,6 +775,66 @@ class TestSection68FetchMatrix:
         # Within the plan all URLs must be unique (enforced by model)
         assert len(urls) == len(set(urls))
 
+    def test_16_untrusted_url_causes_zero_http_requests(self, tmp_path):
+        """§8: An untrusted URL must cause exactly 0 HTTP requests.
+
+        profile/source URL trust must be validated BEFORE network.
+        If the URL is not in the trusted host/path set for the profile,
+        acquisition must return FAILED_VALIDATION with error_class='UntrustedURL'
+        and must NOT have called client.stream() at all.
+        """
+        from backend.app.mission_sources.v2_acquisition_plan import (
+            AcquisitionRepresentationRole,
+            AcquisitionSourceRepresentation,
+            AcquisitionSourceStandard,
+            AcquisitionLogicalProductEntry,
+            TemporalEvidenceStatus,
+        )
+        from backend.app.mission_sources.v2_inventory_acquisition import _acquire_one
+
+        # Use an untrusted host (evil.example.com) for a jiram_pds4 profile
+        # jiram_pds4 is trusted only for atmos.nmsu.edu
+        untrusted_url = "https://evil.example.com/malicious/label.xml"
+        rep = AcquisitionSourceRepresentation(
+            representation_role=AcquisitionRepresentationRole.CALIBRATED,
+            source_standard=AcquisitionSourceStandard.PDS4,
+            label_url=untrusted_url,
+            normalizer_id="gcsi.generic_pds4_label.v1",
+            profile_id="jiram_pds4",
+        )
+        entry = AcquisitionLogicalProductEntry(
+            logical_product_id="prod_untrusted",
+            instrument="JIRAM",
+            semantic_role="instrument_diagnostic",
+            temporal_evidence_status=TemporalEvidenceStatus.LABEL_VERIFICATION_PENDING,
+            representations=(rep,),
+        )
+
+        mock_client = MagicMock()
+        # Patch validate_representation_url_trust to raise ValueError for untrusted URL
+        with patch(
+            "backend.app.mission_sources.v2_inventory_acquisition.validate_representation_url_trust",
+            side_effect=ValueError(f"label_url host 'evil.example.com' is not trusted"),
+        ):
+            row = _acquire_one(
+                idx=0,
+                entry=entry,
+                rep=rep,
+                snapshot_root=tmp_path,
+                client=mock_client,
+                max_attempts=3,
+                backoff_seconds=(0.001, 0.001, 0.001),
+                dry_run=False,
+            )
+
+        # §8: Zero HTTP requests must have been made
+        assert mock_client.stream.call_count == 0, (
+            f"Expected 0 HTTP requests for untrusted URL, got {mock_client.stream.call_count}"
+        )
+        assert row.acquisition_status == AcquisitionStatus.FAILED_VALIDATION
+        assert row.error_class == "UntrustedURL"
+        assert row.attempt_count == 0
+
 
 # ===========================================================================
 # §69 — Temporal test matrix
@@ -933,22 +993,180 @@ class TestSection73LedgerMatrix:
         id2 = _compute_ledger_id(rows, "replay_v2", "plan_B")
         assert id1 != id2
 
-    def test_ledger_serializes_and_loads(self, tmp_path):
-        """AcquisitionLedger must round-trip to/from JSON."""
-        rows = [self._make_row(0), self._make_row(1)]
+    def test_ledger_serializes_and_loads(self):
+        """AcquisitionLedger must round-trip to/from JSON via production load_ledger().
+
+        §13: load_ledger() must use canonical data/replays/ confinement — a test-only
+        path is written inside data/replays/ and cleaned up afterwards.
+        """
+        import pathlib
+        import uuid as _uuid
+        _repo_root = pathlib.Path(__file__).resolve().parents[2]
+        path = _repo_root / "data" / "replays" / f"_test_ledger_{_uuid.uuid4().hex}.json"
+        try:
+            rows = [self._make_row(0), self._make_row(1)]
+            ledger_id = _compute_ledger_id(rows, "replay_v2", "plan_abc")
+            ledger = AcquisitionLedger(
+                ledger_id=ledger_id,
+                replay_id="replay_v2",
+                plan_id="plan_abc",
+                rows=tuple(rows),
+            )
+            save_ledger(ledger, path)
+            loaded = load_ledger(path)
+            assert loaded.ledger_id == ledger.ledger_id
+            assert loaded.replay_id == ledger.replay_id
+            assert len(loaded.rows) == 2
+        finally:
+            if path.exists():
+                path.unlink()
+
+    def test_ledger_load_outside_confinement_rejected(self, tmp_path):
+        """§13: load_ledger() must reject paths outside data/replays/."""
+        rows = [self._make_row(0)]
         ledger_id = _compute_ledger_id(rows, "replay_v2", "plan_abc")
         ledger = AcquisitionLedger(
-            ledger_id=ledger_id,
-            replay_id="replay_v2",
-            plan_id="plan_abc",
-            rows=tuple(rows),
+            ledger_id=ledger_id, replay_id="replay_v2", plan_id="plan_abc", rows=tuple(rows)
         )
-        path = tmp_path / "ledger.json"
+        path = tmp_path / "outside_ledger.json"
         save_ledger(ledger, path)
-        loaded = load_ledger(path)
-        assert loaded.ledger_id == ledger.ledger_id
-        assert loaded.replay_id == ledger.replay_id
-        assert len(loaded.rows) == 2
+        with pytest.raises((ValueError, Exception), match="confinement|outside|replays"):
+            load_ledger(path)
+
+    def test_ledger_load_rejects_dotdot_traversal(self):
+        """§13: load_ledger() must reject paths containing '..'."""
+        import pathlib
+        _repo_root = pathlib.Path(__file__).resolve().parents[2]
+        traversal = _repo_root / "data" / "replays" / ".." / "replays" / "nonexistent.json"
+        with pytest.raises((ValueError, Exception)):
+            load_ledger(traversal)
+
+    def test_ledger_load_rejects_mutated_archive_total_size_bytes(self):
+        """§13/§11: Changing archive_total_size_bytes without updating ledger_id is rejected."""
+        import pathlib, json as _json, uuid as _uuid
+        _repo_root = pathlib.Path(__file__).resolve().parents[2]
+        # Build ledger with a row that has archive_total_size_bytes set
+        row = AcquisitionLedgerRow(
+            acquisition_index=0,
+            logical_product_id="prod_000",
+            instrument="JIRAM",
+            representation_role="calibrated",
+            source_standard="pds4",
+            label_url="https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/orbit_0062/prod_0.xml",
+            normalizer_id="gcsi.generic_pds4_label.v1",
+            profile_id="jiram_pds4",
+            attempt_count=1,
+            acquisition_status=AcquisitionStatus.ACQUIRED_VERIFIED,
+            archive_total_size_bytes=100000,
+        )
+        rows = [row]
+        ledger_id = _compute_ledger_id(rows, "replay_v2", "plan_abc")
+        ledger = AcquisitionLedger(
+            ledger_id=ledger_id, replay_id="replay_v2", plan_id="plan_abc", rows=tuple(rows)
+        )
+        path = _repo_root / "data" / "replays" / f"_test_ledger_mut_{_uuid.uuid4().hex}.json"
+        try:
+            save_ledger(ledger, path)
+            # Mutate archive_total_size_bytes in the raw JSON, leave ledger_id stale
+            data = _json.loads(path.read_text())
+            data["rows"][0]["archive_total_size_bytes"] = 999999
+            path.write_text(_json.dumps(data, indent=2), encoding="utf-8")
+            with pytest.raises((ValueError, Exception), match="ledger_id|mismatch|mutated"):
+                load_ledger(path)
+        finally:
+            if path.exists():
+                path.unlink()
+
+    def test_ledger_load_rejects_mutated_observation_stop_utc(self):
+        """§13/§11: Changing observation_stop_utc without updating ledger_id is rejected."""
+        import pathlib, json as _json, uuid as _uuid
+        _repo_root = pathlib.Path(__file__).resolve().parents[2]
+        row = AcquisitionLedgerRow(
+            acquisition_index=0,
+            logical_product_id="prod_000",
+            instrument="JIRAM",
+            representation_role="calibrated",
+            source_standard="pds4",
+            label_url="https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/orbit_0062/prod_0.xml",
+            normalizer_id="gcsi.generic_pds4_label.v1",
+            profile_id="jiram_pds4",
+            attempt_count=1,
+            acquisition_status=AcquisitionStatus.ACQUIRED_VERIFIED,
+            observation_stop_utc="2024-06-14T09:35:17+00:00",
+        )
+        rows = [row]
+        ledger_id = _compute_ledger_id(rows, "replay_v2", "plan_abc")
+        ledger = AcquisitionLedger(
+            ledger_id=ledger_id, replay_id="replay_v2", plan_id="plan_abc", rows=tuple(rows)
+        )
+        path = _repo_root / "data" / "replays" / f"_test_ledger_stop_{_uuid.uuid4().hex}.json"
+        try:
+            save_ledger(ledger, path)
+            # Mutate observation_stop_utc, leave stale ledger_id
+            data = _json.loads(path.read_text())
+            data["rows"][0]["observation_stop_utc"] = "2024-06-15T00:00:00+00:00"
+            path.write_text(_json.dumps(data, indent=2), encoding="utf-8")
+            with pytest.raises((ValueError, Exception), match="ledger_id|mismatch|mutated"):
+                load_ledger(path)
+        finally:
+            if path.exists():
+                path.unlink()
+
+    def test_ledger_id_changes_when_new_semantic_fields_change(self):
+        """§11: ledger_id must change when any §11 semantic field changes."""
+        base_row = AcquisitionLedgerRow(
+            acquisition_index=0,
+            logical_product_id="prod_000",
+            instrument="JIRAM",
+            representation_role="calibrated",
+            source_standard="pds4",
+            label_url="https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/orbit_0062/prod_0.xml",
+            normalizer_id="gcsi.generic_pds4_label.v1",
+            profile_id="jiram_pds4",
+            attempt_count=1,
+            acquisition_status=AcquisitionStatus.ACQUIRED_VERIFIED,
+            archive_product_id="PROD_000_V01",
+            archive_version="V01",
+            observation_start_utc="2024-06-14T09:00:00+00:00",
+            observation_stop_utc="2024-06-14T09:35:00+00:00",
+            archive_total_size_bytes=50000,
+            size_verification_status="SIZE_METADATA_EXACT",
+            error_class=None,
+            error_detail_code=None,
+        )
+        base_id = _compute_ledger_id([base_row], "r", "p")
+
+        # archive_product_id
+        r = base_row.model_copy(update={"archive_product_id": "OTHER_ID"})
+        assert _compute_ledger_id([r], "r", "p") != base_id
+
+        # archive_version
+        r = base_row.model_copy(update={"archive_version": "V99"})
+        assert _compute_ledger_id([r], "r", "p") != base_id
+
+        # observation_stop_utc
+        r = base_row.model_copy(update={"observation_stop_utc": "2024-06-15T00:00:00+00:00"})
+        assert _compute_ledger_id([r], "r", "p") != base_id
+
+        # archive_total_size_bytes
+        r = base_row.model_copy(update={"archive_total_size_bytes": 9999})
+        assert _compute_ledger_id([r], "r", "p") != base_id
+
+        # size_verification_status
+        r = base_row.model_copy(update={"size_verification_status": "SIZE_UNKNOWN"})
+        assert _compute_ledger_id([r], "r", "p") != base_id
+
+        # error_class
+        r = base_row.model_copy(update={"error_class": "SomeError"})
+        assert _compute_ledger_id([r], "r", "p") != base_id
+
+        # error_detail_code
+        r = base_row.model_copy(update={"error_detail_code": "detail_99"})
+        assert _compute_ledger_id([r], "r", "p") != base_id
+
+        # observation_start_utc
+        r = base_row.model_copy(update={"observation_start_utc": "2024-06-14T08:00:00+00:00"})
+        assert _compute_ledger_id([r], "r", "p") != base_id
 
     def test_ledger_row_extra_fields_rejected(self):
         """Extra fields in AcquisitionLedgerRow must be rejected."""
@@ -1107,26 +1325,31 @@ class TestSection74InventoryMatrix:
 
 
 class TestV2SourceBundle:
-    """Source bundle model: build, save, load."""
+    """Source bundle model: build, save, load. B2.2.1 schema version 2."""
 
     def _make_bundle(self) -> V2SourceBundle:
         return build_source_bundle(
             replay_id="juno_pj62_large_replay_v2",
-            acquisition_plan_id="a" * 64,
+            candidate_plan_id="a" * 64,
             discovery_evidence_artifact_id="b" * 64,
             acquisition_ledger_id="c" * 64,
+            temporal_reconciliation_id="e" * 64,
             verified_inventory_manifest_id="d" * 64,
             verified_inventory_manifest_ref="data/replays/manifest.json",
             label_snapshot_count=535,
-            logical_product_count=411,
-            source_record_count=535,
+            candidate_logical_count=411,
+            candidate_source_count=535,
+            eligible_logical_count=403,
+            eligible_source_count=527,
+            ineligible_logical_count=8,
+            ineligible_source_count=8,
             decision_epoch_utc="2024-06-14T09:35:17.546000+00:00",
         )
 
     def test_bundle_has_schema_and_version(self):
         bundle = self._make_bundle()
         assert bundle.schema == "gcsi.v2_source_bundle"
-        assert bundle.schema_version == 1
+        assert bundle.schema_version == 2
 
     def test_bundle_id_deterministic(self):
         b1 = self._make_bundle()
@@ -1137,57 +1360,84 @@ class TestV2SourceBundle:
     def test_bundle_id_changes_on_different_replay_id(self):
         b1 = build_source_bundle(
             replay_id="replay_A",
-            acquisition_plan_id="a" * 64,
+            candidate_plan_id="a" * 64,
             discovery_evidence_artifact_id="b" * 64,
             acquisition_ledger_id="c" * 64,
+            temporal_reconciliation_id="e" * 64,
             verified_inventory_manifest_id="d" * 64,
             verified_inventory_manifest_ref="data/replays/manifest.json",
             label_snapshot_count=535,
-            logical_product_count=411,
-            source_record_count=535,
+            candidate_logical_count=411,
+            candidate_source_count=535,
+            eligible_logical_count=403,
+            eligible_source_count=527,
+            ineligible_logical_count=8,
+            ineligible_source_count=8,
             decision_epoch_utc="2024-06-14T09:35:17.546000+00:00",
         )
         b2 = build_source_bundle(
             replay_id="replay_B",
-            acquisition_plan_id="a" * 64,
+            candidate_plan_id="a" * 64,
             discovery_evidence_artifact_id="b" * 64,
             acquisition_ledger_id="c" * 64,
+            temporal_reconciliation_id="e" * 64,
             verified_inventory_manifest_id="d" * 64,
             verified_inventory_manifest_ref="data/replays/manifest.json",
             label_snapshot_count=535,
-            logical_product_count=411,
-            source_record_count=535,
+            candidate_logical_count=411,
+            candidate_source_count=535,
+            eligible_logical_count=403,
+            eligible_source_count=527,
+            ineligible_logical_count=8,
+            ineligible_source_count=8,
             decision_epoch_utc="2024-06-14T09:35:17.546000+00:00",
         )
         assert b1.bundle_id != b2.bundle_id
 
     def test_bundle_save_load_roundtrip(self, tmp_path):
-        bundle = self._make_bundle()
-        path = tmp_path / "bundle.json"
-        save_source_bundle(bundle, path)
-        loaded = load_source_bundle(path)
-        assert loaded.bundle_id == bundle.bundle_id
-        assert loaded.schema == "gcsi.v2_source_bundle"
+        """Bundle save/load round-trip using actual data/replays confinement."""
+        import pathlib
+        _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+        bundle_path = _REPO_ROOT / "data" / "replays" / "test_bundle_roundtrip.json"
+        try:
+            bundle = self._make_bundle()
+            save_source_bundle(bundle, bundle_path)
+            loaded = load_source_bundle(bundle_path)
+            assert loaded.bundle_id == bundle.bundle_id
+            assert loaded.schema == "gcsi.v2_source_bundle"
+            assert loaded.schema_version == 2
+        finally:
+            if bundle_path.exists():
+                bundle_path.unlink()
 
-    def test_bundle_not_found_raises(self, tmp_path):
+    def test_bundle_not_found_raises(self):
+        import pathlib
+        _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
         with pytest.raises(FileNotFoundError):
-            load_source_bundle(tmp_path / "missing.json")
+            load_source_bundle(_REPO_ROOT / "data" / "replays" / "nonexistent_bundle.json")
 
     def test_bundle_extra_fields_rejected(self):
         with pytest.raises(Exception):
             V2SourceBundle(
                 schema="gcsi.v2_source_bundle",
-                schema_version=1,
+                schema_version=2,
                 bundle_id="a" * 64,
                 replay_id="test",
-                acquisition_plan_id="a" * 64,
+                candidate_plan_id="a" * 64,
                 discovery_evidence_artifact_id="b" * 64,
                 acquisition_ledger_id="c" * 64,
+                temporal_reconciliation_id="e" * 64,
                 verified_inventory_manifest_id="d" * 64,
                 verified_inventory_manifest_ref="data/replays/manifest.json",
                 label_snapshot_count=535,
-                logical_product_count=411,
-                source_record_count=535,
+                candidate_logical_count=411,
+                candidate_source_count=535,
+                eligible_logical_count=403,
+                eligible_source_count=527,
+                ineligible_logical_count=8,
+                ineligible_source_count=8,
+                logical_product_count=403,
+                source_record_count=527,
                 decision_epoch_utc="2024-06-14T09:35:17+00:00",
                 unexpected="bad_field",
             )

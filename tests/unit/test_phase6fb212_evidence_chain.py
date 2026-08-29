@@ -336,21 +336,14 @@ class TestUvsSidecar:
         assert len(parsed) == 8
 
     def test_uvs_plan_entries_come_from_sidecar(self, all_entries, sidecar):
-        # B2.2 authoritative reconciliation: 2 P62SY1 DOY-166 products confirmed
-        # POST-decision-epoch and excluded from plan (6 of 8 sidecar rows remain).
+        # B2.2.1: all 8 UVS sidecar rows are in the candidate plan.
+        # Temporal ineligibility is in V2TemporalReconciliationManifest, not the plan.
         plan_uvs = [e for e in all_entries if e.instrument == "UVS"]
-        assert len(plan_uvs) == 6
+        assert len(plan_uvs) == 8
 
-        # The 2 excluded filenames (without .xml extension):
-        _uvs_ineligible = frozenset({
-            "UVS_S02_771613347_2024166_P62SY1_V01",
-            "UVS_S03_771613347_2024166_P62SY1_V01",
-        })
         sidecar_rows = sidecar["normalized_extractions"]["uvs_orbit62_filenames"]
         expected_lids = set()
         for r in sidecar_rows:
-            if r["filename"] in _uvs_ineligible:
-                continue
             sensor = r["sensor"]
             sclk = r["sclk"]
             doy_str = r["doy_str"]
@@ -454,11 +447,10 @@ class TestJediSidecar:
         assert len(r165) == 14
         assert len(r166) == 14
 
-    def test_jedi_plan_count_is_22(self, all_entries):
-        # B2.2 authoritative: 6 JEDI excluded (5 DOY-166 LOER POST-epoch,
-        # 1 DOY-165 LOERSISP PRE-epoch) → 22 remain in plan.
+    def test_jedi_plan_count_is_28(self, all_entries):
+        # B2.2.1: all 28 JEDI candidates in the plan (temporal reconciliation is separate).
         plan_jedi = [e for e in all_entries if e.instrument == "JEDI"]
-        assert len(plan_jedi) == 22
+        assert len(plan_jedi) == 28
 
 
 # ===========================================================================
@@ -1112,31 +1104,30 @@ class TestSidecarLoaderSecurity:
 
 
 class TestExactCounts:
-    """Spec O.22: 403 / 527 / 154 / 373 after B2.2 authoritative reconciliation.
+    """Spec O.22: B2.2.1 restored candidate plan: 411 / 535 / 156 / 379.
 
-    Original B2.1.4 plan had 411/535/156/379.  B2.2 label acquisition confirmed
-    6 JEDI and 2 UVS products outside the eligible window; those 8 logical products
-    (8 source refs: 6 PDS3 JEDI + 2 PDS4 UVS) were removed from the plan.
+    B2.2 had reduced this to 403/527/154/373.
+    B2.2.1 restores the candidate plan; temporal ineligibility is in the reconciliation manifest.
     """
 
-    def test_total_logical_entries_is_403(self, all_entries):
-        assert len(all_entries) == 403
+    def test_total_logical_entries_is_411(self, all_entries):
+        assert len(all_entries) == 411
 
-    def test_total_source_refs_is_527(self, all_refs):
-        assert len(all_refs) == 527
+    def test_total_source_refs_is_535(self, all_refs):
+        assert len(all_refs) == 535
 
-    def test_pds4_refs_is_154(self, all_refs):
+    def test_pds4_refs_is_156(self, all_refs):
         pds4 = sum(1 for r in all_refs if r.source_standard == AcquisitionSourceStandard.PDS4)
-        assert pds4 == 154
+        assert pds4 == 156
 
-    def test_pds3_refs_is_373(self, all_refs):
+    def test_pds3_refs_is_379(self, all_refs):
         pds3 = sum(1 for r in all_refs if r.source_standard == AcquisitionSourceStandard.PDS3)
-        assert pds3 == 373
+        assert pds3 == 379
 
-    def test_pds4_plus_pds3_is_527(self, all_refs):
+    def test_pds4_plus_pds3_is_535(self, all_refs):
         pds4 = sum(1 for r in all_refs if r.source_standard == AcquisitionSourceStandard.PDS4)
         pds3 = sum(1 for r in all_refs if r.source_standard == AcquisitionSourceStandard.PDS3)
-        assert pds4 + pds3 == 527
+        assert pds4 + pds3 == 535
 
 
 # ===========================================================================
@@ -1145,29 +1136,29 @@ class TestExactCounts:
 
 
 class TestTemporalContract:
-    """B2.2 authoritative: EXACT=223 / PENDING=180 / total=403.
+    """B2.2.1 restored: EXACT=223 / PENDING=188 / total=411.
 
-    EXACT instruments (index-derived stop times, unchanged): JunoCam=124, WAVES_BURST=91, JADE=8.
-    PENDING instruments: JIRAM=102, MWR=46, UVS=6 (was 8), FGM=2, JEDI=22 (was 28), WAVES_SURVEY=2.
+    EXACT instruments (index-derived stop times): JunoCam=124, WAVES_BURST=91, JADE=8.
+    PENDING instruments: JIRAM=102, MWR=46, UVS=8, FGM=2, JEDI=28, WAVES_SURVEY=2.
     """
 
     def test_exact_count_is_223(self, all_entries):
-        """EXACT=223 (JunoCam=124, WAVES_BURST=91, JADE=8 — unchanged by B2.2 reconciliation)."""
+        """EXACT=223 (JunoCam=124, WAVES_BURST=91, JADE=8)."""
         exact = sum(
             1 for e in all_entries
             if e.temporal_evidence_status == TemporalEvidenceStatus.EXACT_DISCOVERY_METADATA
         )
         assert exact == 223, f"EXACT: expected 223, got {exact}."
 
-    def test_pending_count_is_180(self, all_entries):
-        """B2.2: PENDING=180 (JIRAM=102, MWR=46, UVS=6, FGM=2, JEDI=22, WAVES_SURVEY=2)."""
+    def test_pending_count_is_188(self, all_entries):
+        """B2.2.1: PENDING=188 (JIRAM=102, MWR=46, UVS=8, FGM=2, JEDI=28, WAVES_SURVEY=2)."""
         pending = sum(
             1 for e in all_entries
             if e.temporal_evidence_status == TemporalEvidenceStatus.LABEL_VERIFICATION_PENDING
         )
-        assert pending == 180, f"PENDING: expected 180, got {pending}."
+        assert pending == 188, f"PENDING: expected 188, got {pending}."
 
-    def test_exact_plus_pending_is_403(self, all_entries):
+    def test_exact_plus_pending_is_411(self, all_entries):
         exact = sum(
             1 for e in all_entries
             if e.temporal_evidence_status == TemporalEvidenceStatus.EXACT_DISCOVERY_METADATA
@@ -1176,7 +1167,7 @@ class TestTemporalContract:
             1 for e in all_entries
             if e.temporal_evidence_status == TemporalEvidenceStatus.LABEL_VERIFICATION_PENDING
         )
-        assert exact + pending == 403, f"EXACT({exact}) + PENDING({pending}) != 403"
+        assert exact + pending == 411, f"EXACT({exact}) + PENDING({pending}) != 411"
 
     def test_pending_entries_have_no_discovery_time(self, all_entries):
         """All PENDING entries must have discovery_availability_time_utc = None."""

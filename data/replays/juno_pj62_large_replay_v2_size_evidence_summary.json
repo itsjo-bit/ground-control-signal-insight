@@ -1,0 +1,104 @@
+{
+  "artifact_id": "105cd79489a5dc2e777e0ec3122d139f100ca4bd4bc338a28ec944d2d32e3fa3",
+  "derived_from_ledger_id": "e484dc20429674a1b8bed7ef6a17cb16fb41aed93f62246a76d0cf3b8e1acca5",
+  "generated_at": "2026-08-29T15:26:14.532779+00:00",
+  "instrument_summaries": [
+    {
+      "candidate_logical_count": 2,
+      "candidate_source_count": 2,
+      "eligible_source_count": 2,
+      "ineligible_source_count": 0,
+      "instrument": "FGM",
+      "size_approx_count": 0,
+      "size_exact_count": 0,
+      "size_unknown_count": 2
+    },
+    {
+      "candidate_logical_count": 8,
+      "candidate_source_count": 8,
+      "eligible_source_count": 8,
+      "ineligible_source_count": 0,
+      "instrument": "JADE",
+      "size_approx_count": 0,
+      "size_exact_count": 0,
+      "size_unknown_count": 8
+    },
+    {
+      "candidate_logical_count": 28,
+      "candidate_source_count": 28,
+      "eligible_source_count": 22,
+      "ineligible_source_count": 6,
+      "instrument": "JEDI",
+      "size_approx_count": 0,
+      "size_exact_count": 0,
+      "size_unknown_count": 28
+    },
+    {
+      "candidate_logical_count": 102,
+      "candidate_source_count": 102,
+      "eligible_source_count": 102,
+      "ineligible_source_count": 0,
+      "instrument": "JIRAM",
+      "size_approx_count": 0,
+      "size_exact_count": 102,
+      "size_unknown_count": 0
+    },
+    {
+      "candidate_logical_count": 124,
+      "candidate_source_count": 248,
+      "eligible_source_count": 248,
+      "ineligible_source_count": 0,
+      "instrument": "JUNOCAM",
+      "size_approx_count": 0,
+      "size_exact_count": 0,
+      "size_unknown_count": 248
+    },
+    {
+      "candidate_logical_count": 46,
+      "candidate_source_count": 46,
+      "eligible_source_count": 46,
+      "ineligible_source_count": 0,
+      "instrument": "MWR",
+      "size_approx_count": 0,
+      "size_exact_count": 46,
+      "size_unknown_count": 0
+    },
+    {
+      "candidate_logical_count": 8,
+      "candidate_source_count": 8,
+      "eligible_source_count": 6,
+      "ineligible_source_count": 2,
+      "instrument": "UVS",
+      "size_approx_count": 0,
+      "size_exact_count": 0,
+      "size_unknown_count": 8
+    },
+    {
+      "candidate_logical_count": 91,
+      "candidate_source_count": 91,
+      "eligible_source_count": 91,
+      "ineligible_source_count": 0,
+      "instrument": "WAVES_BURST",
+      "size_approx_count": 0,
+      "size_exact_count": 0,
+      "size_unknown_count": 91
+    },
+    {
+      "candidate_logical_count": 2,
+      "candidate_source_count": 2,
+      "eligible_source_count": 2,
+      "ineligible_source_count": 0,
+      "instrument": "WAVES_SURVEY",
+      "size_approx_count": 0,
+      "size_exact_count": 0,
+      "size_unknown_count": 2
+    }
+  ],
+  "note": "Size classification derived exclusively from verified authoritative label snapshots. No sizes invented. SIZE_UNKNOWN means the source label did not expose exact payload size metadata.",
+  "schema": "gcsi.v2_size_evidence_summary",
+  "schema_version": 1,
+  "total_candidate_source_count": 535,
+  "total_size_approx_count": 0,
+  "total_size_exact_count": 148,
+  "total_size_unknown_count": 387
+}

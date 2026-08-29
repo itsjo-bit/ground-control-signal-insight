@@ -1082,17 +1082,19 @@ class TestNoManualNasaInventory:
 
 
 class TestB22ReadinessDry:
-    """§45: Without making any product-label requests, validate all 527 planned representations.
+    """§45: Without making any product-label requests, validate all 535 planned representations.
 
-    B2.2 authoritative reconciliation reduced the plan from 535 to 527 representations
-    (411→403 logical) after 6 JEDI and 2 UVS products were confirmed outside the window.
+    B2.2.1 restored the canonical candidate acquisition plan to 411 logical / 535 source
+    representations (B2.1.4 plan). Temporal reconciliation (eligible 403/527 vs ineligible
+    8/8) is now a separate evidence-backed artifact — it does NOT filter the acquisition plan.
+    All 535 candidate labels are valid source acquisitions regardless of temporal eligibility.
     """
 
-    def test_all_527_representations_present(self, all_refs):
-        """527 planned representations must be present (post-B2.2 reconciliation)."""
-        assert len(all_refs) == 527, f"Expected 527 refs, got {len(all_refs)}"
+    def test_all_535_representations_present(self, all_refs):
+        """535 planned representations must be present (restored B2.2.1 candidate plan)."""
+        assert len(all_refs) == 535, f"Expected 535 refs, got {len(all_refs)}"
 
-    def test_all_527_have_known_normalizer_profile(self, all_refs):
+    def test_all_535_have_known_normalizer_profile(self, all_refs):
         """Every representation must have a non-empty normalizer_id and profile_id."""
         for ref in all_refs:
             assert ref.normalizer_id and ref.normalizer_id.strip(), (
@@ -1102,19 +1104,19 @@ class TestB22ReadinessDry:
                 f"Empty profile_id: {ref.label_url!r}"
             )
 
-    def test_all_527_urls_pass_trust(self, all_refs):
+    def test_all_535_urls_pass_trust(self, all_refs):
         """Every representation label_url must pass the production URL trust check."""
         from backend.app.mission_sources.v2_acquisition_plan import validate_representation_url_trust
         for ref in all_refs:
             # Must not raise
             validate_representation_url_trust(ref)
 
-    def test_no_duplicate_urls_in_527(self, all_refs):
+    def test_no_duplicate_urls_in_535(self, all_refs):
         """No two representations may share a label URL."""
         urls = [r.label_url for r in all_refs]
         assert len(urls) == len(set(urls)), "Duplicate label URLs found in plan"
 
-    def test_all_527_have_valid_source_standard(self, all_refs):
+    def test_all_535_have_valid_source_standard(self, all_refs):
         """All representations must have PDS3 or PDS4 source_standard."""
         from backend.app.mission_sources.v2_acquisition_plan import AcquisitionSourceStandard
         valid = {AcquisitionSourceStandard.PDS3, AcquisitionSourceStandard.PDS4}
@@ -1123,7 +1125,7 @@ class TestB22ReadinessDry:
                 f"Unknown source_standard {ref.source_standard!r}: {ref.label_url!r}"
             )
 
-    def test_all_527_label_extensions_consistent_with_standard(self, all_refs):
+    def test_all_535_label_extensions_consistent_with_standard(self, all_refs):
         """PDS4 → .xml; PDS3 → .lbl or .LBL."""
         from backend.app.mission_sources.v2_acquisition_plan import AcquisitionSourceStandard
         for ref in all_refs:
@@ -1137,21 +1139,21 @@ class TestB22ReadinessDry:
                     f"PDS3 URL must end with .lbl: {ref.label_url!r}"
                 )
 
-    def test_all_403_logical_entries_present(self, all_entries):
-        """403 logical entries must be present (post-B2.2 reconciliation)."""
-        assert len(all_entries) == 403
+    def test_all_411_logical_entries_present(self, all_entries):
+        """411 logical entries must be present (restored B2.2.1 candidate plan)."""
+        assert len(all_entries) == 411
 
-    def test_pds4_count_is_154(self, all_refs):
-        """PDS4 refs must be exactly 154 (post-B2.2 reconciliation)."""
+    def test_pds4_count_is_156(self, all_refs):
+        """PDS4 refs must be exactly 156 (restored B2.2.1 candidate plan)."""
         from backend.app.mission_sources.v2_acquisition_plan import AcquisitionSourceStandard
         pds4 = [r for r in all_refs if r.source_standard == AcquisitionSourceStandard.PDS4]
-        assert len(pds4) == 154
+        assert len(pds4) == 156
 
-    def test_pds3_count_is_373(self, all_refs):
-        """PDS3 refs must be exactly 373 (post-B2.2 reconciliation)."""
+    def test_pds3_count_is_379(self, all_refs):
+        """PDS3 refs must be exactly 379 (restored B2.2.1 candidate plan)."""
         from backend.app.mission_sources.v2_acquisition_plan import AcquisitionSourceStandard
         pds3 = [r for r in all_refs if r.source_standard == AcquisitionSourceStandard.PDS3]
-        assert len(pds3) == 373
+        assert len(pds3) == 379
 
     def test_identity_expectation_classifications_valid(self, all_refs):
         """All expected_archive_identity values must be non-empty or None (no empty string)."""
@@ -1162,16 +1164,20 @@ class TestB22ReadinessDry:
                 )
 
     def test_dry_readiness_summary(self, all_refs, all_entries):
-        """Dry readiness gate: report 527/527 READY (post-B2.2 authoritative reconciliation)."""
+        """Dry readiness gate: 535/535 candidate refs, 411 logical (B2.2.1 restored plan).
+
+        Temporal reconciliation (403 eligible / 8 ineligible) lives in the separate
+        temporal reconciliation artifact, not in the acquisition plan.
+        """
         from backend.app.mission_sources.v2_acquisition_plan import AcquisitionSourceStandard
         total = len(all_refs)
         pds4 = sum(1 for r in all_refs if r.source_standard == AcquisitionSourceStandard.PDS4)
         pds3 = sum(1 for r in all_refs if r.source_standard == AcquisitionSourceStandard.PDS3)
         logical = len(all_entries)
-        assert total == 527 and pds4 == 154 and pds3 == 373 and logical == 403, (
-            f"B2.2 readiness: {total}/527 refs, {logical}/403 logical, "
-            f"PDS4={pds4}/154, PDS3={pds3}/373. "
-            "EXPECTED: 527/527 READY"
+        assert total == 535 and pds4 == 156 and pds3 == 379 and logical == 411, (
+            f"B2.2.1 readiness: {total}/535 refs, {logical}/411 logical, "
+            f"PDS4={pds4}/156, PDS3={pds3}/379. "
+            "EXPECTED: 535/535 CANDIDATE PLAN READY"
         )
 
 
@@ -1181,10 +1187,11 @@ class TestB22ReadinessDry:
 
 
 class TestJediReporting:
-    """§23: JEDI sidecar has 28 rows; plan has 22 (6 excluded by B2.2 reconciliation).
+    """§23: JEDI sidecar has 28 rows; plan has 28 (all included as LABEL_VERIFICATION_PENDING).
 
-    The sidecar still contains all 28 discovery rows (frozen evidence).
-    The plan excludes 6 that were confirmed POST-epoch or PRE-epoch by label.
+    B2.2.1 restored the full 28-entry JEDI candidate plan. The 6 JEDI products confirmed
+    outside the temporal window are classified INELIGIBLE in the separate temporal
+    reconciliation artifact. They remain valid source acquisition candidates.
     """
 
     def test_jedi_sidecar_candidates_is_28(self, sidecar):
@@ -1200,8 +1207,8 @@ class TestJediReporting:
     def test_jedi_all_entries_are_label_verification_pending(self, all_entries):
         """All JEDI plan entries must have LABEL_VERIFICATION_PENDING temporal status."""
         jedi_entries = [e for e in all_entries if e.instrument == "JEDI"]
-        # B2.2: 22 remain in plan (6 excluded as outside temporal window)
-        assert len(jedi_entries) == 22, f"Expected 22 JEDI logical entries, got {len(jedi_entries)}"
+        # B2.2.1: all 28 JEDI candidates included in plan; temporal filtering in reconciliation artifact
+        assert len(jedi_entries) == 28, f"Expected 28 JEDI logical entries, got {len(jedi_entries)}"
         for entry in jedi_entries:
             assert entry.temporal_evidence_status == TemporalEvidenceStatus.LABEL_VERIFICATION_PENDING, (
                 f"JEDI entry {entry.logical_product_id!r} has wrong temporal status: "

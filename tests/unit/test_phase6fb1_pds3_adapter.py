@@ -550,6 +550,114 @@ class TestPds3FailClosed:
 
 
 # ===========================================================================
+# §9 — PDS3 fail-closed nested OBJECT grammar hardening (B2.2.1)
+# ===========================================================================
+
+
+class TestPds3NestedObjectGrammarHardening:
+    """§9: Nested OBJECT/GROUP blocks must be syntactically validated.
+
+    B2.2.1 §9 decision: option B — bounded recursive syntactic validator.
+    Normalizer ID gcsi.generic_pds3_label.v1 is unchanged because the output
+    contract is unchanged; silent grammar acceptance is replaced with fail-closed.
+    """
+
+    def test_balanced_nested_object_accepted(self):
+        """A balanced nested OBJECT block must be accepted."""
+        raw = (
+            b"DATA_SET_ID = DS\n"
+            b"OBJECT = OUTER\n"
+            b"  KEY1 = VAL1\n"
+            b"  OBJECT = INNER\n"
+            b"    KEY2 = VAL2\n"
+            b"  END_OBJECT = INNER\n"
+            b"END_OBJECT = OUTER\n"
+            b"END\n"
+        )
+        result = _parse_pds3_label(raw)
+        assert "_OBJECT_OUTER" in result
+
+    def test_malformed_nested_key_assignment_rejected(self):
+        """A malformed KV line inside a nested OBJECT must be rejected."""
+        raw = (
+            b"DATA_SET_ID = DS\n"
+            b"OBJECT = TABLE\n"
+            b"  THIS IS NOT VALID KV\n"
+            b"END_OBJECT = TABLE\n"
+            b"END\n"
+        )
+        with pytest.raises(GenericPds3AdapterValidationError, match="malformed|nested|TABLE"):
+            _parse_pds3_label(raw)
+
+    def test_unmatched_end_object_inside_nested_rejected(self):
+        """An extra END_OBJECT inside a nested block (depth underflow) must be rejected."""
+        raw = (
+            b"DATA_SET_ID = DS\n"
+            b"OBJECT = TABLE\n"
+            b"  KEY = VAL\n"
+            b"  END_OBJECT = EXTRA\n"  # unmatched — inner depth would go below 1
+            b"END_OBJECT = TABLE\n"
+            b"END\n"
+        )
+        with pytest.raises(GenericPds3AdapterValidationError, match="unmatched|underflow|nested|TABLE"):
+            _parse_pds3_label(raw)
+
+    def test_unterminated_nested_quoted_value_rejected(self):
+        """An unterminated quoted string inside a nested OBJECT must be rejected."""
+        raw = (
+            b"DATA_SET_ID = DS\n"
+            b"OBJECT = TABLE\n"
+            b'  DESC = "not closed\n'
+            b"END_OBJECT = TABLE\n"
+            b"END\n"
+        )
+        with pytest.raises(GenericPds3AdapterValidationError, match="unterminated|TABLE|multi-line|closing"):
+            _parse_pds3_label(raw)
+
+    def test_nested_sequence_accepted(self):
+        """A sequence value inside a nested OBJECT must be accepted."""
+        raw = (
+            b"DATA_SET_ID = DS\n"
+            b"OBJECT = TABLE\n"
+            b"  TARGETS = { JUPITER, IO }\n"
+            b"END_OBJECT = TABLE\n"
+            b"END\n"
+        )
+        result = _parse_pds3_label(raw)
+        assert "_OBJECT_TABLE" in result
+
+    def test_depth_bound_enforced(self):
+        """Nesting depth exceeding _MAX_OBJECT_DEPTH must be rejected."""
+        from backend.app.mission_sources.adapters.pds3_adapter import _MAX_OBJECT_DEPTH
+        # Build a label with nesting depth of _MAX_OBJECT_DEPTH + 1
+        lines = [b"DATA_SET_ID = DS\n", b"OBJECT = ROOT\n"]
+        for i in range(_MAX_OBJECT_DEPTH):
+            lines.append(f"  OBJECT = LEVEL{i}\n".encode())
+        for i in range(_MAX_OBJECT_DEPTH - 1, -1, -1):
+            lines.append(f"  END_OBJECT = LEVEL{i}\n".encode())
+        lines.append(b"END_OBJECT = ROOT\n")
+        lines.append(b"END\n")
+        raw = b"".join(lines)
+        with pytest.raises(GenericPds3AdapterValidationError, match="depth|maximum|nesting"):
+            _parse_pds3_label(raw)
+
+    def test_nested_unclosed_object_rejected(self):
+        """A nested OBJECT block that is never closed must be rejected."""
+        raw = (
+            b"DATA_SET_ID = DS\n"
+            b"OBJECT = TABLE\n"
+            b"  KEY = VAL\n"
+            b"  OBJECT = SUBTABLE\n"
+            b"    SUBKEY = SUBVAL\n"
+            b"  /* END_OBJECT = SUBTABLE is missing */\n"
+            b"END_OBJECT = TABLE\n"  # outer closes but inner is open
+            b"END\n"
+        )
+        with pytest.raises(GenericPds3AdapterValidationError, match="unclosed|depth|TABLE"):
+            _parse_pds3_label(raw)
+
+
+# ===========================================================================
 # PDS3 datetime hardening (Section H)
 # ===========================================================================
 

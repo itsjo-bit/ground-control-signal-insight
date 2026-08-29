@@ -36,12 +36,13 @@ The parser handles:
 - Single-line keyword = value assignments (unquoted, quoted with \", set).
 - Multi-value sets: { VAL1, VAL2, ... } treated as list.
 - OBJECT/END_OBJECT blocks: parsed for top-level fields; nested sub-objects
-  at depth > 1 are recorded but not recursively descended.
+  are syntactically validated (B2.2.1 §9) but semantics are not extracted.
+  Malformed grammar inside nested OBJECT blocks raises GenericPds3AdapterValidationError.
 - ^POINTER = "filename" or ^POINTER = ("filename", n) for payload file refs.
 - Strict ASCII: rejects non-ASCII bytes (no latin-1 fallback).
 - Fail-closed: malformed lines, unterminated quotes, unterminated sets,
   unsupported multiline values, depth underflow/overflow, unmatched
-  END_OBJECT — all raise GenericPds3AdapterValidationError.
+  END_OBJECT, malformed nested OBJECT content — all raise GenericPds3AdapterValidationError.
 
 Profile-driven validation
 --------------------------
@@ -626,16 +627,151 @@ def _clean_sequence_item(item: str) -> str:
     return re.sub(r"\s*<[^>]+>$", "", item).strip()
 
 
+# Maximum OBJECT/GROUP nesting depth (inclusive of the top-level block).
+_MAX_OBJECT_DEPTH: int = 8
+
+
+def _validate_nested_object_syntax(block_lines: list[str], block_name: str) -> None:
+    """Syntactically validate lines collected inside an OBJECT/GROUP block (§9).
+
+    Decision (B2.2.1 §9, option B):
+    - A bounded recursive syntactic validator is used.
+    - Semantics inside nested blocks are NOT extracted (normalizer contract unchanged).
+    - Grammar violations RAISE GenericPds3AdapterValidationError.
+    - This does NOT change the normalizer_id (gcsi.generic_pds3_label.v1) because
+      the normalization output contract is unchanged; only silent grammar acceptance
+      is eliminated in favour of fail-closed behaviour.
+
+    Checked:
+    - Balanced nested OBJECT/GROUP (no unmatched END_OBJECT/END_GROUP).
+    - No depth overflow (> _MAX_OBJECT_DEPTH - 1 inside the block).
+    - KV lines inside match the PDS3 grammar (_KV_LINE_RE).
+    - Unterminated quoted values are rejected.
+    - Unterminated set/sequence values are rejected.
+    - Unsupported nested value constructs raise an error.
+    """
+    depth = 1  # We enter already at depth=1 (inside the top-level OBJECT)
+    ml_key: Optional[str] = None
+    ml_parts: list[str] = []
+    ml_close: Optional[str] = None
+    _ML_MAX = 128
+
+    # Skip the first line (the OBJECT = <name> opener) and last line (END_OBJECT)
+    # since those are the outer delimiters already validated by the caller.
+    inner_lines = block_lines[1:-1]
+
+    for line in inner_lines:
+        stripped = line.strip()
+
+        # Multi-line accumulation
+        if ml_key is not None:
+            ml_parts.append(line)
+            if len(ml_parts) > _ML_MAX:
+                raise GenericPds3AdapterValidationError(
+                    f"PDS3 nested OBJECT {block_name!r}: "
+                    f"multi-line value for key {ml_key!r} exceeded {_ML_MAX} continuation lines."
+                )
+            combined = "\n".join(ml_parts).strip()
+            if combined.endswith(ml_close):  # type: ignore[arg-type]
+                ml_key = None
+                ml_parts = []
+                ml_close = None
+            continue
+
+        if not stripped:
+            continue
+        if _COMMENT_RE.match(stripped):
+            continue
+
+        # END inside a nested block is invalid
+        if _STRUCT_END_RE.match(stripped):
+            raise GenericPds3AdapterValidationError(
+                f"PDS3 nested OBJECT {block_name!r}: "
+                "bare END inside a nested OBJECT block is not permitted."
+            )
+
+        m_start = _STRUCT_OBJECT_START_RE.match(stripped)
+        m_end = _STRUCT_OBJECT_END_RE.match(stripped)
+
+        if m_start:
+            depth += 1
+            if depth > _MAX_OBJECT_DEPTH:
+                raise GenericPds3AdapterValidationError(
+                    f"PDS3 nested OBJECT {block_name!r}: "
+                    f"OBJECT/GROUP nesting depth exceeds maximum ({_MAX_OBJECT_DEPTH})."
+                )
+            continue
+
+        if m_end:
+            depth -= 1
+            if depth < 1:
+                raise GenericPds3AdapterValidationError(
+                    f"PDS3 nested OBJECT {block_name!r}: "
+                    "unmatched END_OBJECT/END_GROUP inside nested block (depth underflow)."
+                )
+            continue
+
+        # Must be a KV assignment or empty/comment
+        m = _KV_LINE_RE.match(stripped)
+        if not m:
+            raise GenericPds3AdapterValidationError(
+                f"PDS3 nested OBJECT {block_name!r}: "
+                f"malformed nested line is not a valid keyword=value assignment: {stripped[:80]!r}"
+            )
+
+        # Validate the value start for multi-line constructs
+        raw_val = m.group(2).strip()
+        # Strip inline comment before checking termination
+        raw_val = _strip_inline_comment(raw_val)
+
+        if raw_val.startswith('"') and not (raw_val.endswith('"') and len(raw_val) > 1):
+            ml_key = m.group(1).upper()
+            ml_parts = [raw_val]
+            ml_close = '"'
+            continue
+        if raw_val.startswith("'") and not (raw_val.endswith("'") and len(raw_val) > 1):
+            ml_key = m.group(1).upper()
+            ml_parts = [raw_val]
+            ml_close = "'"
+            continue
+        if raw_val.startswith("{") and not raw_val.endswith("}"):
+            ml_key = m.group(1).upper()
+            ml_parts = [raw_val]
+            ml_close = "}"
+            continue
+        if raw_val.startswith("(") and not raw_val.endswith(")"):
+            ml_key = m.group(1).upper()
+            ml_parts = [raw_val]
+            ml_close = ")"
+            continue
+
+    # After processing all inner lines, depth must be back to 1
+    if depth != 1:
+        raise GenericPds3AdapterValidationError(
+            f"PDS3 nested OBJECT {block_name!r}: "
+            f"unclosed nested OBJECT/GROUP block at end of outer block "
+            f"(depth={depth}, expected 1)."
+        )
+    # Unterminated multi-line value
+    if ml_key is not None:
+        raise GenericPds3AdapterValidationError(
+            f"PDS3 nested OBJECT {block_name!r}: "
+            f"unterminated multi-line value for key {ml_key!r} "
+            f"(closing {ml_close!r} not found)."
+        )
+
+
 def _parse_pds3_label(raw_bytes: bytes) -> dict[str, str | list[str]]:
     """Parse PDS3/ODL ASCII label bytes into a flat keyword→value dict.
 
     Fail-closed: rejects non-ASCII bytes, malformed lines, unterminated
-    quoted values, unterminated sets, depth overflow/underflow, and
-    unterminated OBJECT blocks at END.
+    quoted values, unterminated sets, depth overflow/underflow,
+    unterminated OBJECT blocks at END, and malformed nested OBJECT content (§9).
 
     Only top-level keywords are extracted.  OBJECT/END_OBJECT blocks
-    at the top level are recorded with key ``"_OBJECT_<name>"`` holding
-    the raw block text; they are NOT recursively parsed.
+    at the top level are syntactically validated and recorded with key
+    ``"_OBJECT_<name>"`` holding the raw block text; nested grammar
+    violations raise GenericPds3AdapterValidationError.
 
     Parameters
     ----------
@@ -774,6 +910,8 @@ def _parse_pds3_label(raw_bytes: bytes) -> dict[str, str | list[str]]:
                 depth -= 1
                 if depth == 0 and in_object is not None:
                     object_lines.append(line)
+                    # §9: Validate nested grammar before accepting the block.
+                    _validate_nested_object_syntax(object_lines, in_object)
                     result[f"_OBJECT_{in_object}"] = "\n".join(object_lines)
                     in_object = None
                     object_lines = []

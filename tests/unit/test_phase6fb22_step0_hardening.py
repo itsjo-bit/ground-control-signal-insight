@@ -50,7 +50,8 @@ _PLAN_FILE = (
 
 # Frozen IDs that must never change.
 _EXPECTED_ARTIFACT_ID = "3eb9f16df6c92c1cede71feb6b3ed111d2154452491cbaf1625aff6c24b4661f"
-_EXPECTED_PLAN_ID = "7ede995fb67e0597a399f1b77ad8268f3f5525eb43f89edbf819a4615e213103"
+# B2.2.1: plan_id updated to restored 411/535 candidate plan
+_EXPECTED_PLAN_ID = "3cea529385f0a2ca6c1673e1f448a50b289978986f92281a3d88999a3f317ca8"
 
 
 # ---------------------------------------------------------------------------

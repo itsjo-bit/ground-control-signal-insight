@@ -66,6 +66,7 @@ from backend.app.mission_sources.v2_acquisition_plan import (
     AcquisitionLogicalProductEntry,
     AcquisitionSourceRepresentation,
     HistoricalReplayV2AcquisitionPlan,
+    validate_representation_url_trust,
 )
 from backend.app.mission_sources.v2_acquisition_plan_builder import (
     load_bound_v2_acquisition_plan,
@@ -375,32 +376,53 @@ def _derive_size_verification_status(product: ArchiveScienceProduct) -> SizeVeri
     return SizeVerificationStatus.SIZE_UNKNOWN
 
 
+def _posix_ref(path_str: Optional[str]) -> Optional[str]:
+    """Normalise a snapshot_ref to POSIX separator before hashing (§14)."""
+    if path_str is None:
+        return None
+    return path_str.replace("\\", "/")
+
+
 def _compute_ledger_id(
     rows: list[AcquisitionLedgerRow],
     replay_id: str,
     plan_id: str,
 ) -> str:
-    """SHA-256 over canonical sorted content excluding ledger_id."""
+    """SHA-256 over ALL semantic fields in canonical acquisition_index order (§11).
+
+    Every field listed in §11 participates in the hash.
+    Changing any of them must change ledger_id.
+    snapshot_ref uses POSIX separators (§14) so the hash is platform-independent.
+    """
     canonical_rows = []
     for row in sorted(rows, key=lambda r: r.acquisition_index):
         canonical_rows.append({
+            # §11 required fields — exact ordering by spec:
             "acquisition_index": row.acquisition_index,
-            "acquisition_status": row.acquisition_status.value,
-            "attempt_count": row.attempt_count,
-            "instrument": row.instrument,
-            "label_url": row.label_url,
             "logical_product_id": row.logical_product_id,
+            "instrument": row.instrument,
+            "representation_role": row.representation_role,
+            "source_standard": row.source_standard,
+            "label_url": row.label_url,
             "normalizer_id": row.normalizer_id,
             "profile_id": row.profile_id,
-            "provenance_id": row.provenance_id,
-            "raw_label_sha256": row.raw_label_sha256,
-            "representation_role": row.representation_role,
+            "attempt_count": row.attempt_count,
+            "acquisition_status": row.acquisition_status.value,
             "retrieved_at": row.retrieved_at,
-            "snapshot_id": row.snapshot_id,
-            "snapshot_ref": row.snapshot_ref,
+            "raw_label_sha256": row.raw_label_sha256,
             "source_record_id": row.source_record_id,
-            "source_standard": row.source_standard,
+            "archive_product_id": row.archive_product_id,
+            "archive_version": row.archive_version,
+            "snapshot_ref": _posix_ref(row.snapshot_ref),
+            "snapshot_id": row.snapshot_id,
+            "provenance_id": row.provenance_id,
+            "observation_start_utc": row.observation_start_utc,
+            "observation_stop_utc": row.observation_stop_utc,
             "temporal_verification_status": row.temporal_verification_status,
+            "archive_total_size_bytes": row.archive_total_size_bytes,
+            "size_verification_status": row.size_verification_status,
+            "error_class": row.error_class,
+            "error_detail_code": row.error_detail_code,
         })
     canonical = {
         "plan_id": plan_id,
@@ -511,7 +533,7 @@ def _acquire_one(
                         source_record_id=existing_product.source_record_id,
                         archive_product_id=existing_product.source_product_id,
                         archive_version=existing_product.source_version,
-                        snapshot_ref=str(snapshot_path),
+                        snapshot_ref=snapshot_path.as_posix(),
                         snapshot_id=env_data.get("snapshot_id"),
                         provenance_id=existing_prov.provenance_id,
                         observation_start_utc=(
@@ -564,6 +586,29 @@ def _acquire_one(
             profile_id=profile_id,
             attempt_count=0,
             acquisition_status=AcquisitionStatus.PENDING,
+        )
+
+    # -----------------------------------------------------------------------
+    # §8: URL trust BEFORE network — profile/source URL validation
+    # -----------------------------------------------------------------------
+    try:
+        validate_representation_url_trust(rep)
+    except (ValueError, Exception) as trust_exc:
+        is_pds4 = source_standard == "pds4"
+        validation_err = GenericPds4AdapterValidationError if is_pds4 else GenericPds3AdapterValidationError
+        return AcquisitionLedgerRow(
+            acquisition_index=idx,
+            logical_product_id=entry.logical_product_id,
+            instrument=instrument,
+            representation_role=rep.representation_role.value,
+            source_standard=source_standard,
+            label_url=label_url,
+            normalizer_id=normalizer_id,
+            profile_id=profile_id,
+            attempt_count=0,
+            acquisition_status=AcquisitionStatus.FAILED_VALIDATION,
+            error_class="UntrustedURL",
+            error_detail_code=str(trust_exc)[:120],
         )
 
     # -----------------------------------------------------------------------
@@ -816,7 +861,7 @@ def _acquire_one(
             source_record_id=reloaded_product.source_record_id,
             archive_product_id=reloaded_product.source_product_id,
             archive_version=reloaded_product.source_version,
-            snapshot_ref=str(snapshot_path),
+            snapshot_ref=snapshot_path.as_posix(),
             snapshot_id=snapshot_id,
             provenance_id=reloaded_prov.provenance_id,
             observation_start_utc=(
@@ -971,8 +1016,92 @@ def save_ledger(ledger: AcquisitionLedger, path: Path) -> None:
     path.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
 
 
+#: Maximum ledger file size for bounded read (32 MiB).
+_MAX_LEDGER_BYTES: int = 32 * 1024 * 1024
+
+#: Canonical confinement directory for ledger files.
+_LEDGER_ALLOWED_DIR: Path = _REPO_ROOT / "data" / "replays"
+
+
 def load_ledger(path: Path) -> AcquisitionLedger:
-    """Load and validate ledger from JSON at path."""
-    raw = path.read_text(encoding="utf-8")
+    """Load, validate and verify the acquisition ledger (§13 trust loader).
+
+    Security requirements:
+    - path must resolve inside _LEDGER_ALLOWED_DIR (confinement)
+    - path must not contain '..' components
+    - path must not be a symlink (no symlink escape)
+    - path must be a regular file with .json extension
+    - bounded read (max _MAX_LEDGER_BYTES)
+    - strict typed parse
+    - recompute ledger_id and reject mismatches
+    """
+    path = Path(path)
+
+    # Reject '..' in any path component
+    for part in path.parts:
+        if part == "..":
+            raise ValueError(
+                f"load_ledger: '..' component not permitted in path: {path}"
+            )
+
+    # Reject symlinks before resolving
+    if path.is_symlink():
+        raise ValueError(
+            f"load_ledger: symlink not permitted: {path}"
+        )
+
+    # Resolve and verify confinement
+    resolved = path.resolve()
+    allowed = _LEDGER_ALLOWED_DIR.resolve()
+    try:
+        resolved.relative_to(allowed)
+    except ValueError:
+        raise ValueError(
+            f"load_ledger: path {resolved} is outside confinement directory {allowed}"
+        )
+
+    # Verify resolved path is still not a symlink (symlink escape)
+    if resolved.is_symlink():
+        raise ValueError(
+            f"load_ledger: resolved path is a symlink: {resolved}"
+        )
+
+    # Require .json extension
+    if resolved.suffix.lower() != ".json":
+        raise ValueError(
+            f"load_ledger: file must have .json extension: {resolved}"
+        )
+
+    # Require regular file
+    if not resolved.is_file():
+        raise ValueError(
+            f"load_ledger: not a regular file: {resolved}"
+        )
+
+    # Bounded read
+    file_size = resolved.stat().st_size
+    if file_size > _MAX_LEDGER_BYTES:
+        raise ValueError(
+            f"load_ledger: file exceeds maximum size ({_MAX_LEDGER_BYTES} bytes): {resolved}"
+        )
+
+    raw = resolved.read_text(encoding="utf-8")
     data = json.loads(raw)
-    return AcquisitionLedger.model_validate(data, strict=False)
+
+    # Strict typed load
+    ledger = AcquisitionLedger.model_validate(data, strict=False)
+
+    # Recompute ledger_id and reject mismatches (§13)
+    computed_id = _compute_ledger_id(
+        list(ledger.rows),
+        ledger.replay_id,
+        ledger.plan_id,
+    )
+    if computed_id != ledger.ledger_id:
+        raise ValueError(
+            f"load_ledger: ledger_id mismatch — "
+            f"stored={ledger.ledger_id!r} computed={computed_id!r}. "
+            "The ledger has been mutated since it was written."
+        )
+
+    return ledger

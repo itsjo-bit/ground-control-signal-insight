@@ -1,17 +1,14 @@
-"""GCSI Phase 6F-B2.1.4 — Acquisition Plan Builder.
+"""GCSI Phase 6F-B2.2.1 — Acquisition Plan Builder.
 
-Supersedes B2.1.3 builder with B2.1.4 trust gate corrections.
+Supersedes B2.2 builder with B2.2.1 reconciliation closure corrections.
 
-Changes from B2.1.3:
-- _load_sidecar() now returns HistoricalReplayV2DiscoveryEvidenceSidecar (typed model),
-  not dict[str, Any]. All downstream access uses model attributes.
-- All builder functions use typed model attributes (row.filename, not row["filename"]).
-- No production fallbacks: row.get("relative_label_path", filename) removed.
-  Missing required fields fail hard.
-- FGM builder uses fgm_peri62_directory_html evidence (PERI-62-derived, not PL root).
-- load_bound_v2_acquisition_plan() returns BoundAcquisitionPlan (named dataclass).
-- Full evidence equality check: all semantic fields compared, not just SHA+URL.
-- Backward-compat legacy JunoCam paired format removed from production path.
+Changes from B2.2:
+- Removed _JEDI_AUTHORITATIVE_INELIGIBLE_PRODUCT_IDS hard-coded exclusion set.
+- Removed _UVS_AUTHORITATIVE_INELIGIBLE_FILENAMES hard-coded exclusion set.
+- Restored canonical B2.1.4 candidate acquisition plan semantics: 411 logical / 535 source.
+- Hard-coded NASA identity exclusion sets do not belong in the plan builder.
+  Temporal reconciliation belongs in a separate V2TemporalReconciliationManifest.
+- validate_evidence_source_contracts() now REJECTS unknown evidence IDs (§10 fail-closed).
 
 All instrument identity (product IDs, filenames, codes) comes from the sidecar.
 No NASA identity arrays are hard-coded in this builder.
@@ -154,19 +151,30 @@ _EVIDENCE_URL_CONTRACTS: dict[str, tuple[str, str]] = {
 def validate_evidence_source_contracts(
     sidecar: "HistoricalReplayV2DiscoveryEvidenceSidecar",
 ) -> None:
-    """§4.7: Validate that every evidence record's source_url matches the stable
+    """§4.7 + §10: Validate that every evidence record's source_url matches the stable
     semantic contract (expected host + path prefix) registered for its evidence_id.
 
-    Raises ValueError if any evidence record violates its contract.
-    Evidence records whose evidence_id is not in the contract table are silently
-    accepted (forward-compatible: new evidence sources not yet registered).
+    §10 fail-closed: For the frozen sidecar schema/version used by this replay,
+    UNKNOWN evidence IDs must be rejected unless explicitly registered.
+    No arbitrary HTTPS evidence source may pass solely because it is syntactically valid.
+
+    Raises ValueError if any evidence record:
+    - has an unregistered evidence_id (§10 fail-closed), or
+    - has a source_url host or path that does not match its registered contract (§4.7).
     """
     from urllib.parse import urlsplit
 
     for ev in sidecar.discovery_evidence:
         contract = _EVIDENCE_URL_CONTRACTS.get(ev.evidence_id)
         if contract is None:
-            continue  # Not registered — no contract to enforce.
+            # §10: Fail closed — unknown evidence IDs are not forward-compatible.
+            # Every evidence_id for this frozen replay/schema version must be registered.
+            raise ValueError(
+                f"Evidence {ev.evidence_id!r}: evidence_id is not registered in "
+                f"_EVIDENCE_URL_CONTRACTS. Unknown evidence sources are rejected "
+                f"for this frozen sidecar schema/version (§10 fail-closed). "
+                f"Register the source URL trust contract before use."
+            )
         expected_host, expected_path_prefix = contract
         try:
             parsed = urlsplit(ev.source_url)
@@ -438,25 +446,6 @@ def _build_mwr_entries(
 
 _UVS_BASE_URL = "https://atmos.nmsu.edu/PDS/data/jnouvs_3001/DATA/ORBIT-62/"
 
-# ---------------------------------------------------------------------------
-# UVS authoritative label temporal exclusions (B2.2 source fact).
-#
-# After authoritative label acquisition, the following UVS P62SY1 (synoptic)
-# products were confirmed POST-epoch:
-#
-#   UVS_S02_771613347_2024166_P62SY1_V01: stop=2024-06-14T11:57:55.215Z (POST)
-#   UVS_S03_771613347_2024166_P62SY1_V01: stop=2024-06-15T00:50:45.152Z (POST)
-#
-# UVS_S01_771613347_2024166_P62SY1_V01: stop=2024-06-14T08:29:35.232Z (ELIGIBLE)
-# All 5 P62OBS products: confirmed ELIGIBLE.
-# ---------------------------------------------------------------------------
-
-_UVS_AUTHORITATIVE_INELIGIBLE_FILENAMES: frozenset[str] = frozenset({
-    # Sidecar stores filename WITHOUT .xml extension
-    "UVS_S02_771613347_2024166_P62SY1_V01",
-    "UVS_S03_771613347_2024166_P62SY1_V01",
-})
-
 
 def _build_uvs_entries(
     evidence_id: str,
@@ -464,13 +453,12 @@ def _build_uvs_entries(
 ) -> list[AcquisitionLogicalProductEntry]:
     """Build UVS entries from typed sidecar normalized extraction rows.
 
-    Products in _UVS_AUTHORITATIVE_INELIGIBLE_FILENAMES are excluded after
-    B2.2 authoritative label acquisition confirmed temporal ineligibility.
+    B2.2.1: All 8 sidecar UVS candidates are included in the acquisition plan.
+    Temporal eligibility is determined by B2.2 authoritative label acquisition
+    and encoded in V2TemporalReconciliationManifest, not by plan-builder exclusion.
     """
     entries = []
     for row in sidecar.uvs_orbit62_filenames:
-        if row.filename in _UVS_AUTHORITATIVE_INELIGIBLE_FILENAMES:
-            continue
         url = f"{_UVS_BASE_URL}{row.relative_label_path}"
         logical_id = (
             f"gcsi.uvs.pj62.{row.sensor.lower()}_{row.sclk}_{row.doy_str}_{row.obs_type.lower()}"
@@ -714,35 +702,6 @@ _JEDI_BASE_URL = (
 )
 
 
-# ---------------------------------------------------------------------------
-# JEDI authoritative label temporal exclusions (B2.2 source fact).
-#
-# After authoritative label acquisition, the following JEDI product types
-# were confirmed OUTSIDE the eligibility window:
-#
-# POST-epoch (stop > 2024-06-14T09:35:17.546Z):
-#   - All DOY-166 LOER-family products: stop=2024-06-14T23:59:57 (full-day)
-#     Affected product types: LOERSESP, LOERSISP (all sensors)
-#
-# PRE-epoch (stop <= 2024-06-13T10:00:00Z):
-#   - JED_270_LOERSISP_CDR_2024165: stop=2024-06-13T09:53:07 (before start)
-#
-# These are deterministic archive facts established by authoritative labels.
-# ---------------------------------------------------------------------------
-
-# Product-ID stems known to be temporally ineligible after label fetch.
-_JEDI_AUTHORITATIVE_INELIGIBLE_PRODUCT_IDS: frozenset[str] = frozenset({
-    # DOY-166 LOER full-day products (POST-epoch: stop=2024-06-14T23:59:57)
-    "JED_090_LOERSESP_CDR_2024166_V04",
-    "JED_090_LOERSISP_CDR_2024166_V04",
-    "JED_180_LOERSESP_CDR_2024166_V04",
-    "JED_180_LOERSISP_CDR_2024166_V04",
-    "JED_270_LOERSESP_CDR_2024166_V04",
-    # DOY-165 product confirmed PRE-epoch: stop=2024-06-13T09:53:07
-    "JED_270_LOERSISP_CDR_2024165_V04",
-})
-
-
 def _build_jedi_entries(
     ev_165: str,
     ev_166: str,
@@ -750,13 +709,13 @@ def _build_jedi_entries(
 ) -> list[AcquisitionLogicalProductEntry]:
     """Build JEDI entries from typed sidecar normalized extraction rows.
 
-    Products in _JEDI_AUTHORITATIVE_INELIGIBLE_PRODUCT_IDS are excluded after
-    B2.2 authoritative label acquisition confirmed temporal ineligibility.
+    B2.2.1: All 28 sidecar JEDI candidates (14 DOY-165 + 14 DOY-166) are included
+    in the acquisition plan. Temporal eligibility is determined by B2.2 authoritative
+    label acquisition and encoded in V2TemporalReconciliationManifest, not by
+    plan-builder exclusion.
     """
     entries = []
     for row in sidecar.jedi_165_labels:
-        if row.product_id.upper() in _JEDI_AUTHORITATIVE_INELIGIBLE_PRODUCT_IDS:
-            continue
         url = f"{_JEDI_BASE_URL}{row.relative_label_path}"
         logical_id = f"gcsi.jedi.pj62.{row.product_id.lower()}"
         rep = AcquisitionSourceRepresentation(
@@ -780,8 +739,6 @@ def _build_jedi_entries(
         ))
 
     for row in sidecar.jedi_166_labels:
-        if row.product_id.upper() in _JEDI_AUTHORITATIVE_INELIGIBLE_PRODUCT_IDS:
-            continue
         url = f"{_JEDI_BASE_URL}{row.relative_label_path}"
         logical_id = f"gcsi.jedi.pj62.{row.product_id.lower()}"
         rep = AcquisitionSourceRepresentation(
@@ -932,11 +889,11 @@ def _build_waves_burst_entries(
 # ---------------------------------------------------------------------------
 
 def build_plan() -> HistoricalReplayV2AcquisitionPlan:
-    """Build and return the full 403-entry acquisition plan.
+    """Build and return the full 411-entry candidate acquisition plan.
 
-    B2.2 temporal reconciliation: 403 logical entries / 527 source refs
-    (reduced from 411/535 after authoritative label verification confirmed
-    8 products outside the eligibility window).
+    B2.2.1 restored canonical B2.1.4 semantics: 411 logical entries / 535 source refs.
+    All sidecar candidates are included regardless of temporal eligibility.
+    Temporal eligibility is established by V2TemporalReconciliationManifest, not here.
 
     Loads the discovery evidence sidecar, then enumerates all instruments.
     The sidecar must exist at data/replays/juno_pj62_large_replay_v2_discovery_evidence.json.
@@ -986,21 +943,20 @@ def build_plan() -> HistoricalReplayV2AcquisitionPlan:
         extractions,
     ))
 
-    # Reconciliation check
-    # B2.2 authoritative label temporal reconciliation:
-    # 8 products confirmed ineligible (6 JEDI + 2 UVS); plan updated from 411→403 / 535→527.
+    # B2.2.1 canonical candidate plan: 411 logical entries / 535 source refs.
+    # This is the CANDIDATE plan before temporal reconciliation.
     total = len(entries)
-    if total != 403:
+    if total != 411:
         raise RuntimeError(
-            f"SOURCE_ENUMERATION_CHANGED: expected 403 logical entries, got {total}. "
-            f"6F_B22_STATUS = SOURCE_INVENTORY_RECONCILIATION_REQUIRED"
+            f"SOURCE_ENUMERATION_CHANGED: expected 411 logical candidate entries, got {total}. "
+            f"6F_B221_STATUS = RECONCILIATION_REVIEW_REQUIRED"
         )
 
     total_refs = sum(len(e.representations) for e in entries)
-    if total_refs != 527:
+    if total_refs != 535:
         raise RuntimeError(
-            f"SOURCE_ENUMERATION_CHANGED: expected 527 source refs, got {total_refs}. "
-            f"6F_B22_STATUS = SOURCE_INVENTORY_RECONCILIATION_REQUIRED"
+            f"SOURCE_ENUMERATION_CHANGED: expected 535 candidate source refs, got {total_refs}. "
+            f"6F_B221_STATUS = RECONCILIATION_REVIEW_REQUIRED"
         )
 
     plan_id = _compute_plan_id(

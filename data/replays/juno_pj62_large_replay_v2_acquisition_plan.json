@@ -3078,6 +3078,44 @@
       "temporal_evidence_status": "LABEL_VERIFICATION_PENDING"
     },
     {
+      "discovery_availability_time_utc": null,
+      "discovery_evidence_id": "uvs_orbit62_directory_html",
+      "instrument": "UVS",
+      "logical_product_id": "gcsi.uvs.pj62.s02_771613347_2024166_p62sy1",
+      "representations": [
+        {
+          "discovery_evidence_id": "uvs_orbit62_directory_html",
+          "expected_archive_identity": "UVS_S02_771613347_2024166_P62SY1_V01",
+          "label_url": "https://atmos.nmsu.edu/PDS/data/jnouvs_3001/DATA/ORBIT-62/UVS_S02_771613347_2024166_P62SY1_V01.xml",
+          "normalizer_id": "gcsi.generic_pds4_label.v1",
+          "profile_id": "uvs_pds4",
+          "representation_role": "calibrated",
+          "source_standard": "pds4"
+        }
+      ],
+      "semantic_role": "ultraviolet_observation",
+      "temporal_evidence_status": "LABEL_VERIFICATION_PENDING"
+    },
+    {
+      "discovery_availability_time_utc": null,
+      "discovery_evidence_id": "uvs_orbit62_directory_html",
+      "instrument": "UVS",
+      "logical_product_id": "gcsi.uvs.pj62.s03_771613347_2024166_p62sy1",
+      "representations": [
+        {
+          "discovery_evidence_id": "uvs_orbit62_directory_html",
+          "expected_archive_identity": "UVS_S03_771613347_2024166_P62SY1_V01",
+          "label_url": "https://atmos.nmsu.edu/PDS/data/jnouvs_3001/DATA/ORBIT-62/UVS_S03_771613347_2024166_P62SY1_V01.xml",
+          "normalizer_id": "gcsi.generic_pds4_label.v1",
+          "profile_id": "uvs_pds4",
+          "representation_role": "calibrated",
+          "source_standard": "pds4"
+        }
+      ],
+      "semantic_role": "ultraviolet_observation",
+      "temporal_evidence_status": "LABEL_VERIFICATION_PENDING"
+    },
+    {
       "discovery_availability_time_utc": "2024-06-13T10:00:08.705000Z",
       "discovery_evidence_id": "junocam_jnojnc_0029_index_tab",
       "instrument": "JUNOCAM",
@@ -6952,6 +6990,25 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jedi_165_directory_html",
       "instrument": "JEDI",
+      "logical_product_id": "gcsi.jedi.pj62.jed_270_loersisp_cdr_2024165_v04",
+      "representations": [
+        {
+          "discovery_evidence_id": "jedi_165_directory_html",
+          "expected_archive_identity": "JED_270_LOERSISP_CDR_2024165_V04",
+          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J-JED-3-CDR-V1.0/DATA/2024/165/JED_270_LOERSISP_CDR_2024165_V04.LBL",
+          "normalizer_id": "gcsi.generic_pds3_label.v1",
+          "profile_id": "jedi_pds3",
+          "representation_role": "calibrated",
+          "source_standard": "pds3"
+        }
+      ],
+      "semantic_role": "energetic_particles",
+      "temporal_evidence_status": "LABEL_VERIFICATION_PENDING"
+    },
+    {
+      "discovery_availability_time_utc": null,
+      "discovery_evidence_id": "jedi_165_directory_html",
+      "instrument": "JEDI",
       "logical_product_id": "gcsi.jedi.pj62.jed_270_nonptofxer_cdr_2024165_v04",
       "representations": [
         {
@@ -7028,6 +7085,44 @@
       "discovery_availability_time_utc": null,
       "discovery_evidence_id": "jedi_166_directory_html",
       "instrument": "JEDI",
+      "logical_product_id": "gcsi.jedi.pj62.jed_090_loersesp_cdr_2024166_v04",
+      "representations": [
+        {
+          "discovery_evidence_id": "jedi_166_directory_html",
+          "expected_archive_identity": "JED_090_LOERSESP_CDR_2024166_V04",
+          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J-JED-3-CDR-V1.0/DATA/2024/166/JED_090_LOERSESP_CDR_2024166_V04.LBL",
+          "normalizer_id": "gcsi.generic_pds3_label.v1",
+          "profile_id": "jedi_pds3",
+          "representation_role": "calibrated",
+          "source_standard": "pds3"
+        }
+      ],
+      "semantic_role": "energetic_particles",
+      "temporal_evidence_status": "LABEL_VERIFICATION_PENDING"
+    },
+    {
+      "discovery_availability_time_utc": null,
+      "discovery_evidence_id": "jedi_166_directory_html",
+      "instrument": "JEDI",
+      "logical_product_id": "gcsi.jedi.pj62.jed_090_loersisp_cdr_2024166_v04",
+      "representations": [
+        {
+          "discovery_evidence_id": "jedi_166_directory_html",
+          "expected_archive_identity": "JED_090_LOERSISP_CDR_2024166_V04",
+          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J-JED-3-CDR-V1.0/DATA/2024/166/JED_090_LOERSISP_CDR_2024166_V04.LBL",
+          "normalizer_id": "gcsi.generic_pds3_label.v1",
+          "profile_id": "jedi_pds3",
+          "representation_role": "calibrated",
+          "source_standard": "pds3"
+        }
+      ],
+      "semantic_role": "energetic_particles",
+      "temporal_evidence_status": "LABEL_VERIFICATION_PENDING"
+    },
+    {
+      "discovery_availability_time_utc": null,
+      "discovery_evidence_id": "jedi_166_directory_html",
+      "instrument": "JEDI",
       "logical_product_id": "gcsi.jedi.pj62.jed_180_hiersesp_cdr_2024166_v04",
       "representations": [
         {
@@ -7053,6 +7148,44 @@
           "discovery_evidence_id": "jedi_166_directory_html",
           "expected_archive_identity": "JED_180_HIERSISP_CDR_2024166_V04",
           "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J-JED-3-CDR-V1.0/DATA/2024/166/JED_180_HIERSISP_CDR_2024166_V04.LBL",
+          "normalizer_id": "gcsi.generic_pds3_label.v1",
+          "profile_id": "jedi_pds3",
+          "representation_role": "calibrated",
+          "source_standard": "pds3"
+        }
+      ],
+      "semantic_role": "energetic_particles",
+      "temporal_evidence_status": "LABEL_VERIFICATION_PENDING"
+    },
+    {
+      "discovery_availability_time_utc": null,
+      "discovery_evidence_id": "jedi_166_directory_html",
+      "instrument": "JEDI",
+      "logical_product_id": "gcsi.jedi.pj62.jed_180_loersesp_cdr_2024166_v04",
+      "representations": [
+        {
+          "discovery_evidence_id": "jedi_166_directory_html",
+          "expected_archive_identity": "JED_180_LOERSESP_CDR_2024166_V04",
+          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J-JED-3-CDR-V1.0/DATA/2024/166/JED_180_LOERSESP_CDR_2024166_V04.LBL",
+          "normalizer_id": "gcsi.generic_pds3_label.v1",
+          "profile_id": "jedi_pds3",
+          "representation_role": "calibrated",
+          "source_standard": "pds3"
+        }
+      ],
+      "semantic_role": "energetic_particles",
+      "temporal_evidence_status": "LABEL_VERIFICATION_PENDING"
+    },
+    {
+      "discovery_availability_time_utc": null,
+      "discovery_evidence_id": "jedi_166_directory_html",
+      "instrument": "JEDI",
+      "logical_product_id": "gcsi.jedi.pj62.jed_180_loersisp_cdr_2024166_v04",
+      "representations": [
+        {
+          "discovery_evidence_id": "jedi_166_directory_html",
+          "expected_archive_identity": "JED_180_LOERSISP_CDR_2024166_V04",
+          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J-JED-3-CDR-V1.0/DATA/2024/166/JED_180_LOERSISP_CDR_2024166_V04.LBL",
           "normalizer_id": "gcsi.generic_pds3_label.v1",
           "profile_id": "jedi_pds3",
           "representation_role": "calibrated",
@@ -7110,6 +7243,25 @@
           "discovery_evidence_id": "jedi_166_directory_html",
           "expected_archive_identity": "JED_270_HIERSTOFXPHR_CDR_2024166_V04",
           "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J-JED-3-CDR-V1.0/DATA/2024/166/JED_270_HIERSTOFXPHR_CDR_2024166_V04.LBL",
+          "normalizer_id": "gcsi.generic_pds3_label.v1",
+          "profile_id": "jedi_pds3",
+          "representation_role": "calibrated",
+          "source_standard": "pds3"
+        }
+      ],
+      "semantic_role": "energetic_particles",
+      "temporal_evidence_status": "LABEL_VERIFICATION_PENDING"
+    },
+    {
+      "discovery_availability_time_utc": null,
+      "discovery_evidence_id": "jedi_166_directory_html",
+      "instrument": "JEDI",
+      "logical_product_id": "gcsi.jedi.pj62.jed_270_loersesp_cdr_2024166_v04",
+      "representations": [
+        {
+          "discovery_evidence_id": "jedi_166_directory_html",
+          "expected_archive_identity": "JED_270_LOERSESP_CDR_2024166_V04",
+          "label_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J-JED-3-CDR-V1.0/DATA/2024/166/JED_270_LOERSESP_CDR_2024166_V04.LBL",
           "normalizer_id": "gcsi.generic_pds3_label.v1",
           "profile_id": "jedi_pds3",
           "representation_role": "calibrated",
@@ -8925,7 +9077,7 @@
       "temporal_evidence_status": "EXACT_DISCOVERY_METADATA"
     }
   ],
-  "plan_id": "7ede995fb67e0597a399f1b77ad8268f3f5525eb43f89edbf819a4615e213103",
+  "plan_id": "3cea529385f0a2ca6c1673e1f448a50b289978986f92281a3d88999a3f317ca8",
   "replay_id": "juno_pj62_large_replay_v2",
   "schema": "gcsi.historical_replay_v2_acquisition_plan",
   "schema_version": 1
