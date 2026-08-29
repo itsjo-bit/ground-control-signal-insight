@@ -108,7 +108,8 @@ def _jiram_label(
 
 _RETRIEVED_AT = datetime(2024, 6, 14, 9, 35, 17, tzinfo=timezone.utc)
 
-# JIRAM profile with pds.nasa.gov path prefix that matches our test URL
+# JIRAM profile with pds.nasa.gov path prefix that matches our test URL.
+# require_data_file=False: these test labels have no File_Area_Observational.
 _JIRAM_TEST_PROFILE = GenericPds4AdapterProfile(
     profile_id="jiram_test",
     allowed_hosts=frozenset({"pds.nasa.gov"}),
@@ -121,6 +122,7 @@ _JIRAM_TEST_PROFILE = GenericPds4AdapterProfile(
     investigation_lid="urn:nasa:pds:context:investigation:mission.juno",
     product_family="JIRAM",
     allowed_processing_levels=frozenset({"Calibrated", "Derived"}),
+    require_data_file=False,
 )
 
 # UVS-style label fixture
@@ -185,6 +187,7 @@ _UVS_TEST_PROFILE = GenericPds4AdapterProfile(
     investigation_lid="urn:nasa:pds:context:investigation:mission.juno",
     product_family="UVS",
     allowed_processing_levels=frozenset({"Calibrated"}),
+    require_data_file=False,
 )
 
 

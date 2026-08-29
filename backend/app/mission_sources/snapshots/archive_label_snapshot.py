@@ -1,4 +1,4 @@
-"""GCSI Phase 6F-B1 — Generic Archive Label Content-Addressed Snapshot Store.
+"""GCSI Phase 6F-B1.2.2 — Generic Archive Label Content-Addressed Snapshot Store.
 
 This module provides a generic snapshot store suitable for BOTH PDS3 and PDS4
 archive label captures.  It does NOT delete or modify the existing
@@ -23,8 +23,8 @@ only by:
         ↓  SHA-256(raw bytes) == raw_label_sha256
         ↓  SHA-256(raw bytes) == provenance.content_sha256
         ↓  retrieved_at == provenance.retrieved_at  (UTC-normalised)
-        ↓  normalizer_id + profile_id resolved via CONTROLLED registry
-        ↓  raw bytes re-validated by the resolved registered parser
+        ↓  (normalizer_id, profile_id) resolved via IMMUTABLE production resolver
+        ↓  raw bytes re-validated by the resolved frozen production parser
         ↓  re-derived product == stored product
         ↓  re-derived provenance == stored provenance
         ↓  source_record_id consistency check
@@ -40,22 +40,24 @@ from the local snapshot file plus the same shared offline parsers.
 Both PDS3 and PDS4 snapshots share this store.  The snapshot_source_standard
 field distinguishes them.
 
-Parser registry (Section N)
------------------------------
-Callers cannot inject an arbitrary reparser at load time.  All parsers are
-registered via ``register_parser(normalizer_id, profile_id, reparser)`` before
-any snapshot loading.  ``load()`` resolves the reparser from the envelope's
-``normalizer_id`` + ``profile_id`` fields using the controlled registry.
+Production snapshot write contract (Section A)
+----------------------------------------------
+The production ``write()`` method accepts an ``ArchiveCaptureRecord`` plus
+``normalizer_id`` + ``profile_id``.  It does NOT accept a caller-supplied
+reparser.  Instead it resolves the exact frozen production parser internally
+from the immutable production resolver (``_PRODUCTION_RESOLVER``).
 
-The write path retains an explicit ``reparser`` parameter for consistency
-checking at write time, but also stores ``normalizer_id`` and ``profile_id``
-in the envelope for future registry-based reload.
+Immutable production resolver (Section B)
+------------------------------------------
+``_PRODUCTION_RESOLVER`` is a ``MappingProxyType`` of frozen production
+(normalizer_id, profile_id) → ``_ProductionEntry`` records.  No registration
+API, no overwrite API.  Unknown pair → rejected.
 
-Backward compatibility
-----------------------
-``load_from_explicit_reparser()`` is provided for callers that pass a reparser
-directly (e.g. existing tests).  It bypasses the registry but is intended only
-for testing/migration purposes.
+Test-only migration paths (Section C)
+--------------------------------------
+``_write_with_explicit_reparser_for_test()`` and
+``_load_with_explicit_reparser_for_test()`` are private test/migration paths
+that accept an explicit reparser callable.  They are NOT the production API.
 """
 
 from __future__ import annotations
@@ -68,11 +70,13 @@ import os
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional, Union
+from types import MappingProxyType
+from typing import Callable, NamedTuple, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError as PydanticValidationError, field_validator
 
 from backend.app.mission_sources.archive_models import (
+    ArchiveCaptureRecord,
     ArchiveScienceProduct,
     ArchiveSourceStandard,
 )
@@ -143,17 +147,111 @@ ReparserFn = Callable[
 
 
 # ---------------------------------------------------------------------------
-# Section N — Controlled parser registry
+# Section B — Immutable production resolver (MappingProxyType)
 # ---------------------------------------------------------------------------
+#
+# _PRODUCTION_RESOLVER is a MappingProxyType — it is structurally immutable.
+# No registration API, no overwrite API.  Unknown pair → rejected.
+#
+# Each entry maps (normalizer_id, profile_id) → _ProductionEntry containing:
+#   source_standard  : expected "pds3" or "pds4"
+#   reparser         : exact frozen production parser closure
+#
+# The map is populated at module import time via _build_production_resolver().
+# Tests CANNOT mutate _PRODUCTION_RESOLVER.
 
-# The registry maps (normalizer_id, profile_id) → ReparserFn.
-# Callers register parsers before loading snapshots; load() resolves via
-# this registry rather than accepting arbitrary callable injection.
+class _ProductionEntry(NamedTuple):
+    source_standard: str   # "pds3" or "pds4"
+    reparser: ReparserFn
+
+
+def _build_production_resolver() -> MappingProxyType:
+    """Build and return the immutable production resolver.
+
+    Called ONCE at module import time.  Returns a MappingProxyType — attempts
+    to mutate it raise TypeError at runtime.
+
+    Lazy imports to avoid circular import issues.
+    """
+    from backend.app.mission_sources.adapters.pds3_adapter import (
+        FGM_PDS3_PROFILE,
+        JADE_PDS3_PROFILE,
+        JEDI_PDS3_PROFILE,
+        JUNOCAM_PDS3_PROFILE,
+        WAVES_BURST_PDS3_PROFILE,
+        WAVES_SURVEY_PDS3_PROFILE,
+        parse_generic_pds3_label,
+    )
+    from backend.app.mission_sources.adapters.pds4_adapter import (
+        JIRAM_PDS4_PROFILE,
+        MWR_GENERIC_PDS4_PROFILE,
+        UVS_PDS4_PROFILE,
+        parse_generic_pds4_label,
+    )
+
+    _PDS3_NID = "gcsi.generic_pds3_label.v1"
+    _PDS4_NID = "gcsi.generic_pds4_label.v1"
+
+    def _make_pds3(profile):
+        def _fn(raw_bytes, source_ref, retrieved_at):
+            return parse_generic_pds3_label(raw_bytes, source_ref, profile, retrieved_at)
+        return _fn
+
+    def _make_pds4(profile):
+        def _fn(raw_bytes, label_url, retrieved_at):
+            return parse_generic_pds4_label(raw_bytes, label_url, profile, retrieved_at)
+        return _fn
+
+    entries: dict[tuple[str, str], _ProductionEntry] = {
+        (_PDS3_NID, "fgm_pds3"):          _ProductionEntry("pds3", _make_pds3(FGM_PDS3_PROFILE)),
+        (_PDS3_NID, "jade_pds3"):         _ProductionEntry("pds3", _make_pds3(JADE_PDS3_PROFILE)),
+        (_PDS3_NID, "jedi_pds3"):         _ProductionEntry("pds3", _make_pds3(JEDI_PDS3_PROFILE)),
+        (_PDS3_NID, "waves_burst_pds3"):  _ProductionEntry("pds3", _make_pds3(WAVES_BURST_PDS3_PROFILE)),
+        (_PDS3_NID, "waves_survey_pds3"): _ProductionEntry("pds3", _make_pds3(WAVES_SURVEY_PDS3_PROFILE)),
+        (_PDS3_NID, "junocam_pds3"):      _ProductionEntry("pds3", _make_pds3(JUNOCAM_PDS3_PROFILE)),
+        (_PDS4_NID, "jiram_pds4"):        _ProductionEntry("pds4", _make_pds4(JIRAM_PDS4_PROFILE)),
+        (_PDS4_NID, "uvs_pds4"):          _ProductionEntry("pds4", _make_pds4(UVS_PDS4_PROFILE)),
+        (_PDS4_NID, "mwr_generic_pds4"):  _ProductionEntry("pds4", _make_pds4(MWR_GENERIC_PDS4_PROFILE)),
+    }
+    return MappingProxyType(entries)
+
+
+# The single immutable production resolver — populated at module import time.
+_PRODUCTION_RESOLVER: MappingProxyType = _build_production_resolver()
+
+
+def _resolve_production_entry(normalizer_id: str, profile_id: str) -> _ProductionEntry:
+    """Resolve a production entry from the immutable production resolver.
+
+    Raises
+    ------
+    ArchiveSnapshotValidationError
+        If the (normalizer_id, profile_id) pair is not in the production resolver.
+    """
+    key = (normalizer_id, profile_id)
+    try:
+        return _PRODUCTION_RESOLVER[key]
+    except KeyError:
+        raise ArchiveSnapshotValidationError(
+            f"Unknown production pair: normalizer_id={normalizer_id!r}, "
+            f"profile_id={profile_id!r}. "
+            "This pair is not declared in the frozen production resolver. "
+            "Caller cannot choose parsing semantics on the production write path."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Section N — Controlled parser registry (for backward compat / test use)
+# ---------------------------------------------------------------------------
+#
+# _PARSER_REGISTRY supports the legacy load_from_explicit_reparser path and
+# test fixtures that use register_parser / _register_parser_force.
+# Production load() resolves via _PRODUCTION_RESOLVER, not this registry.
 #
 # Item 7: duplicate registration (overwrite) is forbidden.  Once a parser
 # is registered for a (normalizer_id, profile_id) pair it cannot be changed.
 # Production code must register at startup; tests that need a different parser
-# must use load_from_explicit_reparser() which bypasses the registry entirely.
+# must use _load_with_explicit_reparser_for_test() which bypasses the registry.
 _PARSER_REGISTRY: dict[tuple[str, str], ReparserFn] = {}
 
 
@@ -162,7 +260,11 @@ def register_parser(
 ) -> None:
     """Register a reparser for a specific normalizer_id + profile_id pair.
 
-    Must be called BEFORE loading any snapshot that uses this combination.
+    Must be called BEFORE loading any snapshot that uses this combination
+    via load_from_explicit_reparser / _load_with_explicit_reparser_for_test.
+
+    This registry does NOT affect the production write/load path.
+    Production write/load use the immutable _PRODUCTION_RESOLVER.
 
     Raises
     ------
@@ -172,16 +274,6 @@ def register_parser(
     ArchiveSnapshotValidationError
         If the (normalizer_id, profile_id) pair is already registered.
         Duplicate registration / overwrite is forbidden.
-
-    Parameters
-    ----------
-    normalizer_id:
-        Normalizer identifier, e.g. ``"gcsi.generic_pds3_label.v1"``.
-    profile_id:
-        Profile identifier, e.g. ``"waves_burst_pds3"``.
-    reparser:
-        Callable accepting (raw_bytes, source_ref, retrieved_at) and
-        returning (ArchiveScienceProduct, ProvenanceRecord).
     """
     if not normalizer_id.strip():
         raise ValueError("normalizer_id must not be empty.")
@@ -192,7 +284,7 @@ def register_parser(
         raise ArchiveSnapshotValidationError(
             f"Parser for normalizer_id={normalizer_id!r} / profile_id={profile_id!r} "
             "is already registered. Duplicate registration / overwrite is forbidden. "
-            "Use load_from_explicit_reparser() for test/migration paths."
+            "Use _load_with_explicit_reparser_for_test() for test/migration paths."
         )
     _PARSER_REGISTRY[key] = reparser
 
@@ -233,49 +325,25 @@ def _resolve_reparser(normalizer_id: str, profile_id: str) -> ReparserFn:
 
 
 # ---------------------------------------------------------------------------
-# Section C — Frozen normalizer/profile production mapping
+# Section C — Frozen normalizer/profile production mapping (read-only view)
 # ---------------------------------------------------------------------------
 #
-# The production static mapping of (normalizer_id, profile_id) pairs to the
-# exact normalizer closure bound to the exact production profile.
-#
-# Rules:
-#   - Callers cannot install arbitrary production parsers via this mapping.
-#   - No overwrite API exists for the frozen map.
-#   - Unknown (normalizer_id, profile_id) pairs are rejected.
-#   - source_standard compatibility is enforced (pds3 normalizer ↔ pds3 profile).
-#   - Every production profile used by B2 must have exactly one entry here.
-#
-# The frozen map is populated at module import time via
-# _register_frozen_production_parsers() which is called below.
-# Tests may use register_parser() or _register_parser_force() in _PARSER_REGISTRY;
-# the frozen map itself is not accessible for external mutation.
-#
-# Format: (normalizer_id, profile_id) → source_standard_value
-# The actual reparser closures are registered into _PARSER_REGISTRY at import.
-#
-_FROZEN_PRODUCTION_PROFILE_MAP: dict[tuple[str, str], str] = {
-    # PDS3 normalizer
-    ("gcsi.generic_pds3_label.v1", "fgm_pds3"):         "pds3",
-    ("gcsi.generic_pds3_label.v1", "jade_pds3"):        "pds3",
-    ("gcsi.generic_pds3_label.v1", "jedi_pds3"):        "pds3",
-    ("gcsi.generic_pds3_label.v1", "waves_burst_pds3"): "pds3",
-    ("gcsi.generic_pds3_label.v1", "waves_survey_pds3"): "pds3",
-    ("gcsi.generic_pds3_label.v1", "junocam_pds3"):     "pds3",
-    # PDS4 normalizer
-    ("gcsi.generic_pds4_label.v1", "jiram_pds4"):       "pds4",
-    ("gcsi.generic_pds4_label.v1", "uvs_pds4"):         "pds4",
-    ("gcsi.generic_pds4_label.v1", "mwr_generic_pds4"): "pds4",
-}
+# Provided for backward compat with tests that inspect _FROZEN_PRODUCTION_PROFILE_MAP.
+# Derived directly from _PRODUCTION_RESOLVER — not a separate mutable dict.
+
+_FROZEN_PRODUCTION_PROFILE_MAP: MappingProxyType = MappingProxyType({
+    (nid, pid): entry.source_standard
+    for (nid, pid), entry in _PRODUCTION_RESOLVER.items()
+})
 
 
 def is_known_production_pair(normalizer_id: str, profile_id: str) -> bool:
     """Return True if (normalizer_id, profile_id) is a known production pair.
 
-    This provides read-only access to the frozen production map.
-    Callers cannot mutate the map through this interface.
+    This provides read-only access to the frozen production resolver.
+    Callers cannot mutate the resolver through this interface.
     """
-    return (normalizer_id, profile_id) in _FROZEN_PRODUCTION_PROFILE_MAP
+    return (normalizer_id, profile_id) in _PRODUCTION_RESOLVER
 
 
 def get_production_source_standard(normalizer_id: str, profile_id: str) -> str:
@@ -284,78 +352,27 @@ def get_production_source_standard(normalizer_id: str, profile_id: str) -> str:
     Raises
     ------
     ArchiveSnapshotValidationError
-        If the pair is not in the frozen production map.
+        If the pair is not in the frozen production resolver.
     """
-    key = (normalizer_id, profile_id)
-    if key not in _FROZEN_PRODUCTION_PROFILE_MAP:
-        raise ArchiveSnapshotValidationError(
-            f"Unknown production pair: normalizer_id={normalizer_id!r}, "
-            f"profile_id={profile_id!r}. "
-            "This pair is not declared in the frozen production mapping."
-        )
-    return _FROZEN_PRODUCTION_PROFILE_MAP[key]
+    entry = _resolve_production_entry(normalizer_id, profile_id)
+    return entry.source_standard
 
 
 def _register_frozen_production_parsers() -> None:
-    """Register all known production (normalizer_id, profile_id) → reparser pairs.
+    """Populate _PARSER_REGISTRY with production parsers.
 
-    Called once at module import time.  Uses _register_parser_force to avoid
-    duplicate-registration errors on re-import in test environments.
+    Called once at module import time.  Syncs _PARSER_REGISTRY with
+    _PRODUCTION_RESOLVER so that legacy load_from_explicit_reparser callers
+    can resolve via the registry.
 
-    Importing the adapter modules here is deferred (inside the function body)
-    to avoid circular import issues.
+    Uses _register_parser_force to avoid duplicate-registration errors on
+    re-import in test environments.
     """
-    # Lazy import to avoid circular dependencies.
-    from backend.app.mission_sources.adapters.pds3_adapter import (
-        FGM_PDS3_PROFILE,
-        JADE_PDS3_PROFILE,
-        JEDI_PDS3_PROFILE,
-        JUNOCAM_PDS3_PROFILE,
-        WAVES_BURST_PDS3_PROFILE,
-        WAVES_SURVEY_PDS3_PROFILE,
-        parse_generic_pds3_label,
-    )
-    from backend.app.mission_sources.adapters.pds4_adapter import (
-        JIRAM_PDS4_PROFILE,
-        MWR_GENERIC_PDS4_PROFILE,
-        UVS_PDS4_PROFILE,
-        parse_generic_pds4_label,
-    )
-
-    _PDS3_NID = "gcsi.generic_pds3_label.v1"
-    _PDS4_NID = "gcsi.generic_pds4_label.v1"
-
-    def _make_pds3_reparser(profile):
-        def _reparser(raw_bytes, source_ref, retrieved_at):
-            return parse_generic_pds3_label(raw_bytes, source_ref, profile, retrieved_at)
-        return _reparser
-
-    def _make_pds4_reparser(profile):
-        def _reparser(raw_bytes, label_url, retrieved_at):
-            return parse_generic_pds4_label(raw_bytes, label_url, profile, retrieved_at)
-        return _reparser
-
-    pds3_pairs = [
-        (FGM_PDS3_PROFILE,          "fgm_pds3"),
-        (JADE_PDS3_PROFILE,         "jade_pds3"),
-        (JEDI_PDS3_PROFILE,         "jedi_pds3"),
-        (WAVES_BURST_PDS3_PROFILE,  "waves_burst_pds3"),
-        (WAVES_SURVEY_PDS3_PROFILE, "waves_survey_pds3"),
-        (JUNOCAM_PDS3_PROFILE,      "junocam_pds3"),
-    ]
-    for profile, pid in pds3_pairs:
-        _register_parser_force(_PDS3_NID, pid, _make_pds3_reparser(profile))
-
-    pds4_pairs = [
-        (JIRAM_PDS4_PROFILE,        "jiram_pds4"),
-        (UVS_PDS4_PROFILE,          "uvs_pds4"),
-        (MWR_GENERIC_PDS4_PROFILE,  "mwr_generic_pds4"),
-    ]
-    for profile, pid in pds4_pairs:
-        _register_parser_force(_PDS4_NID, pid, _make_pds4_reparser(profile))
+    for (nid, pid), entry in _PRODUCTION_RESOLVER.items():
+        _register_parser_force(nid, pid, entry.reparser)
 
 
-# Register production parsers at module import time.
+# Register production parsers at module import time (for registry compat).
 _register_frozen_production_parsers()
 
 
@@ -535,24 +552,30 @@ class ArchiveLabelSnapshotStore:
 
     This class has no instance state; all methods are static.
 
-    Write
-    -----
-    :meth:`write` performs full self-consistency verification, re-runs the
-    shared parser, stores ``normalizer_id`` and ``profile_id`` in the envelope,
-    and writes atomically via temp file + ``os.replace()``.
+    Production Write (Section A)
+    ----------------------------
+    :meth:`write` accepts an ``ArchiveCaptureRecord`` plus ``normalizer_id``
+    and ``profile_id``.  The caller CANNOT supply a reparser.  The exact
+    frozen production parser is resolved internally from ``_PRODUCTION_RESOLVER``
+    (a ``MappingProxyType``).  Only known production pairs are accepted.
 
-    Load (registry-based — recommended)
-    ------------------------------------
-    :meth:`load` performs a genuinely bounded file read, full structural
-    validation, strict Base64 decode, hash verification, resolves the
-    reparser from the CONTROLLED registry using the envelope's
-    ``normalizer_id`` + ``profile_id``, re-runs the parser, compares
-    re-derived values, verifies snapshot_id, and checks source_standard.
+    Production Load (Section B)
+    ----------------------------
+    :meth:`load` resolves the reparser from the immutable production resolver
+    using the envelope's ``normalizer_id`` + ``profile_id`` fields.  It does
+    NOT depend on the mutable test registry.
 
-    Load (explicit reparser — backward compatible)
-    -----------------------------------------------
-    :meth:`load_from_explicit_reparser` accepts a direct reparser callable.
-    Intended for test fixtures and migration; does NOT use the registry.
+    Test-only migration paths (Section C)
+    ----------------------------------------
+    :meth:`_write_with_explicit_reparser_for_test` and
+    :meth:`_load_with_explicit_reparser_for_test` accept a direct reparser
+    callable.  They are NOT the production API.
+
+    Backward-compatible alias
+    -------------------------
+    :meth:`load_from_explicit_reparser` is a public alias for
+    :meth:`_load_with_explicit_reparser_for_test` preserved for existing test
+    fixtures.  New production code must use :meth:`load`.
 
     Zero network activity during load
     ----------------------------------
@@ -561,60 +584,45 @@ class ArchiveLabelSnapshotStore:
 
     @staticmethod
     def write(
-        raw_label_bytes: bytes,
-        source_ref: Optional[str],
-        product: ArchiveScienceProduct,
-        provenance: ProvenanceRecord,
-        reparser: ReparserFn,
+        capture: ArchiveCaptureRecord,
         path: Union[str, Path],
-        normalizer_id: str = "",
-        profile_id: str = "",
+        normalizer_id: str,
+        profile_id: str,
     ) -> None:
         """Atomically write a self-consistent, checksum-verified snapshot.
 
+        The production write path.  The caller CANNOT choose parsing semantics.
+        The exact frozen production parser is resolved internally from the
+        immutable production resolver.
+
         Parameters
         ----------
-        raw_label_bytes:
-            Exact raw bytes of the source label.
-
-        source_ref:
-            Source URL/path for this label (for provenance).
-
-        product:
-            Fully validated ArchiveScienceProduct.
-
-        provenance:
-            EXTERNAL_AUTHORITATIVE ProvenanceRecord with content_sha256 set.
-
-        reparser:
-            The SAME pure-function parser used during acquisition.
-            Must accept (raw_bytes: bytes, source_ref: str, retrieved_at: datetime)
-            and return (ArchiveScienceProduct, ProvenanceRecord).
+        capture:
+            ArchiveCaptureRecord produced by the live adapter.  Must be
+            fully self-consistent (content_sha256, provenance, etc.).
 
         path:
             Destination file path.  Parent directory must exist.
 
         normalizer_id:
-            Normalizer identifier to store in the envelope,
-            e.g. ``"gcsi.generic_pds3_label.v1"``.
-            Required for registry-based reload.
+            Normalizer identifier, e.g. ``"gcsi.generic_pds3_label.v1"``.
+            Must be a known production pair together with profile_id.
 
         profile_id:
-            Profile identifier to store in the envelope,
-            e.g. ``"waves_burst_pds3"``.
-            Required for registry-based reload.
+            Profile identifier, e.g. ``"waves_burst_pds3"``.
+            Must be a known production pair together with normalizer_id.
 
         Raises
         ------
         ArchiveSnapshotValidationError
-            On any self-consistency, re-validation, or size-limit failure.
+            If normalizer_id/profile_id is empty, if the pair is not a known
+            production pair, if source_standard mismatches, or if any
+            self-consistency or re-validation check fails.
 
         ArchiveSnapshotUnavailableError
             On OS-level write failure.
         """
-        path = Path(path)
-
-        # 1. Reject unknown/empty normalizer_id or profile_id BEFORE any I/O (Item 8).
+        # 1. Reject empty ids BEFORE any I/O.
         if not normalizer_id.strip():
             raise ArchiveSnapshotValidationError(
                 "Snapshot write rejected: normalizer_id must not be empty."
@@ -624,148 +632,42 @@ class ArchiveLabelSnapshotStore:
                 "Snapshot write rejected: profile_id must not be empty."
             )
 
-        # 2. retrieved_at.
-        retrieved_at = provenance.retrieved_at
-        if retrieved_at is None:
+        # 2. Resolve from the IMMUTABLE production resolver — unknown pair rejected.
+        production_entry = _resolve_production_entry(normalizer_id, profile_id)
+
+        # 3. Verify source_standard matches the production entry declaration.
+        expected_std = production_entry.source_standard
+        actual_std = capture.product.source_standard.value
+        if actual_std != expected_std:
             raise ArchiveSnapshotValidationError(
-                "Snapshot write rejected: provenance.retrieved_at is missing."
-            )
-        if retrieved_at.tzinfo is None or retrieved_at.utcoffset() is None:
-            raise ArchiveSnapshotValidationError(
-                "Snapshot write rejected: provenance.retrieved_at is not timezone-aware."
+                f"Snapshot write rejected: capture product source_standard {actual_std!r} "
+                f"does not match expected source_standard {expected_std!r} "
+                f"for production pair ({normalizer_id!r}, {profile_id!r})."
             )
 
-        # 3. SHA-256 consistency.
-        computed_hash = hashlib.sha256(raw_label_bytes).hexdigest()
-        if provenance.content_sha256 is None or computed_hash != provenance.content_sha256:
-            raise ArchiveSnapshotValidationError(
-                "Snapshot write rejected: raw label SHA-256 does not match "
-                "provenance.content_sha256."
-            )
-
-        # 4. source_record_id consistency.
-        if provenance.source_record_id != product.source_record_id:
-            raise ArchiveSnapshotValidationError(
-                "Snapshot write rejected: provenance.source_record_id does not "
-                "match product.source_record_id."
-            )
-
-        # 5. Re-run the SAME shared parser.
-        effective_ref = source_ref or product.source_label_ref or ""
-        try:
-            rederived_product, rederived_provenance = reparser(
-                raw_label_bytes, effective_ref, retrieved_at
-            )
-        except Exception as exc:
-            raise ArchiveSnapshotValidationError(
-                "Snapshot write rejected: capture failed raw-label re-validation."
-            ) from exc
-
-        if rederived_product != product:
-            raise ArchiveSnapshotValidationError(
-                "Snapshot write rejected: stored product is not consistent "
-                "with the raw label."
-            )
-        if rederived_provenance != provenance:
-            raise ArchiveSnapshotValidationError(
-                "Snapshot write rejected: stored provenance is not consistent "
-                "with the raw label."
-            )
-
-        # 6. Base64 encode.
-        raw_b64 = base64.b64encode(raw_label_bytes).decode("ascii")
-
-        # 7. Snapshot ID.
-        retrieved_at_iso = _canonical_retrieved_at(retrieved_at)
-        standard_val = product.source_standard.value
-        snapshot_id = _compute_snapshot_id(
-            standard_val, provenance.provenance_id, retrieved_at_iso
+        # 4. Delegate to the internal shared write implementation.
+        _write_snapshot_internal(
+            raw_label_bytes=capture.raw_label_bytes,
+            source_ref=capture.source_label_ref,
+            product=capture.product,
+            provenance=capture.provenance,
+            reparser=production_entry.reparser,
+            path=path,
+            normalizer_id=normalizer_id,
+            profile_id=profile_id,
         )
-
-        # 8. Construct and validate the envelope with Pydantic BEFORE serializing (Item 8).
-        # This rejects empty/mismatched normalizer_id or profile_id that would only
-        # fail later on load.
-        try:
-            envelope = ArchiveLabelSnapshotEnvelope(
-                snapshot_schema=SNAPSHOT_SCHEMA,
-                snapshot_version=SNAPSHOT_VERSION,
-                snapshot_id=snapshot_id,
-                snapshot_source_standard=standard_val,
-                source_ref=source_ref,
-                retrieved_at=retrieved_at,
-                raw_label_base64=raw_b64,
-                raw_label_sha256=computed_hash,
-                product=product,
-                provenance=provenance,
-                normalizer_id=normalizer_id,
-                profile_id=profile_id,
-            )
-        except PydanticValidationError as exc:
-            raise ArchiveSnapshotValidationError(
-                "Snapshot write rejected: envelope validation failed."
-            ) from exc
-
-        # 9. Serialize from the validated envelope.
-        envelope_dict: dict = {
-            "snapshot_schema": envelope.snapshot_schema,
-            "snapshot_version": envelope.snapshot_version,
-            "snapshot_id": envelope.snapshot_id,
-            "snapshot_source_standard": envelope.snapshot_source_standard,
-            "source_ref": envelope.source_ref,
-            "retrieved_at": retrieved_at_iso,
-            "raw_label_base64": envelope.raw_label_base64,
-            "raw_label_sha256": envelope.raw_label_sha256,
-            "product": product.model_dump(mode="json"),
-            "provenance": provenance.model_dump(mode="json"),
-            "normalizer_id": envelope.normalizer_id,
-            "profile_id": envelope.profile_id,
-        }
-        serialized = json.dumps(envelope_dict, sort_keys=True, indent=2)
-        content_bytes = (serialized + "\n").encode("utf-8")
-
-        # 10. Size check.
-        if len(content_bytes) > _MAX_SNAPSHOT_BYTES:
-            raise ArchiveSnapshotValidationError(
-                f"Snapshot write rejected: serialised snapshot exceeds maximum "
-                f"allowed size ({_MAX_SNAPSHOT_BYTES} bytes)."
-            )
-
-        # 10. Atomic write.
-        tmp_path_str: Optional[str] = None
-        try:
-            fd, tmp_path_str = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
-            with os.fdopen(fd, "wb") as f:
-                f.write(content_bytes)
-            os.replace(tmp_path_str, path)
-        except OSError as exc:
-            if tmp_path_str is not None:
-                try:
-                    os.unlink(tmp_path_str)
-                except OSError:
-                    pass
-            raise ArchiveSnapshotUnavailableError(
-                "Snapshot could not be written due to a filesystem error."
-            ) from exc
-        except BaseException:
-            if tmp_path_str is not None:
-                try:
-                    os.unlink(tmp_path_str)
-                except OSError:
-                    pass
-            raise
 
     @staticmethod
     def load(
         path: Union[str, Path],
     ) -> tuple[ArchiveScienceProduct, ProvenanceRecord]:
-        """Load and fully re-validate a snapshot using the controlled parser registry.
+        """Load and fully re-validate a snapshot using the immutable production resolver.
 
         ZERO network activity.
 
-        The reparser is resolved from the envelope's ``normalizer_id`` and
-        ``profile_id`` fields via the controlled registry.  Call
-        ``register_parser()`` for all relevant (normalizer_id, profile_id)
-        pairs before loading.
+        The reparser is resolved from ``_PRODUCTION_RESOLVER`` using the
+        envelope's ``normalizer_id`` + ``profile_id`` fields.  This method
+        does NOT depend on the mutable test registry.
 
         Parameters
         ----------
@@ -787,21 +689,62 @@ class ArchiveLabelSnapshotStore:
             normalizer_id/profile_id pair.
         """
         envelope = _load_and_validate_envelope(path)
-        reparser = _resolve_reparser(envelope.normalizer_id, envelope.profile_id)
-        return _finish_load(envelope, reparser)
+        production_entry = _resolve_production_entry(
+            envelope.normalizer_id, envelope.profile_id
+        )
+        return _finish_load(envelope, production_entry.reparser)
 
     @staticmethod
-    def load_from_explicit_reparser(
+    def _write_with_explicit_reparser_for_test(
+        raw_label_bytes: bytes,
+        source_ref: Optional[str],
+        product: ArchiveScienceProduct,
+        provenance: ProvenanceRecord,
+        reparser: ReparserFn,
+        path: Union[str, Path],
+        normalizer_id: str = "",
+        profile_id: str = "",
+    ) -> None:
+        """Test/migration-only write path that accepts an explicit reparser.
+
+        FOR TEST USE ONLY.  This bypasses the production parser resolver and
+        allows injection of arbitrary parser callables.  It must NOT be used
+        as the production API.
+
+        Parameters match the pre-B1.2.2 production write signature for
+        backward compatibility with existing test fixtures.
+        """
+        if not normalizer_id.strip():
+            raise ArchiveSnapshotValidationError(
+                "Snapshot write rejected: normalizer_id must not be empty."
+            )
+        if not profile_id.strip():
+            raise ArchiveSnapshotValidationError(
+                "Snapshot write rejected: profile_id must not be empty."
+            )
+        _write_snapshot_internal(
+            raw_label_bytes=raw_label_bytes,
+            source_ref=source_ref,
+            product=product,
+            provenance=provenance,
+            reparser=reparser,
+            path=path,
+            normalizer_id=normalizer_id,
+            profile_id=profile_id,
+        )
+
+    @staticmethod
+    def _load_with_explicit_reparser_for_test(
         path: Union[str, Path],
         reparser: ReparserFn,
     ) -> tuple[ArchiveScienceProduct, ProvenanceRecord]:
-        """Load and re-validate a snapshot using a directly supplied reparser.
+        """Test/migration-only load path using a directly supplied reparser.
 
         ZERO network activity.
 
-        This method bypasses the controlled parser registry.  It is intended
+        This method bypasses the production resolver.  It is intended
         for backward compatibility with existing test fixtures and for
-        migration purposes.  New production code should use ``load()``.
+        migration purposes.  New production code must use ``load()``.
 
         Parameters
         ----------
@@ -810,22 +753,176 @@ class ArchiveLabelSnapshotStore:
 
         reparser:
             The SAME pure-function parser used during acquisition.
-
-        Returns
-        -------
-        tuple[ArchiveScienceProduct, ProvenanceRecord]
-            Fully re-validated product and provenance.
-
-        Raises
-        ------
-        ArchiveSnapshotUnavailableError
-            If the file is missing or cannot be read.
-
-        ArchiveSnapshotValidationError
-            If any integrity or re-validation check fails.
         """
         envelope = _load_and_validate_envelope(path)
         return _finish_load(envelope, reparser)
+
+    @staticmethod
+    def load_from_explicit_reparser(
+        path: Union[str, Path],
+        reparser: ReparserFn,
+    ) -> tuple[ArchiveScienceProduct, ProvenanceRecord]:
+        """Backward-compatible alias for _load_with_explicit_reparser_for_test.
+
+        ZERO network activity.
+
+        Preserved for existing test fixtures.  New production code must use
+        :meth:`load`.
+        """
+        return ArchiveLabelSnapshotStore._load_with_explicit_reparser_for_test(
+            path, reparser
+        )
+
+
+# ---------------------------------------------------------------------------
+# Internal shared write implementation
+# ---------------------------------------------------------------------------
+
+
+def _write_snapshot_internal(
+    raw_label_bytes: bytes,
+    source_ref: Optional[str],
+    product: ArchiveScienceProduct,
+    provenance: ProvenanceRecord,
+    reparser: ReparserFn,
+    path: Union[str, Path],
+    normalizer_id: str,
+    profile_id: str,
+) -> None:
+    """Core write implementation shared by production and test-only paths.
+
+    Performs full self-consistency verification, re-runs the parser,
+    and writes atomically via temp file + os.replace().
+    """
+    path = Path(path)
+
+    # 1. retrieved_at.
+    retrieved_at = provenance.retrieved_at
+    if retrieved_at is None:
+        raise ArchiveSnapshotValidationError(
+            "Snapshot write rejected: provenance.retrieved_at is missing."
+        )
+    if retrieved_at.tzinfo is None or retrieved_at.utcoffset() is None:
+        raise ArchiveSnapshotValidationError(
+            "Snapshot write rejected: provenance.retrieved_at is not timezone-aware."
+        )
+
+    # 2. SHA-256 consistency.
+    computed_hash = hashlib.sha256(raw_label_bytes).hexdigest()
+    if provenance.content_sha256 is None or computed_hash != provenance.content_sha256:
+        raise ArchiveSnapshotValidationError(
+            "Snapshot write rejected: raw label SHA-256 does not match "
+            "provenance.content_sha256."
+        )
+
+    # 3. source_record_id consistency.
+    if provenance.source_record_id != product.source_record_id:
+        raise ArchiveSnapshotValidationError(
+            "Snapshot write rejected: provenance.source_record_id does not "
+            "match product.source_record_id."
+        )
+
+    # 4. Re-run the SAME shared parser.
+    effective_ref = source_ref or product.source_label_ref or ""
+    try:
+        rederived_product, rederived_provenance = reparser(
+            raw_label_bytes, effective_ref, retrieved_at
+        )
+    except Exception as exc:
+        raise ArchiveSnapshotValidationError(
+            "Snapshot write rejected: capture failed raw-label re-validation."
+        ) from exc
+
+    if rederived_product != product:
+        raise ArchiveSnapshotValidationError(
+            "Snapshot write rejected: stored product is not consistent "
+            "with the raw label."
+        )
+    if rederived_provenance != provenance:
+        raise ArchiveSnapshotValidationError(
+            "Snapshot write rejected: stored provenance is not consistent "
+            "with the raw label."
+        )
+
+    # 5. Base64 encode.
+    raw_b64 = base64.b64encode(raw_label_bytes).decode("ascii")
+
+    # 6. Snapshot ID.
+    retrieved_at_iso = _canonical_retrieved_at(retrieved_at)
+    standard_val = product.source_standard.value
+    snapshot_id = _compute_snapshot_id(
+        standard_val, provenance.provenance_id, retrieved_at_iso
+    )
+
+    # 7. Construct and validate the envelope with Pydantic BEFORE serializing.
+    try:
+        envelope = ArchiveLabelSnapshotEnvelope(
+            snapshot_schema=SNAPSHOT_SCHEMA,
+            snapshot_version=SNAPSHOT_VERSION,
+            snapshot_id=snapshot_id,
+            snapshot_source_standard=standard_val,
+            source_ref=source_ref,
+            retrieved_at=retrieved_at,
+            raw_label_base64=raw_b64,
+            raw_label_sha256=computed_hash,
+            product=product,
+            provenance=provenance,
+            normalizer_id=normalizer_id,
+            profile_id=profile_id,
+        )
+    except PydanticValidationError as exc:
+        raise ArchiveSnapshotValidationError(
+            "Snapshot write rejected: envelope validation failed."
+        ) from exc
+
+    # 8. Serialize from the validated envelope.
+    envelope_dict: dict = {
+        "snapshot_schema": envelope.snapshot_schema,
+        "snapshot_version": envelope.snapshot_version,
+        "snapshot_id": envelope.snapshot_id,
+        "snapshot_source_standard": envelope.snapshot_source_standard,
+        "source_ref": envelope.source_ref,
+        "retrieved_at": retrieved_at_iso,
+        "raw_label_base64": envelope.raw_label_base64,
+        "raw_label_sha256": envelope.raw_label_sha256,
+        "product": product.model_dump(mode="json"),
+        "provenance": provenance.model_dump(mode="json"),
+        "normalizer_id": envelope.normalizer_id,
+        "profile_id": envelope.profile_id,
+    }
+    serialized = json.dumps(envelope_dict, sort_keys=True, indent=2)
+    content_bytes = (serialized + "\n").encode("utf-8")
+
+    # 9. Size check.
+    if len(content_bytes) > _MAX_SNAPSHOT_BYTES:
+        raise ArchiveSnapshotValidationError(
+            f"Snapshot write rejected: serialised snapshot exceeds maximum "
+            f"allowed size ({_MAX_SNAPSHOT_BYTES} bytes)."
+        )
+
+    # 10. Atomic write.
+    tmp_path_str: Optional[str] = None
+    try:
+        fd, tmp_path_str = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        with os.fdopen(fd, "wb") as f:
+            f.write(content_bytes)
+        os.replace(tmp_path_str, path)
+    except OSError as exc:
+        if tmp_path_str is not None:
+            try:
+                os.unlink(tmp_path_str)
+            except OSError:
+                pass
+        raise ArchiveSnapshotUnavailableError(
+            "Snapshot could not be written due to a filesystem error."
+        ) from exc
+    except BaseException:
+        if tmp_path_str is not None:
+            try:
+                os.unlink(tmp_path_str)
+            except OSError:
+                pass
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -911,7 +1008,7 @@ def _finish_load(
 ) -> tuple[ArchiveScienceProduct, ProvenanceRecord]:
     """Complete the load verification pipeline given a validated envelope + reparser.
 
-    Performs steps 7–17 of the trust chain.
+    Performs steps 7–19 of the trust chain.
     """
     # 7. Strict Base64 decode.
     try:

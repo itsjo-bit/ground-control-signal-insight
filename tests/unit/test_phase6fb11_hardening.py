@@ -164,7 +164,7 @@ def _write_snapshot(tmp_path: Path, raw=None, source_ref="src", snap_name="snap.
     raw = raw or _WAVES_LABEL
     product, prov = _waves_reparser(raw, source_ref, _RETRIEVED_AT)
     snap_path = tmp_path / snap_name
-    ArchiveLabelSnapshotStore.write(
+    ArchiveLabelSnapshotStore._write_with_explicit_reparser_for_test(
         raw_label_bytes=raw,
         source_ref=source_ref,
         product=product,

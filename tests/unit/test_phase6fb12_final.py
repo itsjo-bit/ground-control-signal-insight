@@ -133,7 +133,7 @@ def _write_snapshot(
     profile_id = profile_id or WAVES_BURST_PDS3_PROFILE.profile_id
     product, prov = _waves_reparser(raw, source_ref, _RETRIEVED_AT)
     snap_path = tmp_path / snap_name
-    ArchiveLabelSnapshotStore.write(
+    ArchiveLabelSnapshotStore._write_with_explicit_reparser_for_test(
         raw_label_bytes=raw,
         source_ref=source_ref,
         product=product,
@@ -644,7 +644,24 @@ class TestPds4FileMetadataFailClosed:
             parse_generic_pds4_label(label, self._VALID_URL, JIRAM_PDS4_PROFILE, _RETRIEVED_AT)
 
     def test_no_file_area_produces_empty_data_files(self):
-        """Label with no File_Area_Observational is a valid explicit no-file case."""
+        """Label with no File_Area_Observational is valid for metadata-only profile."""
+        # B1.2.2: require_data_file=True is the new production default.
+        # This test exercises a metadata-only profile (require_data_file=False).
+        from backend.app.mission_sources.adapters.pds4_adapter import GenericPds4AdapterProfile
+        metadata_only_profile = GenericPds4AdapterProfile(
+            profile_id="jiram_metadata_only_test",
+            allowed_hosts=frozenset({"atmos.nmsu.edu"}),
+            allowed_path_prefixes=("/PDS/data/PDS4/juno_jiram_bundle/",),
+            expected_mission="JUNO",
+            expected_spacecraft="JNO",
+            expected_instrument="JIRAM",
+            instrument_lid="urn:nasa:pds:context:instrument:jiram.jno",
+            spacecraft_host_lid="urn:nasa:pds:context:instrument_host:spacecraft.jno",
+            investigation_lid="urn:nasa:pds:context:investigation:mission.juno",
+            product_family="JIRAM",
+            allowed_processing_levels=frozenset({"Calibrated", "Derived"}),
+            require_data_file=False,
+        )
         label = b"""<?xml version="1.0" encoding="UTF-8"?>
 <Product_Observational xmlns="http://pds.nasa.gov/pds4/pds/v1">
   <Identification_Area>
@@ -689,7 +706,7 @@ class TestPds4FileMetadataFailClosed:
 </Product_Observational>
 """
         product, _ = parse_generic_pds4_label(
-            label, self._VALID_URL, JIRAM_PDS4_PROFILE, _RETRIEVED_AT
+            label, self._VALID_URL, metadata_only_profile, _RETRIEVED_AT
         )
         assert product.data_files == ()
         assert product.total_data_size_bytes == 0
@@ -953,7 +970,7 @@ class TestSnapshotWriteEnvelopeValidation:
         product, prov = _waves_reparser(raw, "fixture:b12_envelope_test", _RETRIEVED_AT)
         snap_path = tmp_path / "test.json"
         with pytest.raises(ArchiveSnapshotValidationError, match="normalizer"):
-            ArchiveLabelSnapshotStore.write(
+            ArchiveLabelSnapshotStore._write_with_explicit_reparser_for_test(
                 raw_label_bytes=raw,
                 source_ref="fixture:b12_envelope_test",
                 product=product,
@@ -972,7 +989,7 @@ class TestSnapshotWriteEnvelopeValidation:
         product, prov = _waves_reparser(raw, "fixture:b12_envelope_test2", _RETRIEVED_AT)
         snap_path = tmp_path / "test2.json"
         with pytest.raises(ArchiveSnapshotValidationError, match="profile"):
-            ArchiveLabelSnapshotStore.write(
+            ArchiveLabelSnapshotStore._write_with_explicit_reparser_for_test(
                 raw_label_bytes=raw,
                 source_ref="fixture:b12_envelope_test2",
                 product=product,

@@ -76,7 +76,7 @@ class TestArchiveLabelSnapshotStore:
         raw = _WAVES_BURST_LABEL
         product, prov = _waves_reparser(raw, "fixture:label.lbl", _RETRIEVED_AT)
         snap_path = tmp_path / "test.snapshot.json"
-        ArchiveLabelSnapshotStore.write(
+        ArchiveLabelSnapshotStore._write_with_explicit_reparser_for_test(
             raw_label_bytes=raw,
             source_ref="fixture:label.lbl",
             product=product,
@@ -107,7 +107,7 @@ class TestArchiveLabelSnapshotStore:
     def _write(self, tmp_path, snap_path, raw=None, source_ref="src"):
         raw = raw or _WAVES_BURST_LABEL
         product, prov = _waves_reparser(raw, source_ref, _RETRIEVED_AT)
-        ArchiveLabelSnapshotStore.write(
+        ArchiveLabelSnapshotStore._write_with_explicit_reparser_for_test(
             raw_label_bytes=raw,
             source_ref=source_ref,
             product=product,
@@ -171,12 +171,12 @@ class TestArchiveLabelSnapshotStore:
         product, prov = _waves_reparser(raw, "src", _RETRIEVED_AT)
         snap_path1 = tmp_path / "snap1.json"
         snap_path2 = tmp_path / "snap2.json"
-        ArchiveLabelSnapshotStore.write(
+        ArchiveLabelSnapshotStore._write_with_explicit_reparser_for_test(
             raw, "src", product, prov, _waves_reparser, snap_path1,
             normalizer_id="gcsi.generic_pds3_label.v1",
             profile_id="waves_burst_pds3",
         )
-        ArchiveLabelSnapshotStore.write(
+        ArchiveLabelSnapshotStore._write_with_explicit_reparser_for_test(
             raw, "src", product, prov, _waves_reparser, snap_path2,
             normalizer_id="gcsi.generic_pds3_label.v1",
             profile_id="waves_burst_pds3",
@@ -205,7 +205,7 @@ class TestArchiveLabelSnapshotStore:
         )
         snap_path = tmp_path / "snap.json"
         with pytest.raises(ArchiveSnapshotValidationError, match="SHA-256|sha256|[Hh]ash"):
-            ArchiveLabelSnapshotStore.write(
+            ArchiveLabelSnapshotStore._write_with_explicit_reparser_for_test(
                 raw, "src", product, bad_prov, _waves_reparser, snap_path,
                 normalizer_id="gcsi.generic_pds3_label.v1",
                 profile_id="waves_burst_pds3",

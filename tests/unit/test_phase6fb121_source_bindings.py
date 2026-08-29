@@ -605,7 +605,7 @@ class TestSnapshotWriteEnforcesProductionIds:
         product, prov = _waves_reparser(raw, "fixture:b121_write_test", _RETRIEVED_AT)
         snap_path = tmp_path / "snap.json"
         with pytest.raises(ArchiveSnapshotValidationError, match="normalizer"):
-            ArchiveLabelSnapshotStore.write(
+            ArchiveLabelSnapshotStore._write_with_explicit_reparser_for_test(
                 raw_label_bytes=raw,
                 source_ref="fixture:b121_write_test",
                 product=product,
@@ -623,7 +623,7 @@ class TestSnapshotWriteEnforcesProductionIds:
         product, prov = _waves_reparser(raw, "fixture:b121_write_test2", _RETRIEVED_AT)
         snap_path = tmp_path / "snap2.json"
         with pytest.raises(ArchiveSnapshotValidationError, match="profile"):
-            ArchiveLabelSnapshotStore.write(
+            ArchiveLabelSnapshotStore._write_with_explicit_reparser_for_test(
                 raw_label_bytes=raw,
                 source_ref="fixture:b121_write_test2",
                 product=product,
@@ -640,7 +640,7 @@ class TestSnapshotWriteEnforcesProductionIds:
         raw = _WAVES_LABEL
         product, prov = _waves_reparser(raw, "fixture:b121_write_ok", _RETRIEVED_AT)
         snap_path = tmp_path / "snap_ok.json"
-        ArchiveLabelSnapshotStore.write(
+        ArchiveLabelSnapshotStore._write_with_explicit_reparser_for_test(
             raw_label_bytes=raw,
             source_ref="fixture:b121_write_ok",
             product=product,

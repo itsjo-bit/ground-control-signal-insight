@@ -193,6 +193,16 @@ class GenericPds4AdapterProfile(BaseModel):
     allowed_information_model_versions : frozenset[str] | None
         If set, information_model_version must be in this set.
         If None, any version is accepted.
+
+    require_data_file : bool
+        If True (default for observational profiles), a missing
+        File_Area_Observational is a validation error.
+        If False, a label with no File_Area_Observational is accepted as
+        a metadata-only product.
+
+        Production observational profiles must set this to True unless
+        authoritative archive semantics explicitly justify a metadata-only
+        product.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -235,6 +245,14 @@ class GenericPds4AdapterProfile(BaseModel):
         description=(
             "If set, information_model_version must be in this set. "
             "If None, any version is accepted."
+        ),
+    )
+    require_data_file: bool = Field(
+        default=True,
+        description=(
+            "If True (production default), missing File_Area_Observational "
+            "is a validation error. "
+            "If False, the label is accepted as a metadata-only product."
         ),
     )
 
@@ -630,7 +648,7 @@ def parse_generic_pds4_label(
     target_names = _extract_pds4_target_names(obs_area)
 
     # 8. File_Area_Observational — extract data file metadata.
-    data_files = _extract_pds4_data_files(root, label_url)
+    data_files = _extract_pds4_data_files(root, label_url, profile)
 
     # Item 5: unknown size must NOT aggregate as zero.
     # total_data_size_bytes = None if any file has unknown size.
@@ -771,106 +789,158 @@ def _extract_pds4_target_names(obs_area: ET.Element) -> tuple[str, ...]:
 
 
 def _extract_pds4_data_files(
-    root: ET.Element, label_url: str
+    root: ET.Element,
+    label_url: str,
+    profile: "GenericPds4AdapterProfile",
 ) -> list[ArchiveDataFile]:
-    """Extract data file metadata from File_Area_Observational."""
+    """Extract data file metadata from ALL File_Area_Observational elements.
+
+    Section E (B1.2.2): iterates ALL File_Area_Observational elements and
+    normalizes every declared File into an ArchiveDataFile record.
+
+    Section F (B1.2.2): if profile.require_data_file is True and no
+    File_Area_Observational is present, raises GenericPds4AdapterValidationError.
+    """
     import pydantic
 
-    file_area = root.find(f"{_PDS_NS_BRACED}File_Area_Observational")
-    if file_area is None:
-        # No file area — return empty list (product without resolved payload).
+    file_area_elems = root.findall(f"{_PDS_NS_BRACED}File_Area_Observational")
+
+    if not file_area_elems:
+        # Section F: profile-driven requirement check.
+        if profile.require_data_file:
+            raise GenericPds4AdapterValidationError(
+                f"PDS4 label is missing File_Area_Observational but profile "
+                f"{profile.profile_id!r} requires a data file payload "
+                f"(require_data_file=True). "
+                "A metadata-only product is not permitted for this profile."
+            )
+        # Profile explicitly permits metadata-only.
         return []
 
-    # Section E fail-closed: File_Area_Observational exists → File must exist.
-    file_elem = file_area.find(f"{_PDS_NS_BRACED}File")
-    if file_elem is None:
-        raise GenericPds4AdapterValidationError(
-            "PDS4 label has File_Area_Observational but is missing the <File> element. "
-            "A declared file area must contain a File element."
-        )
+    data_files: list[ArchiveDataFile] = []
 
-    # Section E fail-closed: file_name must exist and be non-empty.
-    fname_elem = file_elem.find(f"{_PDS_NS_BRACED}file_name")
-    if fname_elem is None:
-        raise GenericPds4AdapterValidationError(
-            "PDS4 label File element is missing required <file_name> element."
-        )
-    file_name = (fname_elem.text or "").strip()
-    if not file_name:
-        raise GenericPds4AdapterValidationError(
-            "PDS4 label File/<file_name> is empty. A declared file name must not be empty."
-        )
+    for area_idx, file_area in enumerate(file_area_elems):
+        area_ctx = f" (File_Area_Observational #{area_idx + 1})"
 
-    # File size.
-    fsize_elem = file_elem.find(f"{_PDS_NS_BRACED}file_size")
-    file_size_bytes: Optional[int] = None
-    size_certainty = ArchiveDataFileSizeCertainty.SIZE_UNKNOWN
-    if fsize_elem is not None:
-        fsize_raw = (fsize_elem.text or "").strip()
-        fsize_unit = (fsize_elem.get("unit") or "").strip().lower()
-        if fsize_unit == "byte" and _ASCII_DECIMAL_RE.match(fsize_raw):
+        # Each file area must contain exactly one <File> element.
+        file_elem = file_area.find(f"{_PDS_NS_BRACED}File")
+        if file_elem is None:
+            raise GenericPds4AdapterValidationError(
+                f"PDS4 label has File_Area_Observational{area_ctx} but is missing "
+                "the <File> element. A declared file area must contain a File element."
+            )
+
+        # file_name must exist and be non-empty.
+        fname_elem = file_elem.find(f"{_PDS_NS_BRACED}file_name")
+        if fname_elem is None:
+            raise GenericPds4AdapterValidationError(
+                f"PDS4 label File element{area_ctx} is missing required <file_name> element."
+            )
+        file_name = (fname_elem.text or "").strip()
+        if not file_name:
+            raise GenericPds4AdapterValidationError(
+                f"PDS4 label File/<file_name>{area_ctx} is empty. "
+                "A declared file name must not be empty."
+            )
+
+        # Section D (B1.2.2): file_size fail-closed.
+        # If <file_size> is ABSENT → size remains SIZE_UNKNOWN (allowed).
+        # If <file_size> is PRESENT:
+        #   - text must be non-empty
+        #   - unit attribute must be present and exactly "byte"
+        #   - text must be a non-negative decimal integer
+        # Reject: empty text, missing unit, empty unit, non-byte unit, non-integer value.
+        fsize_elem = file_elem.find(f"{_PDS_NS_BRACED}file_size")
+        file_size_bytes: Optional[int] = None
+        size_certainty = ArchiveDataFileSizeCertainty.SIZE_UNKNOWN
+
+        if fsize_elem is not None:
+            # <file_size> is present — apply fail-closed rules.
+            fsize_raw = (fsize_elem.text or "").strip()
+            # unit attribute: get() returns None if absent, "" if empty attribute.
+            fsize_unit_attr = fsize_elem.get("unit")
+
+            if not fsize_raw:
+                # Present but empty text — rejected.
+                raise GenericPds4AdapterValidationError(
+                    f"PDS4 label File/file_size{area_ctx} is present but has empty text. "
+                    "A declared file_size must have a non-empty integer value."
+                )
+
+            if fsize_unit_attr is None:
+                # Present but unit attribute is missing entirely — rejected.
+                raise GenericPds4AdapterValidationError(
+                    f"PDS4 label File/file_size{area_ctx} is present but has no unit "
+                    "attribute. The unit attribute must be present and set to 'byte'."
+                )
+
+            fsize_unit = fsize_unit_attr.strip().lower()
+            if not fsize_unit:
+                # Unit attribute present but empty string — rejected.
+                raise GenericPds4AdapterValidationError(
+                    f"PDS4 label File/file_size{area_ctx} has an empty unit attribute. "
+                    "The unit attribute must be 'byte'."
+                )
+
+            if fsize_unit != "byte":
+                # Non-byte unit — rejected.
+                raise GenericPds4AdapterValidationError(
+                    f"PDS4 label File/file_size{area_ctx} has unsupported unit "
+                    f"{fsize_unit!r}; only 'byte' is supported."
+                )
+
+            # unit == "byte", text non-empty: must be a non-negative decimal integer.
+            if not _ASCII_DECIMAL_RE.match(fsize_raw):
+                raise GenericPds4AdapterValidationError(
+                    f"PDS4 label File/file_size{area_ctx} has malformed value "
+                    f"{fsize_raw!r}; expected a non-negative integer."
+                )
+
             file_size_bytes = int(fsize_raw)
             size_certainty = ArchiveDataFileSizeCertainty.SIZE_METADATA_EXACT
 
-    # MD5 checksum — present and non-empty means we require a valid MD5 hex string.
-    # A malformed value must propagate as GenericPds4AdapterValidationError (Item 4).
-    md5_elem = file_elem.find(f"{_PDS_NS_BRACED}md5_checksum")
-    checksum_algorithm: Optional[str] = None
-    checksum_value: Optional[str] = None
-    if md5_elem is not None:
-        raw_md5 = (md5_elem.text or "").strip().lower()
-        if raw_md5:
-            # Validate MD5 format before recording it.
-            if not re.fullmatch(r"[0-9a-f]{32}", raw_md5):
-                raise GenericPds4AdapterValidationError(
-                    "PDS4 label File/md5_checksum is malformed (must be 32 hex chars)."
-                )
-            checksum_algorithm = "MD5"
-            checksum_value = raw_md5
+        # MD5 checksum — present and non-empty means we require a valid MD5 hex string.
+        md5_elem = file_elem.find(f"{_PDS_NS_BRACED}md5_checksum")
+        checksum_algorithm: Optional[str] = None
+        checksum_value: Optional[str] = None
+        if md5_elem is not None:
+            raw_md5 = (md5_elem.text or "").strip().lower()
+            if raw_md5:
+                if not re.fullmatch(r"[0-9a-f]{32}", raw_md5):
+                    raise GenericPds4AdapterValidationError(
+                        f"PDS4 label File/md5_checksum{area_ctx} is malformed "
+                        "(must be 32 hex chars)."
+                    )
+                checksum_algorithm = "MD5"
+                checksum_value = raw_md5
 
-    # file_size: if present but not a valid byte-unit decimal, raise rather than silently ignore.
-    if fsize_elem is not None:
-        fsize_raw_check = (fsize_elem.text or "").strip()
-        fsize_unit_check = (fsize_elem.get("unit") or "").strip().lower()
-        if fsize_raw_check:
-            # unit must be "byte" or we cannot interpret it
-            if fsize_unit_check not in ("byte", ""):
-                raise GenericPds4AdapterValidationError(
-                    f"PDS4 label File/file_size has unsupported unit "
-                    f"{fsize_unit_check!r}; only 'byte' is supported."
-                )
-            if fsize_unit_check == "byte" and not _ASCII_DECIMAL_RE.match(fsize_raw_check):
-                raise GenericPds4AdapterValidationError(
-                    f"PDS4 label File/file_size has malformed value {fsize_raw_check!r}; "
-                    "expected a non-negative integer."
-                )
+        # Derive file_ref from label URL directory + file_name.
+        file_ref: Optional[str] = None
+        try:
+            parsed_url = urlsplit(label_url)
+            label_dir = parsed_url.path.rsplit("/", 1)[0] + "/"
+            file_ref = f"https://{parsed_url.hostname}{label_dir}{file_name}"
+        except Exception:
+            file_ref = None
 
-    # Derive file_ref from label URL directory + file_name.
-    file_ref: Optional[str] = None
-    try:
-        parsed_url = urlsplit(label_url)
-        label_dir = parsed_url.path.rsplit("/", 1)[0] + "/"
-        file_ref = f"https://{parsed_url.hostname}{label_dir}{file_name}"
-    except Exception:
-        file_ref = None
+        try:
+            data_file = ArchiveDataFile(
+                file_name=file_name,
+                file_size_bytes=file_size_bytes,
+                size_certainty=size_certainty,
+                checksum_algorithm=checksum_algorithm,
+                checksum_value=checksum_value,
+                file_ref=file_ref,
+            )
+        except pydantic.ValidationError as exc:
+            raise GenericPds4AdapterValidationError(
+                f"PDS4 label File_Area_Observational{area_ctx}/File declared an invalid "
+                "payload: checksum, file_name, or file_size metadata is malformed."
+            ) from exc
 
-    import pydantic
-    try:
-        data_file = ArchiveDataFile(
-            file_name=file_name,
-            file_size_bytes=file_size_bytes,
-            size_certainty=size_certainty,
-            checksum_algorithm=checksum_algorithm,
-            checksum_value=checksum_value,
-            file_ref=file_ref,
-        )
-    except pydantic.ValidationError as exc:
-        raise GenericPds4AdapterValidationError(
-            "PDS4 label File_Area_Observational/File declared an invalid payload: "
-            "checksum, file_name, or file_size metadata is malformed."
-        ) from exc
+        data_files.append(data_file)
 
-    return [data_file]
+    return data_files
 
 
 # ---------------------------------------------------------------------------
