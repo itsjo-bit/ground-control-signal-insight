@@ -14,6 +14,7 @@ import { Canvas } from '@react-three/fiber';
 import { MissionScene, CAMERA_PRESETS, type CameraPreset } from './scene/MissionScene';
 import type { LinkState, MissionState } from '../types/domain';
 import type { ApprovalPhase } from './ApprovalBar';
+import { presentationLinkStatus } from '../experience/linkPresentation';
 
 // ── WebGL error boundary ──────────────────────────────────────────────────────
 
@@ -99,6 +100,129 @@ function ViewportControls({ active, onSelect }: ViewportControlsProps) {
           {PRESET_LABELS[preset]}
         </button>
       ))}
+    </div>
+  );
+}
+
+// ── Distance telemetry overlay ────────────────────────────────────────────────
+
+function formatDistValue(km: number | null): string {
+  if (km === null) return '—';
+  if (km >= 1_000_000) return `${(km / 1_000_000).toFixed(1)}`;
+  if (km >= 1_000)     return `${(km / 1_000).toFixed(1)}`;
+  return `${km.toFixed(0)}`;
+}
+
+function formatDistUnit(km: number | null): string {
+  if (km === null) return '';
+  if (km >= 1_000_000) return 'MILLION KM';
+  if (km >= 1_000)     return 'THOUSAND KM';
+  return 'KM';
+}
+
+interface DistanceOverlayProps {
+  distanceKm: number | null;
+  linkState: LinkState | null;
+  approvalPhase: ApprovalPhase;
+}
+
+function DistanceOverlay({ distanceKm, linkState, approvalPhase }: DistanceOverlayProps) {
+  const isTransmitting = approvalPhase === 'transmitting';
+  const presStatus = linkState ? presentationLinkStatus(linkState) : null;
+  const linkBad = isTransmitting
+    ? 'transmitting'
+    : presStatus === 'CRITICAL'
+      ? 'critical'
+      : presStatus === 'DEGRADED'
+        ? 'warning'
+        : null;
+
+  const linkColor =
+    linkBad === 'transmitting' ? '#44ffcc'
+    : linkBad === 'critical'  ? '#ff4455'
+    : linkBad === 'warning'   ? '#ffaa33'
+    : undefined;
+
+  const distValue = formatDistValue(distanceKm);
+  const distUnit  = formatDistUnit(distanceKm);
+
+  const MONO = '"IBM Plex Mono", ui-monospace, monospace';
+
+  return (
+    <div
+      data-testid="distance-overlay"
+      style={{
+        position: 'absolute',
+        top: 28,
+        left: 12,
+        pointerEvents: 'none',
+        userSelect: 'none',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1,
+        zIndex: 10,
+      }}
+    >
+      <div style={{
+        fontFamily: MONO,
+        fontSize: 8,
+        color: 'rgba(180,200,255,0.42)',
+        letterSpacing: '0.12em',
+        textTransform: 'uppercase',
+      }}>
+        Distance
+      </div>
+      <div style={{
+        fontFamily: MONO,
+        fontSize: 15,
+        fontWeight: 700,
+        color: '#cce8ff',
+        letterSpacing: '0.03em',
+        lineHeight: 1.1,
+      }}>
+        {distValue}
+      </div>
+      {distUnit && (
+        <div style={{
+          fontFamily: MONO,
+          fontSize: 8,
+          fontWeight: 600,
+          color: 'rgba(180,210,255,0.65)',
+          letterSpacing: '0.10em',
+          textTransform: 'uppercase',
+        }}>
+          {distUnit}
+        </div>
+      )}
+      <div
+        data-testid="not-to-scale-label"
+        style={{
+          fontFamily: MONO,
+          fontSize: 7,
+          color: 'rgba(180,200,255,0.30)',
+          letterSpacing: '0.10em',
+          textTransform: 'uppercase',
+          marginTop: 3,
+        }}
+      >
+        Visual spacing not to scale
+      </div>
+      {linkBad && (
+        <div style={{
+          fontFamily: MONO,
+          fontSize: 8,
+          color: linkColor,
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          marginTop: 1,
+        }}>
+          {linkBad === 'transmitting'
+            ? '⟳ Transmitting'
+            : linkBad === 'warning'
+              ? '⚠ Link Degraded'
+              : '✕ Link Critical'}
+        </div>
+      )}
     </div>
   );
 }
@@ -203,6 +327,13 @@ export function MissionViewport({
       }}>
         3D Mission View
       </div>
+
+      {/* Distance telemetry overlay — screen-space, upper-left, below viewport label */}
+      <DistanceOverlay
+        distanceKm={distanceKm}
+        linkState={linkState}
+        approvalPhase={approvalPhase}
+      />
     </div>
   );
 }

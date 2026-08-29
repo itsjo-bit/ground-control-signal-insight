@@ -1761,9 +1761,11 @@ function DecisionModeSelector(props: CommonProps) {
             onClick={() => props.onSelectDecisionMode('manual')}
             style={{
               width: '100%', padding: '6px 0',
-              background: props.decisionMode === 'manual' ? 'rgba(63,185,80,0.12)' : 'transparent',
-              color: props.decisionMode === 'manual' ? '#3fb950' : '#8b949e',
-              border: `1px solid ${props.decisionMode === 'manual' ? 'rgba(63,185,80,0.30)' : '#444c56'}`,
+              background: props.decisionMode === 'manual'
+                ? 'rgba(63,185,80,0.12)'
+                : '#238636',
+              color: props.decisionMode === 'manual' ? '#3fb950' : '#ffffff',
+              border: `1px solid ${props.decisionMode === 'manual' ? 'rgba(63,185,80,0.30)' : '#2ea043'}`,
               borderRadius: 3, cursor: 'pointer', fontFamily: '"IBM Plex Sans"', fontSize: 12, fontWeight: 600,
             }}
           >
@@ -1786,9 +1788,9 @@ function DecisionModeSelector(props: CommonProps) {
             onClick={() => props.onSelectDecisionMode('ai')}
             style={{
               width: '100%', padding: '6px 0',
-              background: props.decisionMode === 'ai' ? '#2f81f7' : 'transparent',
-              color: props.decisionMode === 'ai' ? '#ffffff' : '#8b949e',
-              border: `1px solid ${props.decisionMode === 'ai' ? '#2f81f7' : '#444c56'}`,
+              background: props.decisionMode === 'ai' ? '#2f81f7' : '#1f6feb',
+              color: '#ffffff',
+              border: `1px solid ${props.decisionMode === 'ai' ? '#2f81f7' : '#388bfd'}`,
               borderRadius: 3, cursor: 'pointer', fontFamily: '"IBM Plex Sans"', fontSize: 12, fontWeight: 600,
             }}
           >

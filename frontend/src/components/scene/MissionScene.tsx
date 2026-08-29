@@ -63,22 +63,6 @@ function deriveLinkStatus(
   return 'good';
 }
 
-// ── Format distance for overlay ──────────────────────────────────────────────
-
-function formatDistValue(km: number | null): string {
-  if (km === null) return '—';
-  if (km >= 1_000_000) return `${(km / 1_000_000).toFixed(1)}`;
-  if (km >= 1_000)     return `${(km / 1_000).toFixed(1)}`;
-  return `${km.toFixed(0)}`;
-}
-
-function formatDistUnit(km: number | null): string {
-  if (km === null) return '';
-  if (km >= 1_000_000) return 'MILLION KM';
-  if (km >= 1_000)     return 'THOUSAND KM';
-  return 'KM';
-}
-
 // ── Scene component ───────────────────────────────────────────────────────────
 
 interface Props {
@@ -101,7 +85,7 @@ interface Props {
 function SceneContent({
   linkState,
   missionState,
-  distanceKm,
+  distanceKm: _distanceKm,
   approvalPhase,
   cameraTarget = 'default',
   onCameraAnimated,
@@ -165,23 +149,9 @@ function SceneContent({
     }
   });
 
-  const distValue = formatDistValue(distanceKm);
-  const distUnit  = formatDistUnit(distanceKm);
-  const linkColor = {
-    good:        '#22ddaa',
-    warning:     '#ffaa33',
-    critical:    '#ff4455',
-    transmitting: '#44ffcc',
-  }[linkStatus];
-
   // Communication link endpoints — derived from layout constants
   const linkStart = SPACECRAFT_POS;
   const linkEnd = new THREE.Vector3(EARTH_POS.x + EARTH_RADIUS * 0.9, EARTH_POS.y + 1, EARTH_POS.z);
-  const linkMid = new THREE.Vector3(
-    (linkStart.x + linkEnd.x) / 2,
-    (linkStart.y + linkEnd.y) / 2 + 5,
-    (linkStart.z + linkEnd.z) / 2,
-  );
 
   return (
     <>
@@ -233,80 +203,6 @@ function SceneContent({
           activePulse={activePulse}
           direction={pulseDirection}
         />
-      )}
-
-      {/* Distance overlay — floats above the link midpoint */}
-      {showLabels && (
-        <Html
-          position={[linkMid.x, linkMid.y + 1.5, linkMid.z]}
-          center
-          distanceFactor={48}
-          occlude={false}
-          style={{ pointerEvents: 'none', userSelect: 'none' }}
-        >
-          <div style={{
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
-          }}>
-            <div style={{
-              fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-              fontSize: 7,
-              color: linkColor,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              opacity: 0.7,
-            }}>
-              Distance
-            </div>
-            <div style={{
-              fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-              fontSize: 11,
-              fontWeight: 700,
-              color: '#cce8ff',
-              letterSpacing: '0.03em',
-            }}>
-              {distValue}
-            </div>
-            {distUnit && (
-              <div style={{
-                fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-                fontSize: 7,
-                fontWeight: 600,
-                color: '#cce8ff',
-                letterSpacing: '0.08em',
-                whiteSpace: 'nowrap',
-                opacity: 0.85,
-              }}>
-                {distUnit}
-              </div>
-            )}
-            {/* NOT TO SCALE label — visual spacing is presentation only */}
-            <div
-              data-testid="not-to-scale-label"
-              style={{
-                fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-                fontSize: 6,
-                color: 'rgba(180,200,255,0.45)',
-                letterSpacing: '0.12em',
-                textTransform: 'uppercase',
-                marginTop: 1,
-              }}
-            >
-              visual spacing not to scale
-            </div>
-            {linkStatus !== 'good' && (
-              <div style={{
-                fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-                fontSize: 7,
-                color: linkColor,
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-                marginTop: 1,
-              }}>
-                {isTransmitting ? '⟳ Transmitting' : linkStatus === 'warning' ? '⚠ Link Degraded' : '✕ Link Critical'}
-              </div>
-            )}
-          </div>
-        </Html>
       )}
 
       {/* Spacecraft label */}
