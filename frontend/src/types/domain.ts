@@ -3,6 +3,39 @@
  * Maintained manually — keep in sync with backend/app/models/.
  */
 
+// ── Phase 7: Mission source catalog ──────────────────────────────────────────
+
+/** One entry in the mission source catalog — UI-safe, no filesystem paths. */
+export interface MissionSourceInfo {
+  source_id: string;
+  display_name: string;
+  mode: MissionSourceMode;
+  description: string;
+  historical: boolean;
+  simulated: boolean;
+}
+
+/** Response for GET /sources. */
+export interface SourcesResponse {
+  active_source_id: string | null;
+  sources: MissionSourceInfo[];
+}
+
+/** Request body for POST /sources/select. */
+export interface SelectSourceRequest {
+  source_id: string;
+}
+
+/** Response for POST /sources/select. */
+export interface SelectSourceResponse {
+  status: 'switched' | 'already_active';
+  active_source_id: string;
+  display_name: string;
+  mode: MissionSourceMode;
+  data_products_count: number;
+  scenario_id: string | null;
+}
+
 // ── Phase 6E-C7: Source mode and provenance ───────────────────────────────────
 
 /** Authority source mode — determined by state.source.mode, never inferred. */

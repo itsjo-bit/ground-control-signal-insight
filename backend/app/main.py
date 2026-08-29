@@ -44,6 +44,7 @@ from .api.routes_plans import router as plans_router
 from .api.routes_queue import router as queue_router
 from .api.routes_simulate import router as simulate_router
 from .api.routes_state import router as state_router
+from .api.routes_sources import router as sources_router
 from . import state as app_state
 
 logger = logging.getLogger(__name__)
@@ -224,7 +225,13 @@ def _load_configured_mission_source() -> None:
                 f"  [GCSI] GCSI_SCENARIO_PATH ignored — historical_replay mode active.",
                 file=sys.stderr,
             )
-        app_state.load_historical_replay(replay_descriptor)
+        # Reverse-lookup catalog source_id for startup env-var configuration.
+        from .mission_sources.source_catalog import AVAILABLE_MISSION_SOURCES
+        _startup_source_id = next(
+            (e.source_id for e in AVAILABLE_MISSION_SOURCES if e.source_ref == replay_descriptor),
+            None,
+        )
+        app_state.load_historical_replay(replay_descriptor, source_id=_startup_source_id)
     else:
         # synthetic_scenario (default)
         env_path = os.getenv("GCSI_SCENARIO_PATH")
@@ -240,7 +247,13 @@ def _load_configured_mission_source() -> None:
                 f"  [GCSI] No GCSI_SCENARIO_PATH set — using default: {_DEFAULT_SCENARIO_PATH}",
                 file=sys.stderr,
             )
-        app_state.load_scenario(scenario_path)
+        # Reverse-lookup catalog source_id for startup env-var configuration.
+        from .mission_sources.source_catalog import AVAILABLE_MISSION_SOURCES
+        _startup_source_id = next(
+            (e.source_id for e in AVAILABLE_MISSION_SOURCES if e.source_ref == scenario_path),
+            None,
+        )
+        app_state.load_scenario(scenario_path, source_id=_startup_source_id)
 
 
 @asynccontextmanager
@@ -299,6 +312,7 @@ app.include_router(approve_router)
 app.include_router(agent_router)
 app.include_router(data_products_router)
 app.include_router(experience_router)
+app.include_router(sources_router)
 
 
 # ---------------------------------------------------------------------------

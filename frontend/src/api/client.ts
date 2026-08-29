@@ -13,7 +13,9 @@ import type {
   RecommendResponse,
   ResetStateResponse,
   ScenariosResponse,
+  SelectSourceResponse,
   SimulationResult,
+  SourcesResponse,
   StateResponse,
   WhatIfEvalResponse,
 } from '../types/domain';
@@ -153,6 +155,18 @@ export async function getExperience(): Promise<ExperienceResponse> {
 // Scenario management
 export async function listScenarios(): Promise<ScenariosResponse> {
   return fetchJson<ScenariosResponse>(`${BASE}/scenarios`);
+}
+
+// Phase 7: Mission source catalog
+export async function getSources(): Promise<SourcesResponse> {
+  return fetchJson<SourcesResponse>(`${BASE}/sources`);
+}
+
+export async function selectSource(sourceId: string): Promise<SelectSourceResponse> {
+  return fetchJson<SelectSourceResponse>(`${BASE}/sources/select`, {
+    method: 'POST',
+    body: JSON.stringify({ source_id: sourceId }),
+  });
 }
 
 export async function switchScenario(filename: string): Promise<{

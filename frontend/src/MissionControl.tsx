@@ -25,6 +25,8 @@ import {
   assessManualPlan,
   approvePlan,
   approveCustomPlan,
+  getSources,
+  selectSource,
 } from './api/client';
 import type {
   AIRecommendation,
@@ -37,6 +39,7 @@ import type {
   DecisionMode,
   EvaluationResult,
   LinkState,
+  MissionSourceInfo,
   MissionState,
   ScenarioInfo,
   SourceSummary,
@@ -45,6 +48,7 @@ import type {
 import type { ExperienceManifest } from './types/experience';
 import type { ApprovalPhase } from './components/ApprovalBar';
 import { SourceContextBanner } from './components/SourceContextBanner';
+import { ScenarioSwitcher } from './components/ScenarioSwitcher';
 import { NavigationSidebar, type NavSection } from './components/NavigationSidebar';
 import { MissionViewport } from './components/MissionViewport';
 import { RightPanel } from './components/RightPanel';
@@ -323,6 +327,12 @@ export default function MissionControl() {
   const [activeScenarioPath, setActiveScenarioPath] = useState<string | null>(null);
   const [scenarioSwitching, setScenarioSwitching] = useState(false);
 
+  // ── Phase 7: Mission source switcher ──────────────────────────────────────
+  const [missionSources, setMissionSources] = useState<MissionSourceInfo[]>([]);
+  const [activeSourceId, setActiveSourceId] = useState<string | null>(null);
+  const [sourceSwitching, setSourceSwitching] = useState(false);
+  const [sourceSwitchError, setSourceSwitchError] = useState<string | null>(null);
+
   // ── V3.4: Decision mode ────────────────────────────────────────────────────
   const [decisionMode, setDecisionMode] = useState<DecisionMode>('unselected');
 
@@ -541,6 +551,7 @@ export default function MissionControl() {
       setRoundTripTimeS(stateData.round_trip_time_s ?? null);
       // Phase 6E-C7: source provenance from GET /state — no additional request
       setSourceSummary(stateData.source ?? null);
+      // Phase 7: sync active source from GET /sources (best effort — no separate request)
       setQueue(queueData);
       if (totalWindowRef.current === null) {
         totalWindowRef.current = stateData.mission_state.comm_window_remaining_s;
@@ -647,6 +658,70 @@ export default function MissionControl() {
     await loadExperience();  // re-fetch experience manifest after reset
   }, [loadMissionData, loadExperience, clearManualAssessmentState]);
 
+  // ── Phase 7: Load mission source catalog ─────────────────────────────────
+  const loadSources = useCallback(async () => {
+    try {
+      const resp = await getSources();
+      setMissionSources(resp.sources);
+      setActiveSourceId(resp.active_source_id);
+    } catch { /* informational — switcher degrades gracefully */ }
+  }, []);
+
+  // ── Phase 7: Handle source selection ─────────────────────────────────────
+  const handleSelectSource = useCallback(async (sourceId: string) => {
+    if (sourceId === activeSourceId) return; // no-op for same source
+    setSourceSwitching(true);
+    setSourceSwitchError(null);
+    // Clear all stale AI/planning state before switching
+    setDecisionMode('unselected');
+    setAiLifecycle('standby');
+    setAiError(null);
+    setRecommendation(null);
+    setAiProvider(null);
+    setAiRequestedProvider(null);
+    setAiActualProvider(null);
+    setAiPrioritization(null);
+    setAiCandidateCount(null);
+    setAiPrioritizationError(null);
+    setAiPrioritizationFallbackReason(null);
+    setAiRecommendationFallbackReason(null);
+    setAllPlans((prev) => prev.filter((p) => p.plan_id !== 'ai-prioritized'));
+    setAllEvaluations((prev) => prev.filter((e) => e.plan_id !== 'ai-prioritized'));
+    setManualOrder([]);
+    clearManualAssessmentState();
+    setAiRecommendationRejected(false);
+    setChoreographyActive(false);
+    setPendingExecutionPlan(null);
+    setChoreographyPhase('plan_uplink');
+    setExecutionId(null);
+    setAuthorizedAtMs(null);
+    setPlaybackStartedAtMs(null);
+    setActivePulse(null);
+    setPresentationPhase('plan_uplink');
+    approvalResultReceivedAtMsRef.current = null;
+    executionPromiseRef.current.clear();
+    executionResultRef.current.clear();
+    executionSnapshotRef.current = null;
+    setExperienceManifest(null);
+    setExperienceAvailable(false);
+    aiRequestInFlight.current = false;
+    totalWindowRef.current = null;
+    try {
+      const resp = await selectSource(sourceId);
+      setActiveSourceId(resp.active_source_id);
+      // Re-load full mission data and experience after switch
+      await loadMissionData(false);
+      await loadExperience();
+    } catch (err) {
+      // Keep old source selected — show error, do not blank the application
+      setSourceSwitchError('Failed to switch scenario. Current scenario remains active.');
+      // Refresh sources in case active_source_id drifted
+      await loadSources();
+    } finally {
+      setSourceSwitching(false);
+    }
+  }, [activeSourceId, loadMissionData, loadExperience, loadSources, clearManualAssessmentState]);
+
   // ── V3.4: Initial load — NO AI ────────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
@@ -656,6 +731,8 @@ export default function MissionControl() {
         setAvailableScenarios(scenList.scenarios);
         setActiveScenarioPath(scenList.active_scenario_path);
       } catch { /* informational */ }
+      // Phase 7: load source catalog
+      await loadSources();
       await loadMissionData(false);
       await loadExperience();  // load experience on initial page load
     };
@@ -1157,19 +1234,28 @@ export default function MissionControl() {
           Ground Control Signal Insight
         </span>
 
-        {/* SIM badge */}
-        <span style={{
-          padding: '2px 7px',
-          background: 'rgba(245,158,11,0.08)',
-          color: '#f59e0b',
-          border: '1px solid rgba(245,158,11,0.22)',
-          borderRadius: 4,
-          fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-          fontSize: 9, fontWeight: 600, letterSpacing: '0.04em',
-          flexShrink: 0,
-        }}>
-          SIM
-        </span>
+        {/* Source mode badge — SIM for synthetic, HIST for historical replay */}
+        {(() => {
+          const isHistorical = sourceSummary?.mode === 'historical_replay';
+          return (
+            <span
+              data-testid="source-mode-badge"
+              style={{
+                padding: '2px 7px',
+                background: isHistorical ? 'rgba(76,141,255,0.08)' : 'rgba(245,158,11,0.08)',
+                color: isHistorical ? '#6EA8FF' : '#f59e0b',
+                border: `1px solid ${isHistorical ? 'rgba(76,141,255,0.22)' : 'rgba(245,158,11,0.22)'}`,
+                borderRadius: 4,
+                fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
+                fontSize: 9, fontWeight: 600, letterSpacing: '0.04em',
+                flexShrink: 0,
+              }}
+              title={isHistorical ? 'Historical replay — not live telemetry' : 'Simulated synthetic scenario'}
+            >
+              {isHistorical ? 'HIST' : 'SIM'}
+            </span>
+          );
+        })()}
 
         {/* What-if indicator */}
         {whatIfEvals !== null && (
@@ -1245,6 +1331,15 @@ export default function MissionControl() {
 
         {/* Spacer */}
         <div style={{ flex: 1 }} />
+
+        {/* Phase 7: Scenario/source switcher */}
+        <ScenarioSwitcher
+          sources={missionSources}
+          activeSourceId={activeSourceId}
+          switching={sourceSwitching}
+          onSelectSource={handleSelectSource}
+          error={sourceSwitchError}
+        />
 
         {/* Action buttons */}
         <button

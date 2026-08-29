@@ -73,6 +73,11 @@ active_source_provider_name: str | None = None
 #: Source-baseline provenance manifest (historical replay only); None for synthetic.
 active_source_provenance: ProvenanceManifest | None = None
 
+#: Stable catalog source_id for the active source, or None when the source was
+#: loaded outside the catalog (e.g. via GCSI_SCENARIO_PATH env var).
+#: Updated atomically together with all other active source globals.
+active_source_id: str | None = None
+
 # ---------------------------------------------------------------------------
 # Issued plan registry
 # ---------------------------------------------------------------------------
@@ -206,6 +211,7 @@ def load_scenario(
     path: str,
     config: GCSIConfig | None = None,
     randomize: bool = False,
+    source_id: str | None = None,
 ) -> None:
     """Load a scenario from a JSON file and populate module state.
 
@@ -235,6 +241,7 @@ def load_scenario(
     global active_scenario, active_link_state, active_scenario_path  # noqa: PLW0603
     global active_source_mode, active_source_ref  # noqa: PLW0603
     global active_source_provider_name, active_source_provenance  # noqa: PLW0603
+    global active_source_id  # noqa: PLW0603
 
     cfg = config or GCSIConfig()
     scenario = ScenarioLoader.load(path)
@@ -255,6 +262,7 @@ def load_scenario(
     active_source_ref = path
     active_source_provider_name = None
     active_source_provenance = None
+    active_source_id = source_id  # None unless called from catalog-backed source select
 
     # Invalidate issued plans — plans from the previous scenario are now stale.
     invalidate_issued_plans(reason=f"scenario loaded: {path}")
@@ -268,6 +276,7 @@ def load_scenario(
 def activate_mission_source_bundle(
     bundle: MissionSourceBundle,
     config: GCSIConfig | None = None,
+    source_id: str | None = None,
 ) -> None:
     """Atomically activate a :class:`MissionSourceBundle` as the runtime state.
 
@@ -293,6 +302,7 @@ def activate_mission_source_bundle(
     global active_scenario, active_link_state, active_scenario_path  # noqa: PLW0603
     global active_source_mode, active_source_ref  # noqa: PLW0603
     global active_source_provider_name, active_source_provenance  # noqa: PLW0603
+    global active_source_id  # noqa: PLW0603
 
     # Step 1: Deep-copy the runtime scenario so provider references cannot
     # mutate runtime state from outside.
@@ -313,6 +323,7 @@ def activate_mission_source_bundle(
     active_source_provider_name = bundle.provider_name
     # ProvenanceManifest is already immutable (frozen=True) — no copy needed.
     active_source_provenance = bundle.provenance
+    active_source_id = source_id  # None unless called from catalog-backed source select
 
     # Step 4: Invalidate issued plans.
     invalidate_issued_plans(reason=f"mission source bundle activated: {bundle.source_ref}")
@@ -326,6 +337,7 @@ def activate_mission_source_bundle(
 def load_historical_replay(
     source_ref: str,
     config: GCSIConfig | None = None,
+    source_id: str | None = None,
 ) -> None:
     """Load a historical replay bundle and activate it as the runtime state.
 
@@ -342,6 +354,7 @@ def load_historical_replay(
     Args:
         source_ref: Repository-relative path to the replay descriptor JSON.
         config:     Optional :class:`GCSIConfig`.
+        source_id:  Optional catalog source_id to record in ``active_source_id``.
 
     Raises:
         MissionSourceUnavailableError: Descriptor or snapshot not found.
@@ -352,7 +365,7 @@ def load_historical_replay(
 
     provider = HistoricalReplayProvider()
     bundle = provider.load(source_ref)
-    activate_mission_source_bundle(bundle, config=config)
+    activate_mission_source_bundle(bundle, config=config, source_id=source_id)
 
 
 # ---------------------------------------------------------------------------
@@ -380,10 +393,13 @@ def reset_active_source(config: GCSIConfig | None = None) -> dict:
     if active_source_mode is None:
         raise RuntimeError("No source has been loaded yet — nothing to reset to.")
 
+    # Capture active_source_id BEFORE reset so it is preserved across reload.
+    _current_source_id = active_source_id
+
     if active_source_mode == MissionSourceMode.HISTORICAL_REPLAY:
         if active_source_ref is None:
             raise RuntimeError("Historical replay active but source_ref is None.")
-        load_historical_replay(active_source_ref, config=config)
+        load_historical_replay(active_source_ref, config=config, source_id=_current_source_id)
         return {
             "source_mode": MissionSourceMode.HISTORICAL_REPLAY.value,
             "randomized": False,
@@ -392,7 +408,7 @@ def reset_active_source(config: GCSIConfig | None = None) -> dict:
     # Synthetic scenario
     if active_scenario_path is None:
         raise RuntimeError("Synthetic scenario active but active_scenario_path is None.")
-    load_scenario(active_scenario_path, config=config, randomize=True)
+    load_scenario(active_scenario_path, config=config, randomize=True, source_id=_current_source_id)
     return {
         "source_mode": MissionSourceMode.SYNTHETIC_SCENARIO.value,
         "randomized": True,
