@@ -1,0 +1,112 @@
+{
+  "decision_epoch_policy": "END_OF_JIRAM_PJ62_DIAGNOSTIC_SESSION",
+  "decision_epoch_utc": "2024-06-14T09:35:17.546000+00:00",
+  "descriptor_id": "8474ffc69dc63b42c711483968f279fd078eec41fbc1f2b3ad42422666bc1ada",
+  "modeled_link_inputs": {
+    "latency_s": 1.5,
+    "link_stability": 0.8,
+    "nominal_data_rate_bps": 100000.0,
+    "remaining_window_s": 900.0,
+    "rssi_dbm": -95.0,
+    "snr_db": 3.0
+  },
+  "modeled_mission_state": {
+    "comm_window_remaining_s": 900.0,
+    "current_event": "PJ62 large historical replay downlink decision",
+    "event_time_remaining_s": 900.0,
+    "mission_id": "JUNO_PJ62_HISTORICAL_REPLAY_V2",
+    "mission_phase": "science_downlink",
+    "risk_level": "MEDIUM",
+    "risk_score": 0.35
+  },
+  "product_policy": {
+    "deadline_s": 900.0,
+    "delivery_requirement": "current_downlink_window",
+    "entries": [
+      {
+        "criticality": 0.85,
+        "mission_relevance": 0.9,
+        "retry_cost": 0.8,
+        "scientific_value": 0.7,
+        "semantic_role": "instrument_diagnostic"
+      },
+      {
+        "criticality": 0.6,
+        "mission_relevance": 0.95,
+        "retry_cost": 0.65,
+        "scientific_value": 0.95,
+        "semantic_role": "radiometry_science"
+      },
+      {
+        "criticality": 0.55,
+        "mission_relevance": 0.85,
+        "retry_cost": 0.6,
+        "scientific_value": 0.9,
+        "semantic_role": "ultraviolet_observation"
+      },
+      {
+        "criticality": 0.4,
+        "mission_relevance": 0.75,
+        "retry_cost": 0.55,
+        "scientific_value": 0.85,
+        "semantic_role": "visible_imaging"
+      },
+      {
+        "criticality": 0.65,
+        "mission_relevance": 0.9,
+        "retry_cost": 0.7,
+        "scientific_value": 0.9,
+        "semantic_role": "magnetic_field"
+      },
+      {
+        "criticality": 0.65,
+        "mission_relevance": 0.9,
+        "retry_cost": 0.7,
+        "scientific_value": 0.9,
+        "semantic_role": "plasma_particles"
+      },
+      {
+        "criticality": 0.65,
+        "mission_relevance": 0.9,
+        "retry_cost": 0.7,
+        "scientific_value": 0.9,
+        "semantic_role": "energetic_particles"
+      },
+      {
+        "criticality": 0.55,
+        "mission_relevance": 0.85,
+        "retry_cost": 0.6,
+        "scientific_value": 0.85,
+        "semantic_role": "radio_plasma_survey"
+      },
+      {
+        "criticality": 0.75,
+        "mission_relevance": 0.95,
+        "retry_cost": 0.8,
+        "scientific_value": 0.9,
+        "semantic_role": "radio_plasma_burst"
+      }
+    ],
+    "policy_id": "PJ62_V2_PRODUCT_POLICY_V1"
+  },
+  "product_policy_id": "PJ62_V2_PRODUCT_POLICY_V1",
+  "queue_membership_policy": {
+    "description": "GCSI modeled replay queue: 403 eligible logical products selected from the frozen verified inventory via temporal reconciliation. Queue membership is a MODELED reconstruction \u2014 NOT a historical NASA transmission-queue claim.",
+    "eligible_logical_count": 403,
+    "policy_id": "PJ62_V2_MODELED_QUEUE_MEMBERSHIP",
+    "source_mode": "MODELED"
+  },
+  "replay_id": "juno_pj62_large_replay_v2",
+  "schema": "gcsi.historical_replay_v2_descriptor",
+  "schema_version": 1,
+  "simulated": true,
+  "size_policy": {
+    "description": "GCSI modeled replay size proxy. Archive product size \u2260 historical downlink bytes. DataProduct.size_bits is a MODELED replay burden proxy derived from archive evidence.",
+    "exact_proxy_rule": "logical_archive_proxy_bytes = max(exact archive_total_size_bytes among eligible representations); DataProduct.size_bits = proxy_bytes * 8",
+    "fallback_rule": "fallback_archive_proxy_bytes = median_low of all positive archive_total_size_bytes from eligible SIZE_METADATA_EXACT source records; DataProduct.size_bits = fallback_proxy_bytes * 8",
+    "policy_id": "PJ62_V2_ARCHIVE_SIZE_PROXY_V1"
+  },
+  "size_policy_id": "PJ62_V2_ARCHIVE_SIZE_PROXY_V1",
+  "source_bundle_id": "950432d121a3aaa8340dcb24107bb42138fd6042f2ed2b254485f14c6a6e821a",
+  "source_bundle_ref": "data/replays/juno_pj62_large_replay_v2_source_bundle.json"
+}

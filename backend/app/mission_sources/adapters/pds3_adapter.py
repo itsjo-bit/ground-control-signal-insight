@@ -654,7 +654,7 @@ def _validate_nested_object_syntax(block_lines: list[str], block_name: str) -> N
     ml_key: Optional[str] = None
     ml_parts: list[str] = []
     ml_close: Optional[str] = None
-    _ML_MAX = 128
+    _ML_MAX = 512
 
     # Skip the first line (the OBJECT = <name> opener) and last line (END_OBJECT)
     # since those are the outer delimiters already validated by the caller.
