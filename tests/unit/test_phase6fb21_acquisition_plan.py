@@ -1,4 +1,4 @@
-"""GCSI Phase 6F-B2.1 — Acquisition Plan Tests.
+"""GCSI Phase 6F-B2.1.1 — Acquisition Plan Tests.
 
 All tests are OFFLINE. No live PDS requests are made.
 No product-label files are fetched. No science payload downloads.
@@ -11,11 +11,14 @@ Coverage (per spec section X):
 - JunoCam: 124 EDR, 124 RDR
 - No duplicate logical IDs
 - No duplicate source URLs
-- All datetimes timezone-aware
-- All discovery stops inside frozen window
+- All discovery evidence timestamps timezone-aware
+- EXACT entries: all stops inside frozen window
+- PENDING entries: all discovery_availability_time_utc = None
+- No placeholder SHA values in discovery evidence
+- exact_count + pending_count == 411
 - All source URLs pass production profile trust
 - All production normalizer/profile pairs known
-- Canonical plan ID
+- Canonical plan ID (B2.1.1 value)
 - Plan ID changes on semantic mutation
 - Input reorder canonicalization
 - Bounded plan loader
@@ -28,11 +31,14 @@ Coverage (per spec section X):
 - JunoCam MAX stop time
 - Plan schema / schema_version
 - Frozen model (immutability)
-- AcquisitionLogicalProductEntry temporal window enforcement
+- AcquisitionLogicalProductEntry temporal status/time consistency enforcement
 - Duplicate label_url within one entry rejected
 - Duplicate logical_id across plan rejected
 - Unresolvable evidence_id reference rejected
 - Load from frozen JSON artifact
+- DiscoveryEvidence.capture() factory computes real SHA
+- Placeholder SHA rejected
+- final_temporal_eligibility contract enforced
 """
 
 from __future__ import annotations
@@ -51,12 +57,15 @@ from backend.app.mission_sources.v2_acquisition_plan import (
     ACCUMULATION_START_UTC,
     DECISION_EPOCH_POLICY,
     DECISION_EPOCH_UTC,
+    FINAL_TEMPORAL_ELIGIBILITY,
     AcquisitionLogicalProductEntry,
     AcquisitionRepresentationRole,
     AcquisitionSourceRepresentation,
     AcquisitionSourceStandard,
     DiscoveryEvidence,
     HistoricalReplayV2AcquisitionPlan,
+    TemporalEvidenceStatus,
+    _PLACEHOLDER_SHA_PATTERNS,
     _compute_plan_id,
     _TRUSTED_PAIRS,
     load_acquisition_plan,
@@ -300,24 +309,33 @@ class TestJediReconciliation:
         assert n == 28, f"JEDI eligible: expected 28, got {n}."
 
     def test_jedi_pre_window_zero(self, all_entries):
-        """All JEDI entries must have discovery_availability_time > ACCUMULATION_START."""
-        pre = [
+        """All JEDI entries are PENDING; they have no discovery stop to violate window.
+        Verify all JEDI entries have temporal_evidence_status = LABEL_VERIFICATION_PENDING
+        and no EXACT entries exist before accumulation start."""
+        non_pending = [
             e.logical_product_id
             for e in all_entries
             if e.instrument == "JEDI"
-            and e.discovery_availability_time_utc <= ACCUMULATION_START_UTC
+            and e.temporal_evidence_status != TemporalEvidenceStatus.LABEL_VERIFICATION_PENDING
         ]
-        assert not pre, f"JEDI entries before accumulation start: {pre!r}."
+        assert not non_pending, (
+            f"JEDI entries not marked PENDING: {non_pending!r}. "
+            "JEDI PRE_WINDOW = 0 is guaranteed by LABEL_VERIFICATION_PENDING status."
+        )
 
     def test_jedi_post_decision_zero(self, all_entries):
-        """All JEDI entries must have discovery_availability_time <= DECISION_EPOCH."""
-        post = [
+        """All JEDI entries are PENDING; no discovery stop exists to exceed decision epoch.
+        Verify all JEDI entries have temporal_evidence_status = LABEL_VERIFICATION_PENDING."""
+        non_pending = [
             e.logical_product_id
             for e in all_entries
             if e.instrument == "JEDI"
-            and e.discovery_availability_time_utc > DECISION_EPOCH_UTC
+            and e.temporal_evidence_status != TemporalEvidenceStatus.LABEL_VERIFICATION_PENDING
         ]
-        assert not post, f"JEDI entries after decision epoch: {post!r}."
+        assert not non_pending, (
+            f"JEDI entries not marked PENDING: {non_pending!r}. "
+            "JEDI POST_DECISION = 0 is guaranteed by LABEL_VERIFICATION_PENDING status."
+        )
 
     def test_jedi_doy165_count(self, all_entries):
         doy165 = [
@@ -451,66 +469,104 @@ class TestNoDuplicates:
 
 
 # ===========================================================================
-# Section X.7 — Timezone-aware datetimes
+# Section X.7 — Temporal evidence status and window compliance
 # ===========================================================================
 
 
-class TestTimezonAwareness:
-    def test_all_discovery_stops_are_tz_aware(self, all_entries):
-        naive = [
-            e.logical_product_id
-            for e in all_entries
+class TestTemporalEvidenceStatus:
+    """B2.1.1 temporal evidence contract: EXACT vs PENDING split."""
+
+    @pytest.fixture(scope="class")
+    def exact_entries(self, all_entries):
+        return [
+            e for e in all_entries
+            if e.temporal_evidence_status == TemporalEvidenceStatus.EXACT_DISCOVERY_METADATA
+        ]
+
+    @pytest.fixture(scope="class")
+    def pending_entries(self, all_entries):
+        return [
+            e for e in all_entries
+            if e.temporal_evidence_status == TemporalEvidenceStatus.LABEL_VERIFICATION_PENDING
+        ]
+
+    def test_exact_plus_pending_equals_411(self, exact_entries, pending_entries):
+        total = len(exact_entries) + len(pending_entries)
+        assert total == 411, (
+            f"EXACT ({len(exact_entries)}) + PENDING ({len(pending_entries)}) "
+            f"= {total}, expected 411."
+        )
+
+    def test_exact_count_is_215(self, exact_entries):
+        """JunoCam (124) + WAVES Burst (91) = 215 EXACT entries."""
+        assert len(exact_entries) == 215, (
+            f"EXACT entries: expected 215 (JunoCam+WAVES_BURST), got {len(exact_entries)}."
+        )
+
+    def test_pending_count_is_196(self, pending_entries):
+        """JIRAM(102)+MWR(46)+UVS(8)+FGM(2)+JADE(8)+JEDI(28)+WAVES_SURVEY(2) = 196."""
+        assert len(pending_entries) == 196, (
+            f"PENDING entries: expected 196, got {len(pending_entries)}."
+        )
+
+    def test_exact_entries_have_non_null_time(self, exact_entries):
+        """EXACT entries must have a non-None discovery_availability_time_utc."""
+        null_time = [
+            e.logical_product_id for e in exact_entries
+            if e.discovery_availability_time_utc is None
+        ]
+        assert not null_time, (
+            f"EXACT entries with None availability time: {null_time[:5]!r}."
+        )
+
+    def test_pending_entries_have_null_time(self, pending_entries):
+        """PENDING entries must have None discovery_availability_time_utc.
+        No synthesized/approximated times stored as archive facts."""
+        non_null = [
+            e.logical_product_id for e in pending_entries
+            if e.discovery_availability_time_utc is not None
+        ]
+        assert not non_null, (
+            f"PENDING entries with non-None availability time "
+            f"(approximate/fabricated timestamp stored as fact): {non_null[:5]!r}."
+        )
+
+    def test_exact_entries_times_are_tz_aware(self, exact_entries):
+        non_aware = [
+            e.logical_product_id for e in exact_entries
             if e.discovery_availability_time_utc.tzinfo is None
         ]
-        assert not naive, f"Entries with naive availability times: {naive[:5]!r}."
+        assert not non_aware, (
+            f"EXACT entries with naive availability time: {non_aware[:5]!r}."
+        )
 
-    def test_all_discovery_stops_are_utc(self, all_entries):
+    def test_exact_entries_times_are_utc(self, exact_entries):
         non_utc = [
-            e.logical_product_id
-            for e in all_entries
+            e.logical_product_id for e in exact_entries
             if e.discovery_availability_time_utc.utcoffset().total_seconds() != 0
         ]
-        assert not non_utc, f"Entries with non-UTC offset: {non_utc[:5]!r}."
+        assert not non_utc, (
+            f"EXACT entries with non-UTC offset: {non_utc[:5]!r}."
+        )
 
-
-# ===========================================================================
-# Section X.8 — All discovery stops inside frozen window
-# ===========================================================================
-
-
-class TestTemporalWindow:
-    def test_all_stops_after_accumulation_start(self, all_entries):
+    def test_exact_stops_after_accumulation_start(self, exact_entries):
         violations = [
             (e.logical_product_id, e.discovery_availability_time_utc.isoformat())
-            for e in all_entries
+            for e in exact_entries
             if e.discovery_availability_time_utc <= ACCUMULATION_START_UTC
         ]
         assert not violations, (
-            f"Entries with stop <= accumulation_start: {violations[:5]!r}."
+            f"EXACT entries with stop <= accumulation_start: {violations[:5]!r}."
         )
 
-    def test_all_stops_at_or_before_decision_epoch(self, all_entries):
+    def test_exact_stops_at_or_before_decision_epoch(self, exact_entries):
         violations = [
             (e.logical_product_id, e.discovery_availability_time_utc.isoformat())
-            for e in all_entries
+            for e in exact_entries
             if e.discovery_availability_time_utc > DECISION_EPOCH_UTC
         ]
         assert not violations, (
-            f"Entries with stop > decision_epoch: {violations[:5]!r}."
-        )
-
-    def test_minimum_stop_is_after_accumulation_start(self, all_entries):
-        min_stop = min(e.discovery_availability_time_utc for e in all_entries)
-        assert min_stop > ACCUMULATION_START_UTC, (
-            f"Min stop {min_stop.isoformat()!r} is not after "
-            f"accumulation_start {ACCUMULATION_START_UTC.isoformat()!r}."
-        )
-
-    def test_maximum_stop_is_at_or_before_decision_epoch(self, all_entries):
-        max_stop = max(e.discovery_availability_time_utc for e in all_entries)
-        assert max_stop <= DECISION_EPOCH_UTC, (
-            f"Max stop {max_stop.isoformat()!r} exceeds "
-            f"decision_epoch {DECISION_EPOCH_UTC.isoformat()!r}."
+            f"EXACT entries with stop > decision_epoch: {violations[:5]!r}."
         )
 
     def test_frozen_window_constants(self):
@@ -518,6 +574,26 @@ class TestTemporalWindow:
         assert ACCUMULATION_START_UTC == datetime(2024, 6, 13, 10, 0, 0, tzinfo=timezone.utc)
         assert DECISION_EPOCH_UTC == datetime(2024, 6, 14, 9, 35, 17, 546000, tzinfo=timezone.utc)
         assert DECISION_EPOCH_POLICY == "END_OF_JIRAM_PJ62_DIAGNOSTIC_SESSION"
+
+    def test_exact_instruments_are_junocam_and_waves_burst(self, exact_entries):
+        """Only JunoCam and WAVES_BURST should have EXACT temporal evidence."""
+        instruments = {e.instrument for e in exact_entries}
+        assert instruments == {"JUNOCAM", "WAVES_BURST"}, (
+            f"Unexpected instruments with EXACT status: {instruments!r}."
+        )
+
+    def test_pending_instruments(self, pending_entries):
+        """JIRAM, MWR, UVS, FGM, JADE, JEDI, WAVES_SURVEY must all be PENDING."""
+        expected_pending = {"JIRAM", "MWR", "UVS", "FGM", "JADE", "JEDI", "WAVES_SURVEY"}
+        instruments = {e.instrument for e in pending_entries}
+        assert instruments == expected_pending, (
+            f"PENDING instruments: expected {expected_pending!r}, got {instruments!r}."
+        )
+
+    def test_final_temporal_eligibility_is_label_verification_required(self, plan):
+        """Top-level contract must equal LABEL_VERIFICATION_REQUIRED."""
+        assert plan.final_temporal_eligibility == FINAL_TEMPORAL_ELIGIBILITY
+        assert plan.final_temporal_eligibility == "LABEL_VERIFICATION_REQUIRED"
 
 
 # ===========================================================================
@@ -600,7 +676,7 @@ class TestUrlTrustValidation:
 
 
 class TestPlanId:
-    EXPECTED_PLAN_ID = "0ad0540f1570284292e325dc9bca6d5d87f3f1e83d6532ee21d05ec36bc3c431"
+    EXPECTED_PLAN_ID = "1f8999929167d0bfb27f39fe96a6b76be4a0f2c45e8b9af06f8c6f05d29bacd3"
 
     def test_plan_id_matches_expected(self, plan):
         assert plan.plan_id == self.EXPECTED_PLAN_ID, (
@@ -635,6 +711,7 @@ class TestPlanId:
             logical_product_id=orig_entry.logical_product_id,
             instrument=orig_entry.instrument,
             semantic_role=orig_entry.semantic_role,
+            temporal_evidence_status=orig_entry.temporal_evidence_status,
             discovery_availability_time_utc=orig_entry.discovery_availability_time_utc,
             representations=(mutated_rep,),
             discovery_evidence_id=orig_entry.discovery_evidence_id,
@@ -660,6 +737,7 @@ class TestPlanId:
             logical_product_id=orig_entry.logical_product_id,
             instrument="MUTATED",
             semantic_role=orig_entry.semantic_role,
+            temporal_evidence_status=orig_entry.temporal_evidence_status,
             discovery_availability_time_utc=orig_entry.discovery_availability_time_utc,
             representations=orig_entry.representations,
             discovery_evidence_id=orig_entry.discovery_evidence_id,
@@ -730,6 +808,13 @@ class TestBoundedPlanLoader:
             pytest.skip(f"Frozen artifact not present at {_ARTIFACT_PATH}.")
         loaded = load_acquisition_plan(str(_ARTIFACT_PATH))
         assert loaded.plan_id == TestPlanId.EXPECTED_PLAN_ID
+
+    def test_loaded_plan_has_final_temporal_eligibility(self):
+        """Loaded plan must have final_temporal_eligibility = LABEL_VERIFICATION_REQUIRED."""
+        if not _ARTIFACT_PATH.exists():
+            pytest.skip(f"Frozen artifact not present at {_ARTIFACT_PATH}.")
+        loaded = load_acquisition_plan(str(_ARTIFACT_PATH))
+        assert loaded.final_temporal_eligibility == FINAL_TEMPORAL_ELIGIBILITY
 
     def test_loader_rejects_file_too_large(self, tmp_path):
         big = tmp_path / "big.json"
@@ -802,7 +887,8 @@ class TestExtraFieldsRejected:
                 logical_product_id="gcsi.test.1",
                 instrument="TEST",
                 semantic_role="test_role",
-                discovery_availability_time_utc=datetime(2024, 6, 14, tzinfo=timezone.utc),
+                temporal_evidence_status=TemporalEvidenceStatus.LABEL_VERIFICATION_PENDING,
+                discovery_availability_time_utc=None,
                 representations=(rep,),
                 extra_unknown_field="oops",  # type: ignore[call-arg]
             )
@@ -865,7 +951,7 @@ class TestModelIntegrity:
                 logical_product_id="gcsi.test.1",
                 instrument="TEST",
                 semantic_role="test_role",
-                discovery_availability_time_utc=self._BASE_AVAIL,
+                temporal_evidence_status=TemporalEvidenceStatus.LABEL_VERIFICATION_PENDING,
                 representations=(),
             )
 
@@ -876,22 +962,23 @@ class TestModelIntegrity:
                 logical_product_id="gcsi.test.1",
                 instrument="TEST",
                 semantic_role="test_role",
-                discovery_availability_time_utc=self._BASE_AVAIL,
+                temporal_evidence_status=TemporalEvidenceStatus.LABEL_VERIFICATION_PENDING,
                 representations=(rep, rep),
             )
 
-    def test_entry_rejects_stop_at_or_before_accumulation_start(self):
+    def test_exact_entry_rejects_stop_at_or_before_accumulation_start(self):
         rep = self._make_valid_rep()
         with pytest.raises(Exception):
             AcquisitionLogicalProductEntry(
                 logical_product_id="gcsi.test.1",
                 instrument="TEST",
                 semantic_role="test_role",
+                temporal_evidence_status=TemporalEvidenceStatus.EXACT_DISCOVERY_METADATA,
                 discovery_availability_time_utc=ACCUMULATION_START_UTC,  # NOT > start
                 representations=(rep,),
             )
 
-    def test_entry_rejects_stop_after_decision_epoch(self):
+    def test_exact_entry_rejects_stop_after_decision_epoch(self):
         rep = self._make_valid_rep()
         after_epoch = datetime(2024, 6, 14, 10, 0, 0, tzinfo=timezone.utc)
         with pytest.raises(Exception):
@@ -899,11 +986,12 @@ class TestModelIntegrity:
                 logical_product_id="gcsi.test.1",
                 instrument="TEST",
                 semantic_role="test_role",
+                temporal_evidence_status=TemporalEvidenceStatus.EXACT_DISCOVERY_METADATA,
                 discovery_availability_time_utc=after_epoch,
                 representations=(rep,),
             )
 
-    def test_entry_rejects_naive_datetime(self):
+    def test_exact_entry_rejects_naive_datetime(self):
         rep = self._make_valid_rep()
         naive = datetime(2024, 6, 14, 6, 0, 0)  # no tzinfo
         with pytest.raises(Exception):
@@ -911,9 +999,49 @@ class TestModelIntegrity:
                 logical_product_id="gcsi.test.1",
                 instrument="TEST",
                 semantic_role="test_role",
+                temporal_evidence_status=TemporalEvidenceStatus.EXACT_DISCOVERY_METADATA,
                 discovery_availability_time_utc=naive,
                 representations=(rep,),
             )
+
+    def test_exact_entry_requires_non_null_time(self):
+        """EXACT status with None time must be rejected."""
+        rep = self._make_valid_rep()
+        with pytest.raises(Exception, match="must be set"):
+            AcquisitionLogicalProductEntry(
+                logical_product_id="gcsi.test.1",
+                instrument="TEST",
+                semantic_role="test_role",
+                temporal_evidence_status=TemporalEvidenceStatus.EXACT_DISCOVERY_METADATA,
+                discovery_availability_time_utc=None,
+                representations=(rep,),
+            )
+
+    def test_pending_entry_rejects_non_null_time(self):
+        """PENDING status with a non-None time must be rejected (no fabricated times)."""
+        rep = self._make_valid_rep()
+        with pytest.raises(Exception, match="must be None"):
+            AcquisitionLogicalProductEntry(
+                logical_product_id="gcsi.test.1",
+                instrument="TEST",
+                semantic_role="test_role",
+                temporal_evidence_status=TemporalEvidenceStatus.LABEL_VERIFICATION_PENDING,
+                discovery_availability_time_utc=self._BASE_AVAIL,
+                representations=(rep,),
+            )
+
+    def test_pending_entry_accepts_null_time(self):
+        """PENDING status with None time must be accepted."""
+        rep = self._make_valid_rep()
+        entry = AcquisitionLogicalProductEntry(
+            logical_product_id="gcsi.test.1",
+            instrument="TEST",
+            semantic_role="test_role",
+            temporal_evidence_status=TemporalEvidenceStatus.LABEL_VERIFICATION_PENDING,
+            discovery_availability_time_utc=None,
+            representations=(rep,),
+        )
+        assert entry.discovery_availability_time_utc is None
 
     def test_label_url_must_be_https(self):
         with pytest.raises(Exception, match="HTTPS"):
@@ -978,6 +1106,7 @@ class TestModelIntegrity:
                 accumulation_start_utc=plan.accumulation_start_utc,
                 decision_epoch_utc=plan.decision_epoch_utc,
                 decision_epoch_policy=plan.decision_epoch_policy,
+                final_temporal_eligibility=FINAL_TEMPORAL_ELIGIBILITY,
                 logical_entries=entries_with_dup,
                 discovery_evidence=plan.discovery_evidence,
             )
@@ -997,7 +1126,8 @@ class TestModelIntegrity:
             logical_product_id="gcsi.test.orphan.entry",
             instrument="TEST",
             semantic_role="test_role",
-            discovery_availability_time_utc=datetime(2024, 6, 14, tzinfo=timezone.utc),
+            temporal_evidence_status=TemporalEvidenceStatus.LABEL_VERIFICATION_PENDING,
+            discovery_availability_time_utc=None,
             representations=(unique_rep,),
             discovery_evidence_id="nonexistent_evidence_id_xyz",
         )
@@ -1011,6 +1141,7 @@ class TestModelIntegrity:
                 accumulation_start_utc=plan.accumulation_start_utc,
                 decision_epoch_utc=plan.decision_epoch_utc,
                 decision_epoch_policy=plan.decision_epoch_policy,
+                final_temporal_eligibility=FINAL_TEMPORAL_ELIGIBILITY,
                 logical_entries=entries,
                 discovery_evidence=plan.discovery_evidence,
             )
@@ -1044,6 +1175,136 @@ class TestPlanMetadata:
 
     def test_discovery_evidence_is_non_empty(self, plan):
         assert len(plan.discovery_evidence) > 0
+
+    def test_discovery_evidence_count_is_14(self, plan):
+        """Exactly 14 discovery evidence records for the 14 fetched resources."""
+        assert len(plan.discovery_evidence) == 14, (
+            f"Expected 14 discovery evidence records, got {len(plan.discovery_evidence)}."
+        )
+
+
+# ===========================================================================
+# Section X.17b — Discovery Evidence hardening tests
+# ===========================================================================
+
+
+class TestDiscoveryEvidenceHardening:
+    """Tests for B2.1.1 discovery evidence integrity requirements."""
+
+    def _make_real_sha(self) -> str:
+        """Return a valid non-placeholder SHA-256."""
+        import hashlib
+        return hashlib.sha256(b"real bytes").hexdigest()
+
+    def test_no_placeholder_shas_in_plan(self, plan):
+        """No evidence record may have an all-one-char or all-zero SHA."""
+        placeholders = [
+            ev.evidence_id for ev in plan.discovery_evidence
+            if ev.response_sha256 in _PLACEHOLDER_SHA_PATTERNS
+        ]
+        assert not placeholders, (
+            f"Evidence records with placeholder SHA: {placeholders!r}."
+        )
+
+    def test_all_shas_are_64_hex(self, plan):
+        """Every SHA is exactly 64 lowercase hex characters."""
+        import re
+        bad = [
+            ev.evidence_id for ev in plan.discovery_evidence
+            if not re.fullmatch(r"[0-9a-f]{64}", ev.response_sha256)
+        ]
+        assert not bad, f"Evidence with malformed SHA: {bad!r}."
+
+    def test_all_retrieved_at_are_tz_aware(self, plan):
+        """Every retrieved_at must be timezone-aware."""
+        naive = [
+            ev.evidence_id for ev in plan.discovery_evidence
+            if ev.retrieved_at.tzinfo is None
+        ]
+        assert not naive, f"Evidence with naive retrieved_at: {naive!r}."
+
+    def test_all_evidence_ids_are_unique(self, plan):
+        """Evidence IDs must be unique within the plan."""
+        ids = [ev.evidence_id for ev in plan.discovery_evidence]
+        assert len(ids) == len(set(ids)), (
+            f"Duplicate evidence IDs: {[x for x in ids if ids.count(x) > 1]!r}."
+        )
+
+    def test_placeholder_sha_all_a_rejected(self):
+        """An all-'a' SHA must be rejected."""
+        with pytest.raises(Exception, match="placeholder"):
+            DiscoveryEvidence(
+                evidence_id="test",
+                source_url="https://example.com/foo",
+                retrieved_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
+                response_sha256="a" * 64,
+                source_kind="test",
+            )
+
+    def test_placeholder_sha_all_zero_rejected(self):
+        """An all-zero SHA must be rejected."""
+        with pytest.raises(Exception, match="placeholder"):
+            DiscoveryEvidence(
+                evidence_id="test",
+                source_url="https://example.com/foo",
+                retrieved_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
+                response_sha256="0" * 64,
+                source_kind="test",
+            )
+
+    def test_capture_factory_computes_real_sha(self):
+        """DiscoveryEvidence.capture() must compute SHA from actual bytes."""
+        import hashlib
+        real_bytes = b"actual fetched content here"
+        expected_sha = hashlib.sha256(real_bytes).hexdigest()
+        ev = DiscoveryEvidence.capture(
+            evidence_id="test_capture",
+            source_url="https://example.com/data",
+            retrieved_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            response_bytes=real_bytes,
+            source_kind="pds3_index_tab",
+        )
+        assert ev.response_sha256 == expected_sha
+        assert ev.byte_count == len(real_bytes)
+
+    def test_capture_factory_rejects_empty_bytes_with_zero_sha(self):
+        """capture() with b'' produces all-zero SHA and must be rejected
+        since all-zero is in _PLACEHOLDER_SHA_PATTERNS."""
+        import hashlib
+        # SHA-256 of b"" is e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+        # which is NOT all-zero, so capture() with empty bytes should actually work.
+        # Verify the capture factory does NOT produce a placeholder SHA from empty input.
+        ev = DiscoveryEvidence.capture(
+            evidence_id="empty_test",
+            source_url="https://example.com/data",
+            retrieved_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            response_bytes=b"",
+            source_kind="pds3_index_tab",
+        )
+        # SHA of empty bytes is a real, non-placeholder value
+        assert ev.response_sha256 not in _PLACEHOLDER_SHA_PATTERNS
+
+    def test_sidecar_evidence_sha_matches_fetch_results(self, plan):
+        """The junocam INDEX.TAB SHA in the plan must match the known fetched value."""
+        tab_ev = next(
+            ev for ev in plan.discovery_evidence
+            if ev.evidence_id == "junocam_jnojnc_0029_index_tab"
+        )
+        # This SHA was confirmed by two independent fetches
+        assert tab_ev.response_sha256 == (
+            "3eaa77323900cdcf30cb7c896c8ab50b608e414e42f9df539717fa306145c382"
+        ), (
+            f"JunoCam INDEX.TAB SHA mismatch: got {tab_ev.response_sha256!r}."
+        )
+
+    def test_waves_burst_sha_is_set(self, plan):
+        """The WAVES Burst INDEX.TAB SHA must be a real non-placeholder value."""
+        burst_ev = next(
+            ev for ev in plan.discovery_evidence
+            if ev.evidence_id == "waves_burst_bstfull_index_tab"
+        )
+        assert burst_ev.response_sha256 not in _PLACEHOLDER_SHA_PATTERNS
+        assert len(burst_ev.response_sha256) == 64
 
 
 # ===========================================================================

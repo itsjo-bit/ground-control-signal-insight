@@ -1,4 +1,4 @@
-"""GCSI Phase 6F-B2.1 — Historical Replay V2 Acquisition Plan Model.
+"""GCSI Phase 6F-B2.1.1 — Historical Replay V2 Acquisition Plan Model.
 
 This module defines the additive strict model that freezes the deterministic
 mapping from 411 logical replay products to exact authoritative source
@@ -39,6 +39,24 @@ All models
 ----------
 frozen=True, extra="forbid", strict where Pydantic allows.
 All datetime fields are timezone-aware UTC.
+
+Temporal evidence contract
+--------------------------
+B2.1.1 is an ACQUISITION PLAN, not final verified inventory.
+
+FINAL_TEMPORAL_ELIGIBILITY = LABEL_VERIFICATION_REQUIRED
+
+for all entries whose temporal_evidence_status is LABEL_VERIFICATION_PENDING.
+
+If any B2.2 authoritative label later violates the window, STOP B2.2
+reconciliation. Do not silently keep it.
+
+Instruments with EXACT_DISCOVERY_METADATA (per-product stop from index):
+  JunoCam (JNOJNC_0029 INDEX.TAB), WAVES Burst (BSTFULL INDEX.TAB)
+
+Instruments with LABEL_VERIFICATION_PENDING (directory HTML only):
+  JIRAM, MWR, UVS, FGM, JADE, JEDI, WAVES Survey
+  → discovery_availability_time_utc is None for all pending entries.
 """
 
 from __future__ import annotations
@@ -86,6 +104,25 @@ class AcquisitionSourceStandard(str, Enum):
     PDS4 = "pds4"
 
 
+class TemporalEvidenceStatus(str, Enum):
+    """Temporal evidence classification for a logical acquisition entry.
+
+    EXACT_DISCOVERY_METADATA:
+        The exact per-product stop time exists in the captured discovery
+        source (e.g. JunoCam INDEX.TAB, WAVES Burst INDEX.TAB).
+        discovery_availability_time_utc MUST be set and satisfy the window.
+
+    LABEL_VERIFICATION_PENDING:
+        The discovery source establishes identity/URL but does NOT provide
+        authoritative per-product observation_stop.  B2.2 MUST treat label
+        verification as an inclusion gate.
+        discovery_availability_time_utc MUST be None.
+    """
+
+    EXACT_DISCOVERY_METADATA = "EXACT_DISCOVERY_METADATA"
+    LABEL_VERIFICATION_PENDING = "LABEL_VERIFICATION_PENDING"
+
+
 class AcquisitionRepresentationRole(str, Enum):
     """Role of a source representation within a logical product."""
 
@@ -107,6 +144,14 @@ class AcquisitionRepresentationRole(str, Enum):
 # ---------------------------------------------------------------------------
 
 
+#: Known placeholder SHA-256 patterns rejected by DiscoveryEvidence.
+#: These are all-single-character strings (length 64), all-zero,
+#: and known sentinel patterns from prior B2.1 stub implementation.
+_PLACEHOLDER_SHA_PATTERNS: frozenset[str] = frozenset(
+    c * 64 for c in "0123456789abcdef"
+)
+
+
 class DiscoveryEvidence(BaseModel):
     """Discovery evidence record for enumeration provenance.
 
@@ -123,10 +168,13 @@ class DiscoveryEvidence(BaseModel):
         Official archive URL of the metadata resource fetched.
 
     retrieved_at : datetime
-        Timezone-aware UTC timestamp of the fetch.
+        Timezone-aware UTC timestamp of the actual fetch.
+        Must not be a fabricated constant such as 2025-07-18T00:00:00Z
+        unless an actual stored source artifact proves that exact retrieval.
 
     response_sha256 : str
         SHA-256 of the exact response bytes (64 lowercase hex).
+        Must not be a known placeholder pattern (all-one-char, all-zero).
 
     source_kind : str
         Kind of discovery resource, e.g. 'pds4_directory_html',
@@ -135,14 +183,17 @@ class DiscoveryEvidence(BaseModel):
     relevant_row_count : int | None
         Number of index rows or product entries relevant to this plan,
         if the source is tabular or enumerable.
+
+    byte_count : int | None
+        Exact byte length of the fetched response body.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     evidence_id: str = Field(description="Stable identifier for this evidence source.")
     source_url: str = Field(description="Official archive URL fetched.")
-    retrieved_at: datetime = Field(description="Timezone-aware UTC fetch timestamp.")
-    response_sha256: str = Field(description="SHA-256 of exact response bytes.")
+    retrieved_at: datetime = Field(description="Timezone-aware UTC actual fetch timestamp.")
+    response_sha256: str = Field(description="SHA-256 of exact response bytes (non-placeholder).")
     source_kind: str = Field(
         description=(
             "Kind of discovery resource: "
@@ -153,6 +204,10 @@ class DiscoveryEvidence(BaseModel):
     relevant_row_count: Optional[int] = Field(
         default=None,
         description="Row/entry count relevant to this plan, if applicable.",
+    )
+    byte_count: Optional[int] = Field(
+        default=None,
+        description="Exact byte length of the fetched response body.",
     )
 
     @field_validator("evidence_id", "source_url", "source_kind", mode="after")
@@ -177,7 +232,44 @@ class DiscoveryEvidence(BaseModel):
             raise ValueError(
                 "response_sha256 must be exactly 64 lowercase hex characters."
             )
+        if v in _PLACEHOLDER_SHA_PATTERNS:
+            raise ValueError(
+                f"response_sha256 {v[:8]}... is a known placeholder pattern "
+                "(all-one-character or all-zero SHA). "
+                "Use DiscoveryEvidence.capture() with actual response bytes."
+            )
         return v
+
+    @classmethod
+    def capture(
+        cls,
+        *,
+        evidence_id: str,
+        source_url: str,
+        retrieved_at: datetime,
+        response_bytes: bytes,
+        source_kind: str,
+        relevant_row_count: Optional[int] = None,
+        byte_count: Optional[int] = None,
+    ) -> "DiscoveryEvidence":
+        """Production factory: computes response_sha256 from actual bytes.
+
+        This is the preferred construction path for production acquisition-plan
+        artifacts.  It ensures the SHA-256 is computed from real response bytes
+        rather than accepted as arbitrary caller text.
+        """
+        import hashlib
+        sha256 = hashlib.sha256(response_bytes).hexdigest()
+        actual_byte_count = byte_count if byte_count is not None else len(response_bytes)
+        return cls(
+            evidence_id=evidence_id,
+            source_url=source_url,
+            retrieved_at=retrieved_at,
+            response_sha256=sha256,
+            source_kind=source_kind,
+            relevant_row_count=relevant_row_count,
+            byte_count=actual_byte_count,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -299,11 +391,21 @@ class AcquisitionLogicalProductEntry(BaseModel):
         GCSI semantic classification, e.g. 'instrument_diagnostic',
         'radiometry_science', 'visible_imaging'.
 
-    discovery_availability_time_utc : datetime
-        Discovery-based availability time (observation_stop from index
-        or label metadata).  Must satisfy:
-        ACCUMULATION_START < discovery_availability_time <= DECISION_EPOCH.
-        B2.2 will reconfirm from authoritative label facts.
+    temporal_evidence_status : TemporalEvidenceStatus
+        Classification of the temporal availability evidence:
+        - EXACT_DISCOVERY_METADATA: per-product stop from captured index.
+          discovery_availability_time_utc MUST be set and satisfy window.
+        - LABEL_VERIFICATION_PENDING: directory HTML only; no authoritative
+          per-product stop available.  discovery_availability_time_utc MUST
+          be None.  B2.2 MUST verify as inclusion gate.
+
+    discovery_availability_time_utc : datetime | None
+        Discovery-based availability time (per-product observation_stop
+        from a captured index with STOP_TIME column).
+        Set only when temporal_evidence_status = EXACT_DISCOVERY_METADATA.
+        Must satisfy: ACCUMULATION_START < time <= DECISION_EPOCH.
+        None when temporal_evidence_status = LABEL_VERIFICATION_PENDING.
+        B2.2 will establish the authoritative time from the label itself.
 
     representations : tuple[AcquisitionSourceRepresentation, ...]
         One or more planned source representations. Non-empty.
@@ -323,11 +425,20 @@ class AcquisitionLogicalProductEntry(BaseModel):
     semantic_role: str = Field(
         description="GCSI semantic classification, e.g. 'instrument_diagnostic'."
     )
-    discovery_availability_time_utc: datetime = Field(
+    temporal_evidence_status: TemporalEvidenceStatus = Field(
         description=(
-            "Discovery-based observation_stop time in UTC. "
-            "Must satisfy: ACCUMULATION_START < time <= DECISION_EPOCH."
+            "Temporal evidence classification. "
+            "EXACT_DISCOVERY_METADATA: per-product stop from captured index. "
+            "LABEL_VERIFICATION_PENDING: no authoritative stop from discovery source."
         )
+    )
+    discovery_availability_time_utc: Optional[datetime] = Field(
+        default=None,
+        description=(
+            "Discovery-based observation_stop in UTC. "
+            "Required when temporal_evidence_status = EXACT_DISCOVERY_METADATA. "
+            "Must be None when temporal_evidence_status = LABEL_VERIFICATION_PENDING."
+        ),
     )
     representations: tuple[AcquisitionSourceRepresentation, ...] = Field(
         description=(
@@ -349,7 +460,9 @@ class AcquisitionLogicalProductEntry(BaseModel):
 
     @field_validator("discovery_availability_time_utc", mode="after")
     @classmethod
-    def _aware_dt(cls, v: datetime) -> datetime:
+    def _aware_dt(cls, v: Optional[datetime]) -> Optional[datetime]:
+        if v is None:
+            return v
         if v.tzinfo is None or v.utcoffset() is None:
             raise ValueError("discovery_availability_time_utc must be timezone-aware.")
         return v.astimezone(timezone.utc)
@@ -369,14 +482,28 @@ class AcquisitionLogicalProductEntry(BaseModel):
                 "representations must not contain duplicate label_urls within "
                 "one AcquisitionLogicalProductEntry."
             )
-        # 3. Temporal window constraint.
+        # 3. Temporal status / time consistency.
+        status = self.temporal_evidence_status
         t = self.discovery_availability_time_utc
-        if not (ACCUMULATION_START_UTC < t <= DECISION_EPOCH_UTC):
-            raise ValueError(
-                f"discovery_availability_time_utc {t.isoformat()} must satisfy "
-                f"ACCUMULATION_START ({ACCUMULATION_START_UTC.isoformat()}) < t "
-                f"<= DECISION_EPOCH ({DECISION_EPOCH_UTC.isoformat()})."
-            )
+        if status == TemporalEvidenceStatus.EXACT_DISCOVERY_METADATA:
+            if t is None:
+                raise ValueError(
+                    "discovery_availability_time_utc must be set when "
+                    "temporal_evidence_status = EXACT_DISCOVERY_METADATA."
+                )
+            if not (ACCUMULATION_START_UTC < t <= DECISION_EPOCH_UTC):
+                raise ValueError(
+                    f"discovery_availability_time_utc {t.isoformat()} must satisfy "
+                    f"ACCUMULATION_START ({ACCUMULATION_START_UTC.isoformat()}) < t "
+                    f"<= DECISION_EPOCH ({DECISION_EPOCH_UTC.isoformat()})."
+                )
+        elif status == TemporalEvidenceStatus.LABEL_VERIFICATION_PENDING:
+            if t is not None:
+                raise ValueError(
+                    "discovery_availability_time_utc must be None when "
+                    "temporal_evidence_status = LABEL_VERIFICATION_PENDING. "
+                    "Do not synthesize approximate timestamps as discovery facts."
+                )
         return self
 
 
@@ -402,9 +529,10 @@ def _compute_plan_id(
     - representation URL
     - normalizer/profile
     - logical ID
-    - discovery availability time
+    - discovery availability time (or None for pending)
+    - temporal_evidence_status
     - instrument/role
-    - discovery evidence binding
+    - discovery evidence binding (including sha256, retrieved_at, byte_count)
     - frozen replay window/policy
 
     Formula::
@@ -434,20 +562,23 @@ def _compute_plan_id(
                 "representation_role": r.representation_role.value,
                 "source_standard": r.source_standard.value,
             })
+        t = e.discovery_availability_time_utc
         canonical_entries.append({
             "discovery_availability_time_utc": (
-                e.discovery_availability_time_utc.isoformat()
+                t.isoformat() if t is not None else None
             ),
             "discovery_evidence_id": e.discovery_evidence_id,
             "instrument": e.instrument,
             "logical_product_id": e.logical_product_id,
             "representations": canonical_reprs,
             "semantic_role": e.semantic_role,
+            "temporal_evidence_status": e.temporal_evidence_status.value,
         })
 
     canonical_evidence = []
     for ev in sorted(discovery_evidence, key=lambda x: x.evidence_id):
         canonical_evidence.append({
+            "byte_count": ev.byte_count,
             "evidence_id": ev.evidence_id,
             "relevant_row_count": ev.relevant_row_count,
             "response_sha256": ev.response_sha256,
@@ -476,10 +607,14 @@ def _compute_plan_id(
 # ---------------------------------------------------------------------------
 
 
+#: Contract identifier for pending temporal eligibility.
+FINAL_TEMPORAL_ELIGIBILITY: str = "LABEL_VERIFICATION_REQUIRED"
+
+
 class HistoricalReplayV2AcquisitionPlan(BaseModel):
     """Frozen acquisition plan for one GCSI V2 historical replay.
 
-    This is the B2.1 artifact: a deterministic mapping from 411 logical
+    This is the B2.1.1 artifact: a deterministic mapping from 411 logical
     replay products to exact authoritative source representations (label
     URLs + production profiles) BEFORE product-label bulk acquisition.
 
@@ -489,11 +624,13 @@ class HistoricalReplayV2AcquisitionPlan(BaseModel):
     2. logical_product_id values are unique across all entries.
     3. No duplicate label_url values across all representations
        (a source label may not be planned for two logical products).
-    4. All discovery_availability_time_utc values satisfy:
-       ACCUMULATION_START_UTC < t <= DECISION_EPOCH_UTC.
+    4. EXACT entries: discovery_availability_time_utc satisfies window.
+       PENDING entries: discovery_availability_time_utc is None.
     5. All discovery_evidence_id references in entries resolve to
        evidence_id values in discovery_evidence.
     6. Serialized plan must not exceed _MAX_PLAN_BYTES (32 MiB).
+    7. No placeholder SHA-256 values in discovery_evidence.
+    8. final_temporal_eligibility == FINAL_TEMPORAL_ELIGIBILITY contract.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
@@ -522,6 +659,12 @@ class HistoricalReplayV2AcquisitionPlan(BaseModel):
     decision_epoch_policy: str = Field(
         description="Decision epoch policy identifier (frozen)."
     )
+    final_temporal_eligibility: str = Field(
+        description=(
+            "Top-level temporal eligibility contract. "
+            "Must equal FINAL_TEMPORAL_ELIGIBILITY = 'LABEL_VERIFICATION_REQUIRED'."
+        )
+    )
     logical_entries: tuple[AcquisitionLogicalProductEntry, ...] = Field(
         description="All planned logical acquisition entries. Non-empty."
     )
@@ -538,6 +681,16 @@ class HistoricalReplayV2AcquisitionPlan(BaseModel):
     def _non_empty(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("Field must not be empty.")
+        return v
+
+    @field_validator("final_temporal_eligibility", mode="after")
+    @classmethod
+    def _check_temporal_eligibility(cls, v: str) -> str:
+        if v != FINAL_TEMPORAL_ELIGIBILITY:
+            raise ValueError(
+                f"final_temporal_eligibility must be {FINAL_TEMPORAL_ELIGIBILITY!r}, "
+                f"got {v!r}."
+            )
         return v
 
     @model_validator(mode="after")
@@ -571,7 +724,7 @@ class HistoricalReplayV2AcquisitionPlan(BaseModel):
                 f"{dup_urls[:5]!r} (showing first 5)."
             )
 
-        # 4. Temporal constraint already enforced per-entry.
+        # 4. Temporal constraint enforced per-entry (EXACT vs PENDING).
 
         # 5. Discovery evidence reference resolution (when evidence present).
         if evidence:

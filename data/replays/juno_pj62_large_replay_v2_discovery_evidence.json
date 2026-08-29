@@ -1,0 +1,1907 @@
+{
+  "artifact_id": "3687be0926a164bcaebf65c2da3a94f10135d06acf9e0262f6b03886713d75a8",
+  "discovery_evidence": [
+    {
+      "byte_count": 154426,
+      "evidence_id": "jiram_orbit62_directory_html",
+      "http_status": 200,
+      "relevant_row_count": 102,
+      "response_sha256": "962afaee2eb2f9b2febf5778eda70f44f94166a2d0f605576d8c6083db1342db",
+      "retrieved_at": "2026-08-29T07:45:04.716925+00:00",
+      "source_kind": "pds4_directory_html",
+      "source_url": "https://atmos.nmsu.edu/PDS/data/PDS4/juno_jiram_bundle/data_calibrated/orbit62/"
+    },
+    {
+      "byte_count": 18634,
+      "evidence_id": "mwr_irdr_2024165_directory_html",
+      "http_status": 200,
+      "relevant_row_count": 14,
+      "response_sha256": "562977c85507e149dfa192f4d6865b3dbb514962369a2cc3a6ebd8642cc813a1",
+      "retrieved_at": "2026-08-29T07:45:06.240689+00:00",
+      "source_kind": "pds4_directory_html",
+      "source_url": "https://pds-atmospheres.nmsu.edu/PDS/data/jnomwr_1100/DATA/IRDR/2024/2024165/"
+    },
+    {
+      "byte_count": 18634,
+      "evidence_id": "mwr_irdr_2024166_directory_html",
+      "http_status": 200,
+      "relevant_row_count": 9,
+      "response_sha256": "83da4da6a949146c4b9265ee11b2f42221265d8641478c0ca0dc9283f1cb060a",
+      "retrieved_at": "2026-08-29T07:45:07.460604+00:00",
+      "source_kind": "pds4_directory_html",
+      "source_url": "https://pds-atmospheres.nmsu.edu/PDS/data/jnomwr_1100/DATA/IRDR/2024/2024166/"
+    },
+    {
+      "byte_count": 18634,
+      "evidence_id": "mwr_grdr_2024165_directory_html",
+      "http_status": 200,
+      "relevant_row_count": 14,
+      "response_sha256": "2660bd26665036c44afa5149c93e5e1ebb2c7460436515fa0e75866031d10a1a",
+      "retrieved_at": "2026-08-29T07:45:08.499374+00:00",
+      "source_kind": "pds4_directory_html",
+      "source_url": "https://pds-atmospheres.nmsu.edu/PDS/data/jnomwr_1100/DATA/GRDR/2024/2024165/"
+    },
+    {
+      "byte_count": 18634,
+      "evidence_id": "mwr_grdr_2024166_directory_html",
+      "http_status": 200,
+      "relevant_row_count": 9,
+      "response_sha256": "7485de7259aa5b39328c47b1430ca304a6c4b8e384fa9b5c4ca4ec5933311407",
+      "retrieved_at": "2026-08-29T07:45:09.752590+00:00",
+      "source_kind": "pds4_directory_html",
+      "source_url": "https://pds-atmospheres.nmsu.edu/PDS/data/jnomwr_1100/DATA/GRDR/2024/2024166/"
+    },
+    {
+      "byte_count": 20926,
+      "evidence_id": "uvs_orbit62_directory_html",
+      "http_status": 200,
+      "relevant_row_count": 8,
+      "response_sha256": "533c98393b2ed55f12f2989ff9376b9df70b9edfb5ed9cdcdf402fe7028b338c",
+      "retrieved_at": "2026-08-29T07:45:11.926452+00:00",
+      "source_kind": "pds4_directory_html",
+      "source_url": "https://atmos.nmsu.edu/PDS/data/jnouvs_3001/DATA/ORBIT-62/"
+    },
+    {
+      "byte_count": 7364,
+      "evidence_id": "junocam_jnojnc_0029_index_lbl",
+      "http_status": 200,
+      "relevant_row_count": 4782,
+      "response_sha256": "b5132017c896adfd07a81e83c3948746d3270ad379ae4e28e77f18708f99c026",
+      "retrieved_at": "2026-08-29T07:45:12.733831+00:00",
+      "source_kind": "pds3_index_lbl",
+      "source_url": "https://planetarydata.jpl.nasa.gov/img/data/juno/JNOJNC_0029/INDEX/INDEX.LBL"
+    },
+    {
+      "byte_count": 2400564,
+      "evidence_id": "junocam_jnojnc_0029_index_tab",
+      "http_status": 200,
+      "relevant_row_count": 4782,
+      "response_sha256": "3eaa77323900cdcf30cb7c896c8ab50b608e414e42f9df539717fa306145c382",
+      "retrieved_at": "2026-08-29T07:45:15.889793+00:00",
+      "source_kind": "pds3_index_tab",
+      "source_url": "https://planetarydata.jpl.nasa.gov/img/data/juno/JNOJNC_0029/INDEX/INDEX.TAB"
+    },
+    {
+      "byte_count": 11208,
+      "evidence_id": "fgm_jupiter_pl_directory_html",
+      "http_status": 200,
+      "relevant_row_count": 2,
+      "response_sha256": "bb53712b82a2ad57d8362c8c89d5c61109985a3abec9baf1033e70154e4369b0",
+      "retrieved_at": "2026-08-29T07:45:18.618802+00:00",
+      "source_kind": "pds3_directory_html",
+      "source_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J-3-FGM-CAL-V1.0/DATA/JUPITER/PL/"
+    },
+    {
+      "byte_count": 2086,
+      "evidence_id": "jade_calibrated_directory_html",
+      "http_status": 200,
+      "relevant_row_count": 8,
+      "response_sha256": "99e6a0231122410391afc234e8cddae4be2f6607e370201b7c201e4cf1663664",
+      "retrieved_at": "2026-08-29T07:45:19.561313+00:00",
+      "source_kind": "pds3_directory_html",
+      "source_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J_SW-JAD-3-CALIBRATED-V1.0/DATA/"
+    },
+    {
+      "byte_count": 6593,
+      "evidence_id": "jedi_165_directory_html",
+      "http_status": 200,
+      "relevant_row_count": 14,
+      "response_sha256": "34532293c61d12d4ceaba08000071afd30bd51e8f92e4c1d694a1e31721afe3b",
+      "retrieved_at": "2026-08-29T07:45:20.408396+00:00",
+      "source_kind": "pds3_directory_html",
+      "source_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J-JED-3-CDR-V1.0/DATA/2024/165/"
+    },
+    {
+      "byte_count": 6593,
+      "evidence_id": "jedi_166_directory_html",
+      "http_status": 200,
+      "relevant_row_count": 14,
+      "response_sha256": "d7de2da7c4d37f1bb73e5d69f1d814d5eab802f3618288d46273957a78efe43d",
+      "retrieved_at": "2026-08-29T07:45:21.258605+00:00",
+      "source_kind": "pds3_directory_html",
+      "source_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-J-JED-3-CDR-V1.0/DATA/2024/166/"
+    },
+    {
+      "byte_count": 17565,
+      "evidence_id": "waves_survey_orbit62_directory_html",
+      "http_status": 200,
+      "relevant_row_count": 2,
+      "response_sha256": "ae470a6e931b7997ce803f416cdcf59cfcfc7ad7b299b0d8f97c8dc4f8bb0f28",
+      "retrieved_at": "2026-08-29T07:45:22.324011+00:00",
+      "source_kind": "pds3_directory_html",
+      "source_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-E_J_SS-WAV-3-CDR-SRVFULL-V2.0/DATA/WAVES_SURVEY/2024149_ORBIT_62/"
+    },
+    {
+      "byte_count": 8197264,
+      "evidence_id": "waves_burst_bstfull_index_tab",
+      "http_status": 200,
+      "relevant_row_count": 30137,
+      "response_sha256": "b01bba8fb6264621f0b99d453b2ea3764f8c74de3084957c6e1ca59a0b33d0e3",
+      "retrieved_at": "2026-08-29T07:45:25.846424+00:00",
+      "source_kind": "pds3_index_tab",
+      "source_url": "https://pds-ppi.igpp.ucla.edu/data/JNO-E_J_SS-WAV-3-CDR-BSTFULL-V2.0/INDEX/INDEX.TAB"
+    }
+  ],
+  "normalized_extractions": {
+    "junocam_index_tab_orbit62_eligible": [
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00057_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00057_V01",
+        "obs_key": "2024165_62c00057",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00057_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00057_V01",
+        "start_time_utc": "2024-06-13T10:00:04.955",
+        "stop_time_utc": "2024-06-13T10:00:08.705"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00059_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00059_V01",
+        "obs_key": "2024165_62c00059",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00059_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00059_V01",
+        "start_time_utc": "2024-06-13T10:15:18.102",
+        "stop_time_utc": "2024-06-13T10:15:21.852"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00061_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00061_V01",
+        "obs_key": "2024165_62c00061",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00061_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00061_V01",
+        "start_time_utc": "2024-06-13T10:30:31.242",
+        "stop_time_utc": "2024-06-13T10:30:34.992"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00063_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00063_V01",
+        "obs_key": "2024165_62c00063",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00063_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00063_V01",
+        "start_time_utc": "2024-06-13T10:45:14.034",
+        "stop_time_utc": "2024-06-13T10:45:17.784"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00065_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00065_V01",
+        "obs_key": "2024165_62c00065",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00065_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00065_V01",
+        "start_time_utc": "2024-06-13T11:00:27.150",
+        "stop_time_utc": "2024-06-13T11:00:30.900"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00067_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00067_V01",
+        "obs_key": "2024165_62c00067",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00067_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00067_V01",
+        "start_time_utc": "2024-06-13T11:15:09.871",
+        "stop_time_utc": "2024-06-13T11:15:13.621"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00069_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00069_V01",
+        "obs_key": "2024165_62c00069",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00069_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00069_V01",
+        "start_time_utc": "2024-06-13T11:30:23.135",
+        "stop_time_utc": "2024-06-13T11:30:26.885"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00071_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00071_V01",
+        "obs_key": "2024165_62c00071",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00071_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00071_V01",
+        "start_time_utc": "2024-06-13T11:45:05.806",
+        "stop_time_utc": "2024-06-13T11:45:09.556"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00073_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00073_V01",
+        "obs_key": "2024165_62c00073",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00073_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00073_V01",
+        "start_time_utc": "2024-06-13T12:00:19.000",
+        "stop_time_utc": "2024-06-13T12:00:22.750"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00075_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00075_V01",
+        "obs_key": "2024165_62c00075",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00075_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00075_V01",
+        "start_time_utc": "2024-06-13T12:15:32.167",
+        "stop_time_utc": "2024-06-13T12:15:35.917"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00077_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00077_V01",
+        "obs_key": "2024165_62c00077",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00077_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00077_V01",
+        "start_time_utc": "2024-06-13T12:30:14.849",
+        "stop_time_utc": "2024-06-13T12:30:18.599"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00079_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00079_V01",
+        "obs_key": "2024165_62c00079",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00079_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00079_V01",
+        "start_time_utc": "2024-06-13T12:45:28.133",
+        "stop_time_utc": "2024-06-13T12:45:31.883"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00081_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00081_V01",
+        "obs_key": "2024165_62c00081",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00081_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00081_V01",
+        "start_time_utc": "2024-06-13T13:00:10.874",
+        "stop_time_utc": "2024-06-13T13:00:14.624"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00083_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00083_V01",
+        "obs_key": "2024165_62c00083",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00083_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00083_V01",
+        "start_time_utc": "2024-06-13T13:15:23.967",
+        "stop_time_utc": "2024-06-13T13:15:27.717"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00085_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00085_V01",
+        "obs_key": "2024165_62c00085",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00085_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00085_V01",
+        "start_time_utc": "2024-06-13T13:30:06.829",
+        "stop_time_utc": "2024-06-13T13:30:10.579"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00087_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00087_V01",
+        "obs_key": "2024165_62c00087",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00087_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00087_V01",
+        "start_time_utc": "2024-06-13T13:45:19.964",
+        "stop_time_utc": "2024-06-13T13:45:23.714"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00089_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00089_V01",
+        "obs_key": "2024165_62c00089",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00089_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00089_V01",
+        "start_time_utc": "2024-06-13T14:00:33.166",
+        "stop_time_utc": "2024-06-13T14:00:36.916"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00091_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00091_V01",
+        "obs_key": "2024165_62c00091",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00091_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00091_V01",
+        "start_time_utc": "2024-06-13T14:15:15.950",
+        "stop_time_utc": "2024-06-13T14:15:19.700"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00093_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00093_V01",
+        "obs_key": "2024165_62c00093",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00093_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00093_V01",
+        "start_time_utc": "2024-06-13T14:30:29.183",
+        "stop_time_utc": "2024-06-13T14:30:32.933"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00095_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00095_V01",
+        "obs_key": "2024165_62c00095",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00095_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00095_V01",
+        "start_time_utc": "2024-06-13T14:45:11.897",
+        "stop_time_utc": "2024-06-13T14:45:15.647"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00097_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00097_V01",
+        "obs_key": "2024165_62c00097",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00097_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00097_V01",
+        "start_time_utc": "2024-06-13T15:00:25.220",
+        "stop_time_utc": "2024-06-13T15:00:28.970"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00099_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00099_V01",
+        "obs_key": "2024165_62c00099",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00099_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00099_V01",
+        "start_time_utc": "2024-06-13T15:23:12.034",
+        "stop_time_utc": "2024-06-13T15:23:17.228"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00100_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00100_V01",
+        "obs_key": "2024165_62c00100",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00100_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00100_V01",
+        "start_time_utc": "2024-06-13T15:39:24.932",
+        "stop_time_utc": "2024-06-13T15:39:30.126"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00101_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00101_V01",
+        "obs_key": "2024165_62c00101",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00101_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00101_V01",
+        "start_time_utc": "2024-06-13T15:44:59.001",
+        "stop_time_utc": "2024-06-13T15:45:04.195"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00102_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00102_V01",
+        "obs_key": "2024165_62c00102",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00102_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00102_V01",
+        "start_time_utc": "2024-06-13T15:54:05.094",
+        "stop_time_utc": "2024-06-13T15:54:10.288"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00103_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00103_V01",
+        "obs_key": "2024165_62c00103",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00103_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00103_V01",
+        "start_time_utc": "2024-06-13T15:55:06.083",
+        "stop_time_utc": "2024-06-13T15:55:11.277"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00104_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00104_V01",
+        "obs_key": "2024165_62c00104",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00104_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00104_V01",
+        "start_time_utc": "2024-06-13T16:01:09.473",
+        "stop_time_utc": "2024-06-13T16:01:14.667"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00105_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00105_V01",
+        "obs_key": "2024165_62c00105",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00105_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00105_V01",
+        "start_time_utc": "2024-06-13T16:02:10.406",
+        "stop_time_utc": "2024-06-13T16:02:15.600"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00106_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00106_V01",
+        "obs_key": "2024165_62c00106",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00106_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00106_V01",
+        "start_time_utc": "2024-06-13T16:04:11.211",
+        "stop_time_utc": "2024-06-13T16:04:16.405"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00107_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00107_V01",
+        "obs_key": "2024165_62c00107",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00107_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00107_V01",
+        "start_time_utc": "2024-06-13T16:10:14.956",
+        "stop_time_utc": "2024-06-13T16:10:20.150"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00108_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00108_V01",
+        "obs_key": "2024165_62c00108",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00108_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00108_V01",
+        "start_time_utc": "2024-06-13T16:11:15.980",
+        "stop_time_utc": "2024-06-13T16:11:21.174"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00109_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00109_V01",
+        "obs_key": "2024165_62c00109",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00109_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00109_V01",
+        "start_time_utc": "2024-06-13T16:19:21.217",
+        "stop_time_utc": "2024-06-13T16:19:26.411"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00110_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00110_V01",
+        "obs_key": "2024165_62c00110",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00110_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00110_V01",
+        "start_time_utc": "2024-06-13T16:39:06.677",
+        "stop_time_utc": "2024-06-13T16:39:11.871"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00111_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00111_V01",
+        "obs_key": "2024165_62c00111",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00111_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00111_V01",
+        "start_time_utc": "2024-06-13T17:00:08.987",
+        "stop_time_utc": "2024-06-13T17:00:14.237"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00113_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00113_V01",
+        "obs_key": "2024165_62c00113",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00113_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00113_V01",
+        "start_time_utc": "2024-06-13T17:30:05.372",
+        "stop_time_utc": "2024-06-13T17:30:10.622"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00115_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00115_V01",
+        "obs_key": "2024165_62c00115",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00115_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00115_V01",
+        "start_time_utc": "2024-06-13T18:00:31.990",
+        "stop_time_utc": "2024-06-13T18:00:37.990"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00117_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00117_V01",
+        "obs_key": "2024165_62c00117",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00117_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00117_V01",
+        "start_time_utc": "2024-06-13T18:30:28.312",
+        "stop_time_utc": "2024-06-13T18:30:35.812"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00119_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00119_V01",
+        "obs_key": "2024165_62c00119",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00119_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00119_V01",
+        "start_time_utc": "2024-06-13T18:57:52.712",
+        "stop_time_utc": "2024-06-13T18:58:01.712"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00120_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00120_V01",
+        "obs_key": "2024165_62c00120",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00120_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00120_V01",
+        "start_time_utc": "2024-06-13T19:04:28.536",
+        "stop_time_utc": "2024-06-13T19:04:38.286"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00121_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00121_V01",
+        "obs_key": "2024165_62c00121",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00121_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00121_V01",
+        "start_time_utc": "2024-06-13T19:10:33.946",
+        "stop_time_utc": "2024-06-13T19:10:44.446"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00122_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00122_V01",
+        "obs_key": "2024165_62c00122",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00122_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00122_V01",
+        "start_time_utc": "2024-06-13T19:15:38.293",
+        "stop_time_utc": "2024-06-13T19:15:49.543"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00123_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00123_V01",
+        "obs_key": "2024165_62c00123",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00123_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00123_V01",
+        "start_time_utc": "2024-06-13T19:20:12.378",
+        "stop_time_utc": "2024-06-13T19:20:24.378"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00124_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00124_V01",
+        "obs_key": "2024165_62c00124",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00124_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00124_V01",
+        "start_time_utc": "2024-06-13T19:24:16.234",
+        "stop_time_utc": "2024-06-13T19:24:28.234"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00125_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00125_V01",
+        "obs_key": "2024165_62c00125",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00125_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00125_V01",
+        "start_time_utc": "2024-06-13T19:27:49.335",
+        "stop_time_utc": "2024-06-13T19:28:02.085"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00126_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00126_V01",
+        "obs_key": "2024165_62c00126",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00126_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00126_V01",
+        "start_time_utc": "2024-06-13T19:30:51.854",
+        "stop_time_utc": "2024-06-13T19:31:05.354"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00127_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00127_V01",
+        "obs_key": "2024165_62c00127",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00127_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00127_V01",
+        "start_time_utc": "2024-06-13T19:34:25.420",
+        "stop_time_utc": "2024-06-13T19:34:38.920"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00128_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00128_V01",
+        "obs_key": "2024165_62c00128",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00128_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00128_V01",
+        "start_time_utc": "2024-06-13T19:36:57.475",
+        "stop_time_utc": "2024-06-13T19:37:11.725"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00129_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00129_V01",
+        "obs_key": "2024165_62c00129",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00129_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00129_V01",
+        "start_time_utc": "2024-06-13T19:39:30.053",
+        "stop_time_utc": "2024-06-13T19:39:44.303"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00131_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00131_V01",
+        "obs_key": "2024165_62c00131",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00131_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00131_V01",
+        "start_time_utc": "2024-06-13T19:47:07.290",
+        "stop_time_utc": "2024-06-13T19:47:22.290"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00135_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00135_V01",
+        "obs_key": "2024165_62c00135",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00135_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00135_V01",
+        "start_time_utc": "2024-06-13T21:53:19.967",
+        "stop_time_utc": "2024-06-13T21:53:25.967"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00136_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00136_V01",
+        "obs_key": "2024165_62c00136",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00136_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00136_V01",
+        "start_time_utc": "2024-06-13T22:03:29.947",
+        "stop_time_utc": "2024-06-13T22:03:35.197"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00137_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00137_V01",
+        "obs_key": "2024165_62c00137",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00137_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00137_V01",
+        "start_time_utc": "2024-06-13T22:13:08.935",
+        "stop_time_utc": "2024-06-13T22:13:14.185"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00138_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00138_V01",
+        "obs_key": "2024165_62c00138",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00138_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00138_V01",
+        "start_time_utc": "2024-06-13T22:30:25.175",
+        "stop_time_utc": "2024-06-13T22:30:30.425"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00140_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00140_V01",
+        "obs_key": "2024165_62c00140",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00140_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00140_V01",
+        "start_time_utc": "2024-06-13T22:53:11.259",
+        "stop_time_utc": "2024-06-13T22:53:27.009"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00141_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00141_V01",
+        "obs_key": "2024165_62c00141",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00141_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00141_V01",
+        "start_time_utc": "2024-06-13T23:00:23.536",
+        "stop_time_utc": "2024-06-13T23:00:28.036"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62C00143_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62C00143_V01",
+        "obs_key": "2024165_62c00143",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62C00143_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62C00143_V01",
+        "start_time_utc": "2024-06-13T23:30:21.420",
+        "stop_time_utc": "2024-06-13T23:30:25.920"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62G00132_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62G00132_V01",
+        "obs_key": "2024165_62g00132",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62G00132_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62G00132_V01",
+        "start_time_utc": "2024-06-13T19:59:19.746",
+        "stop_time_utc": "2024-06-13T19:59:35.496"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62G00133_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62G00133_V01",
+        "obs_key": "2024165_62g00133",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62G00133_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62G00133_V01",
+        "start_time_utc": "2024-06-13T20:09:01.160",
+        "stop_time_utc": "2024-06-13T20:09:16.160"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62G00134_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62G00134_V01",
+        "obs_key": "2024165_62g00134",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62G00134_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62G00134_V01",
+        "start_time_utc": "2024-06-13T20:19:13.499",
+        "stop_time_utc": "2024-06-13T20:19:26.999"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00058_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00058_V01",
+        "obs_key": "2024165_62m00058",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00058_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00058_V01",
+        "start_time_utc": "2024-06-13T10:00:35.404",
+        "stop_time_utc": "2024-06-13T10:00:39.154"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00060_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00060_V01",
+        "obs_key": "2024165_62m00060",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00060_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00060_V01",
+        "start_time_utc": "2024-06-13T10:15:48.559",
+        "stop_time_utc": "2024-06-13T10:15:52.309"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00062_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00062_V01",
+        "obs_key": "2024165_62m00062",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00062_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00062_V01",
+        "start_time_utc": "2024-06-13T10:31:01.742",
+        "stop_time_utc": "2024-06-13T10:31:05.492"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00064_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00064_V01",
+        "obs_key": "2024165_62m00064",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00064_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00064_V01",
+        "start_time_utc": "2024-06-13T10:45:44.487",
+        "stop_time_utc": "2024-06-13T10:45:48.237"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00066_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00066_V01",
+        "obs_key": "2024165_62m00066",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00066_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00066_V01",
+        "start_time_utc": "2024-06-13T11:00:57.575",
+        "stop_time_utc": "2024-06-13T11:01:01.325"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00068_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00068_V01",
+        "obs_key": "2024165_62m00068",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00068_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00068_V01",
+        "start_time_utc": "2024-06-13T11:15:40.336",
+        "stop_time_utc": "2024-06-13T11:15:44.086"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00070_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00070_V01",
+        "obs_key": "2024165_62m00070",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00070_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00070_V01",
+        "start_time_utc": "2024-06-13T11:30:53.518",
+        "stop_time_utc": "2024-06-13T11:30:57.268"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00072_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00072_V01",
+        "obs_key": "2024165_62m00072",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00072_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00072_V01",
+        "start_time_utc": "2024-06-13T11:45:36.204",
+        "stop_time_utc": "2024-06-13T11:45:39.954"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00074_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00074_V01",
+        "obs_key": "2024165_62m00074",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00074_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00074_V01",
+        "start_time_utc": "2024-06-13T12:00:49.352",
+        "stop_time_utc": "2024-06-13T12:00:53.102"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00076_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00076_V01",
+        "obs_key": "2024165_62m00076",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00076_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00076_V01",
+        "start_time_utc": "2024-06-13T12:16:02.694",
+        "stop_time_utc": "2024-06-13T12:16:06.444"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00078_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00078_V01",
+        "obs_key": "2024165_62m00078",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00078_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00078_V01",
+        "start_time_utc": "2024-06-13T12:30:45.345",
+        "stop_time_utc": "2024-06-13T12:30:49.095"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00080_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00080_V01",
+        "obs_key": "2024165_62m00080",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00080_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00080_V01",
+        "start_time_utc": "2024-06-13T12:45:58.500",
+        "stop_time_utc": "2024-06-13T12:46:02.250"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00082_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00082_V01",
+        "obs_key": "2024165_62m00082",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00082_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00082_V01",
+        "start_time_utc": "2024-06-13T13:00:41.230",
+        "stop_time_utc": "2024-06-13T13:00:44.980"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00084_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00084_V01",
+        "obs_key": "2024165_62m00084",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00084_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00084_V01",
+        "start_time_utc": "2024-06-13T13:15:54.482",
+        "stop_time_utc": "2024-06-13T13:15:58.232"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00086_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00086_V01",
+        "obs_key": "2024165_62m00086",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00086_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00086_V01",
+        "start_time_utc": "2024-06-13T13:30:37.208",
+        "stop_time_utc": "2024-06-13T13:30:40.958"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00088_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00088_V01",
+        "obs_key": "2024165_62m00088",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00088_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00088_V01",
+        "start_time_utc": "2024-06-13T13:45:50.425",
+        "stop_time_utc": "2024-06-13T13:45:54.175"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00090_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00090_V01",
+        "obs_key": "2024165_62m00090",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00090_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00090_V01",
+        "start_time_utc": "2024-06-13T14:01:03.604",
+        "stop_time_utc": "2024-06-13T14:01:07.354"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00092_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00092_V01",
+        "obs_key": "2024165_62m00092",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00092_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00092_V01",
+        "start_time_utc": "2024-06-13T14:15:46.341",
+        "stop_time_utc": "2024-06-13T14:15:50.091"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00094_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00094_V01",
+        "obs_key": "2024165_62m00094",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00094_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00094_V01",
+        "start_time_utc": "2024-06-13T14:30:59.691",
+        "stop_time_utc": "2024-06-13T14:31:03.441"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00096_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00096_V01",
+        "obs_key": "2024165_62m00096",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00096_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00096_V01",
+        "start_time_utc": "2024-06-13T14:45:42.428",
+        "stop_time_utc": "2024-06-13T14:45:46.178"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00098_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00098_V01",
+        "obs_key": "2024165_62m00098",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00098_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00098_V01",
+        "start_time_utc": "2024-06-13T15:00:55.579",
+        "stop_time_utc": "2024-06-13T15:00:59.329"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00112_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00112_V01",
+        "obs_key": "2024165_62m00112",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00112_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00112_V01",
+        "start_time_utc": "2024-06-13T17:01:09.870",
+        "stop_time_utc": "2024-06-13T17:01:15.120"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00114_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00114_V01",
+        "obs_key": "2024165_62m00114",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00114_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00114_V01",
+        "start_time_utc": "2024-06-13T17:31:06.274",
+        "stop_time_utc": "2024-06-13T17:31:11.524"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00116_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00116_V01",
+        "obs_key": "2024165_62m00116",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00116_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00116_V01",
+        "start_time_utc": "2024-06-13T18:01:32.943",
+        "stop_time_utc": "2024-06-13T18:01:38.943"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00118_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00118_V01",
+        "obs_key": "2024165_62m00118",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00118_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00118_V01",
+        "start_time_utc": "2024-06-13T18:31:29.195",
+        "stop_time_utc": "2024-06-13T18:31:36.695"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00130_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00130_V01",
+        "obs_key": "2024165_62m00130",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00130_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00130_V01",
+        "start_time_utc": "2024-06-13T19:41:01.470",
+        "stop_time_utc": "2024-06-13T19:41:15.720"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00139_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00139_V01",
+        "obs_key": "2024165_62m00139",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00139_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00139_V01",
+        "start_time_utc": "2024-06-13T22:31:26.148",
+        "stop_time_utc": "2024-06-13T22:31:31.398"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00142_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00142_V01",
+        "obs_key": "2024165_62m00142",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00142_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00142_V01",
+        "start_time_utc": "2024-06-13T23:00:54.017",
+        "stop_time_utc": "2024-06-13T23:00:58.517"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024165_62M00144_V01.LBL",
+        "edr_product_id": "JNCE_2024165_62M00144_V01",
+        "obs_key": "2024165_62m00144",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024165_62M00144_V01.LBL",
+        "rdr_product_id": "JNCR_2024165_62M00144_V01",
+        "start_time_utc": "2024-06-13T23:30:51.905",
+        "stop_time_utc": "2024-06-13T23:30:56.405"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00145_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62C00145_V01",
+        "obs_key": "2024166_62c00145",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00145_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62C00145_V01",
+        "start_time_utc": "2024-06-14T00:00:19.289",
+        "stop_time_utc": "2024-06-14T00:00:23.789"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00147_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62C00147_V01",
+        "obs_key": "2024166_62c00147",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00147_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62C00147_V01",
+        "start_time_utc": "2024-06-14T00:30:17.127",
+        "stop_time_utc": "2024-06-14T00:30:21.627"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00149_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62C00149_V01",
+        "obs_key": "2024166_62c00149",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00149_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62C00149_V01",
+        "start_time_utc": "2024-06-14T01:00:15.413",
+        "stop_time_utc": "2024-06-14T01:00:19.163"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00151_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62C00151_V01",
+        "obs_key": "2024166_62c00151",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00151_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62C00151_V01",
+        "start_time_utc": "2024-06-14T01:30:13.176",
+        "stop_time_utc": "2024-06-14T01:30:16.926"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00153_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62C00153_V01",
+        "obs_key": "2024166_62c00153",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00153_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62C00153_V01",
+        "start_time_utc": "2024-06-14T02:00:11.014",
+        "stop_time_utc": "2024-06-14T02:00:14.764"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00155_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62C00155_V01",
+        "obs_key": "2024166_62c00155",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00155_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62C00155_V01",
+        "start_time_utc": "2024-06-14T02:30:08.851",
+        "stop_time_utc": "2024-06-14T02:30:12.601"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00157_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62C00157_V01",
+        "obs_key": "2024166_62c00157",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00157_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62C00157_V01",
+        "start_time_utc": "2024-06-14T03:00:06.567",
+        "stop_time_utc": "2024-06-14T03:00:10.317"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00159_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62C00159_V01",
+        "obs_key": "2024166_62c00159",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00159_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62C00159_V01",
+        "start_time_utc": "2024-06-14T03:30:04.456",
+        "stop_time_utc": "2024-06-14T03:30:08.206"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00161_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62C00161_V01",
+        "obs_key": "2024166_62c00161",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00161_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62C00161_V01",
+        "start_time_utc": "2024-06-14T04:00:32.598",
+        "stop_time_utc": "2024-06-14T04:00:36.348"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00163_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62C00163_V01",
+        "obs_key": "2024166_62c00163",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00163_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62C00163_V01",
+        "start_time_utc": "2024-06-14T04:30:30.443",
+        "stop_time_utc": "2024-06-14T04:30:34.193"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00165_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62C00165_V01",
+        "obs_key": "2024166_62c00165",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00165_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62C00165_V01",
+        "start_time_utc": "2024-06-14T05:00:28.194",
+        "stop_time_utc": "2024-06-14T05:00:31.944"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00167_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62C00167_V01",
+        "obs_key": "2024166_62c00167",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00167_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62C00167_V01",
+        "start_time_utc": "2024-06-14T05:30:26.020",
+        "stop_time_utc": "2024-06-14T05:30:29.770"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00169_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62C00169_V01",
+        "obs_key": "2024166_62c00169",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00169_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62C00169_V01",
+        "start_time_utc": "2024-06-14T06:00:23.771",
+        "stop_time_utc": "2024-06-14T06:00:27.521"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00171_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62C00171_V01",
+        "obs_key": "2024166_62c00171",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00171_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62C00171_V01",
+        "start_time_utc": "2024-06-14T06:30:21.492",
+        "stop_time_utc": "2024-06-14T06:30:25.242"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00173_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62C00173_V01",
+        "obs_key": "2024166_62c00173",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00173_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62C00173_V01",
+        "start_time_utc": "2024-06-14T07:00:19.228",
+        "stop_time_utc": "2024-06-14T07:00:22.978"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00175_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62C00175_V01",
+        "obs_key": "2024166_62c00175",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00175_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62C00175_V01",
+        "start_time_utc": "2024-06-14T07:30:17.366",
+        "stop_time_utc": "2024-06-14T07:30:20.366"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62C00177_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62C00177_V01",
+        "obs_key": "2024166_62c00177",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62C00177_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62C00177_V01",
+        "start_time_utc": "2024-06-14T08:00:15.160",
+        "stop_time_utc": "2024-06-14T08:00:18.160"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00146_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62M00146_V01",
+        "obs_key": "2024166_62m00146",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00146_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62M00146_V01",
+        "start_time_utc": "2024-06-14T00:00:49.793",
+        "stop_time_utc": "2024-06-14T00:00:54.293"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00148_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62M00148_V01",
+        "obs_key": "2024166_62m00148",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00148_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62M00148_V01",
+        "start_time_utc": "2024-06-14T00:30:47.626",
+        "stop_time_utc": "2024-06-14T00:30:52.126"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00150_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62M00150_V01",
+        "obs_key": "2024166_62m00150",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00150_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62M00150_V01",
+        "start_time_utc": "2024-06-14T01:00:45.925",
+        "stop_time_utc": "2024-06-14T01:00:49.675"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00152_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62M00152_V01",
+        "obs_key": "2024166_62m00152",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00152_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62M00152_V01",
+        "start_time_utc": "2024-06-14T01:30:43.719",
+        "stop_time_utc": "2024-06-14T01:30:47.469"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00154_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62M00154_V01",
+        "obs_key": "2024166_62m00154",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00154_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62M00154_V01",
+        "start_time_utc": "2024-06-14T02:00:41.502",
+        "stop_time_utc": "2024-06-14T02:00:45.252"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00156_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62M00156_V01",
+        "obs_key": "2024166_62m00156",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00156_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62M00156_V01",
+        "start_time_utc": "2024-06-14T02:30:39.281",
+        "stop_time_utc": "2024-06-14T02:30:43.031"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00158_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62M00158_V01",
+        "obs_key": "2024166_62m00158",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00158_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62M00158_V01",
+        "start_time_utc": "2024-06-14T03:00:37.099",
+        "stop_time_utc": "2024-06-14T03:00:40.849"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00160_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62M00160_V01",
+        "obs_key": "2024166_62m00160",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00160_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62M00160_V01",
+        "start_time_utc": "2024-06-14T03:30:34.928",
+        "stop_time_utc": "2024-06-14T03:30:38.678"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00162_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62M00162_V01",
+        "obs_key": "2024166_62m00162",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00162_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62M00162_V01",
+        "start_time_utc": "2024-06-14T04:01:03.047",
+        "stop_time_utc": "2024-06-14T04:01:06.797"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00164_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62M00164_V01",
+        "obs_key": "2024166_62m00164",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00164_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62M00164_V01",
+        "start_time_utc": "2024-06-14T04:31:00.943",
+        "stop_time_utc": "2024-06-14T04:31:04.693"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00166_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62M00166_V01",
+        "obs_key": "2024166_62m00166",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00166_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62M00166_V01",
+        "start_time_utc": "2024-06-14T05:00:58.753",
+        "stop_time_utc": "2024-06-14T05:01:02.503"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00168_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62M00168_V01",
+        "obs_key": "2024166_62m00168",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00168_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62M00168_V01",
+        "start_time_utc": "2024-06-14T05:30:56.383",
+        "stop_time_utc": "2024-06-14T05:31:00.133"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00170_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62M00170_V01",
+        "obs_key": "2024166_62m00170",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00170_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62M00170_V01",
+        "start_time_utc": "2024-06-14T06:00:54.205",
+        "stop_time_utc": "2024-06-14T06:00:57.955"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00172_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62M00172_V01",
+        "obs_key": "2024166_62m00172",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00172_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62M00172_V01",
+        "start_time_utc": "2024-06-14T06:30:51.941",
+        "stop_time_utc": "2024-06-14T06:30:55.691"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00174_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62M00174_V01",
+        "obs_key": "2024166_62m00174",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00174_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62M00174_V01",
+        "start_time_utc": "2024-06-14T07:00:49.649",
+        "stop_time_utc": "2024-06-14T07:00:53.399"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00176_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62M00176_V01",
+        "obs_key": "2024166_62m00176",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00176_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62M00176_V01",
+        "start_time_utc": "2024-06-14T07:30:47.780",
+        "stop_time_utc": "2024-06-14T07:30:50.780"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62M00178_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62M00178_V01",
+        "obs_key": "2024166_62m00178",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62M00178_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62M00178_V01",
+        "start_time_utc": "2024-06-14T08:00:45.586",
+        "stop_time_utc": "2024-06-14T08:00:48.586"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62R00180_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62R00180_V01",
+        "obs_key": "2024166_62r00180",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62R00180_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62R00180_V01",
+        "start_time_utc": "2024-06-14T08:30:31.912",
+        "stop_time_utc": "2024-06-14T08:30:32.662"
+      },
+      {
+        "edr_file_specification_name": "DATA/EDR/JUPITER/ORBIT_62/JNCE_2024166_62T00179_V01.LBL",
+        "edr_product_id": "JNCE_2024166_62T00179_V01",
+        "obs_key": "2024166_62t00179",
+        "rdr_file_specification_name": "DATA/RDR/JUPITER/ORBIT_62/JNCR_2024166_62T00179_V01.LBL",
+        "rdr_product_id": "JNCR_2024166_62T00179_V01",
+        "start_time_utc": "2024-06-14T08:30:12.849",
+        "stop_time_utc": "2024-06-14T08:30:15.849"
+      }
+    ],
+    "waves_burst_index_tab_orbit62_eligible": [
+      {
+        "family": "B_REC",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T145507_B_REC_V01.LBL",
+        "product_id": "WAV_2024165T145507_B_REC",
+        "start_time": "2024-06-13T14:55:07.565",
+        "stop_time": "2024-06-13T15:14:01.339"
+      },
+      {
+        "family": "E_REC",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T145507_E_REC_V01.LBL",
+        "product_id": "WAV_2024165T145507_E_REC",
+        "start_time": "2024-06-13T14:55:07.565",
+        "stop_time": "2024-06-13T15:14:01.339"
+      },
+      {
+        "family": "NBS_REC",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T145507_NBS_REC_V01.LBL",
+        "product_id": "WAV_2024165T145507_NBS_REC",
+        "start_time": "2024-06-13T14:55:07.565",
+        "stop_time": "2024-06-13T15:14:01.339"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T153754_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T153754_B_BIN",
+        "start_time": "2024-06-13T15:37:54.312",
+        "stop_time": "2024-06-13T15:40:33.337"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T153754_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T153754_E_BIN",
+        "start_time": "2024-06-13T15:37:54.312",
+        "stop_time": "2024-06-13T15:40:33.337"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T154038_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T154038_B_BIN",
+        "start_time": "2024-06-13T15:40:38.312",
+        "stop_time": "2024-06-13T15:43:16.211"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T154038_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T154038_E_BIN",
+        "start_time": "2024-06-13T15:40:38.312",
+        "stop_time": "2024-06-13T15:43:16.211"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T154509_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T154509_B_BIN",
+        "start_time": "2024-06-13T15:45:09.211",
+        "stop_time": "2024-06-13T15:47:45.336"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T154509_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T154509_E_BIN",
+        "start_time": "2024-06-13T15:45:09.211",
+        "stop_time": "2024-06-13T15:47:45.336"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T154745_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T154745_B_BIN",
+        "start_time": "2024-06-13T15:47:45.636",
+        "stop_time": "2024-06-13T15:50:19.336"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T154745_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T154745_E_BIN",
+        "start_time": "2024-06-13T15:47:45.636",
+        "stop_time": "2024-06-13T15:50:19.336"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T155136_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T155136_B_BIN",
+        "start_time": "2024-06-13T15:51:36.636",
+        "stop_time": "2024-06-13T15:54:09.211"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T155136_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T155136_E_BIN",
+        "start_time": "2024-06-13T15:51:36.636",
+        "stop_time": "2024-06-13T15:54:09.211"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T155409_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T155409_B_BIN",
+        "start_time": "2024-06-13T15:54:09.311",
+        "stop_time": "2024-06-13T15:56:40.335"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T155409_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T155409_E_BIN",
+        "start_time": "2024-06-13T15:54:09.311",
+        "stop_time": "2024-06-13T15:56:40.335"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T155737_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T155737_B_BIN",
+        "start_time": "2024-06-13T15:57:37.335",
+        "stop_time": "2024-06-13T16:00:16.660"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T155737_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T155737_E_BIN",
+        "start_time": "2024-06-13T15:57:37.335",
+        "stop_time": "2024-06-13T16:00:16.660"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T160113_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T160113_B_BIN",
+        "start_time": "2024-06-13T16:01:13.660",
+        "stop_time": "2024-06-13T16:04:02.335"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T160113_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T160113_E_BIN",
+        "start_time": "2024-06-13T16:01:13.660",
+        "stop_time": "2024-06-13T16:04:02.335"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T160405_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T160405_B_BIN",
+        "start_time": "2024-06-13T16:04:05.635",
+        "stop_time": "2024-06-13T16:07:05.235"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T160405_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T160405_E_BIN",
+        "start_time": "2024-06-13T16:04:05.635",
+        "stop_time": "2024-06-13T16:07:05.235"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T160826_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T160826_B_BIN",
+        "start_time": "2024-06-13T16:08:26.309",
+        "stop_time": "2024-06-13T16:11:28.659"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T160826_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T160826_E_BIN",
+        "start_time": "2024-06-13T16:08:26.309",
+        "stop_time": "2024-06-13T16:11:28.659"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T161129_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T161129_B_BIN",
+        "start_time": "2024-06-13T16:11:29.309",
+        "stop_time": "2024-06-13T16:14:30.209"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T161129_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T161129_E_BIN",
+        "start_time": "2024-06-13T16:11:29.309",
+        "stop_time": "2024-06-13T16:14:30.209"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T161430_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T161430_B_BIN",
+        "start_time": "2024-06-13T16:14:30.309",
+        "stop_time": "2024-06-13T16:17:25.359"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T161430_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T161430_E_BIN",
+        "start_time": "2024-06-13T16:14:30.309",
+        "stop_time": "2024-06-13T16:17:25.359"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T161726_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T161726_B_BIN",
+        "start_time": "2024-06-13T16:17:26.184",
+        "stop_time": "2024-06-13T16:20:29.333"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T161726_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T161726_E_BIN",
+        "start_time": "2024-06-13T16:17:26.184",
+        "stop_time": "2024-06-13T16:20:29.333"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T162102_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T162102_B_BIN",
+        "start_time": "2024-06-13T16:21:02.308",
+        "stop_time": "2024-06-13T16:24:06.333"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T162102_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T162102_E_BIN",
+        "start_time": "2024-06-13T16:21:02.308",
+        "stop_time": "2024-06-13T16:24:06.333"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T162406_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T162406_B_BIN",
+        "start_time": "2024-06-13T16:24:06.633",
+        "stop_time": "2024-06-13T16:27:12.233"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T162406_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T162406_E_BIN",
+        "start_time": "2024-06-13T16:24:06.633",
+        "stop_time": "2024-06-13T16:27:12.233"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T163107_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T163107_B_BIN",
+        "start_time": "2024-06-13T16:31:07.208",
+        "stop_time": "2024-06-13T16:34:11.207"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T163107_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T163107_E_BIN",
+        "start_time": "2024-06-13T16:31:07.208",
+        "stop_time": "2024-06-13T16:34:11.207"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T163411_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T163411_B_BIN",
+        "start_time": "2024-06-13T16:34:11.307",
+        "stop_time": "2024-06-13T16:37:15.232"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T163411_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T163411_E_BIN",
+        "start_time": "2024-06-13T16:34:11.307",
+        "stop_time": "2024-06-13T16:37:15.232"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T163715_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T163715_B_BIN",
+        "start_time": "2024-06-13T16:37:15.307",
+        "stop_time": "2024-06-13T16:40:17.332"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T163715_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T163715_E_BIN",
+        "start_time": "2024-06-13T16:37:15.307",
+        "stop_time": "2024-06-13T16:40:17.332"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T164018_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T164018_B_BIN",
+        "start_time": "2024-06-13T16:40:18.182",
+        "stop_time": "2024-06-13T16:43:15.332"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T164018_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T164018_E_BIN",
+        "start_time": "2024-06-13T16:40:18.182",
+        "stop_time": "2024-06-13T16:43:15.332"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T164448_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T164448_B_BIN",
+        "start_time": "2024-06-13T16:44:48.306",
+        "stop_time": "2024-06-13T16:47:47.206"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T164448_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T164448_E_BIN",
+        "start_time": "2024-06-13T16:44:48.306",
+        "stop_time": "2024-06-13T16:47:47.206"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T164924_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T164924_B_BIN",
+        "start_time": "2024-06-13T16:49:24.306",
+        "stop_time": "2024-06-13T16:52:21.331"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T164924_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T164924_E_BIN",
+        "start_time": "2024-06-13T16:49:24.306",
+        "stop_time": "2024-06-13T16:52:21.331"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T165251_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T165251_B_BIN",
+        "start_time": "2024-06-13T16:52:51.631",
+        "stop_time": "2024-06-13T16:55:55.331"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T165251_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T165251_E_BIN",
+        "start_time": "2024-06-13T16:52:51.631",
+        "stop_time": "2024-06-13T16:55:55.331"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T165555_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T165555_B_BIN",
+        "start_time": "2024-06-13T16:55:55.631",
+        "stop_time": "2024-06-13T16:58:59.330"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T165555_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T165555_E_BIN",
+        "start_time": "2024-06-13T16:55:55.631",
+        "stop_time": "2024-06-13T16:58:59.330"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T165918_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T165918_B_BIN",
+        "start_time": "2024-06-13T16:59:18.180",
+        "stop_time": "2024-06-13T17:02:21.655"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T165918_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T165918_E_BIN",
+        "start_time": "2024-06-13T16:59:18.180",
+        "stop_time": "2024-06-13T17:02:21.655"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T170222_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T170222_B_BIN",
+        "start_time": "2024-06-13T17:02:22.305",
+        "stop_time": "2024-06-13T17:05:24.330"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T170222_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T170222_E_BIN",
+        "start_time": "2024-06-13T17:02:22.305",
+        "stop_time": "2024-06-13T17:05:24.330"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T170524_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T170524_B_BIN",
+        "start_time": "2024-06-13T17:05:24.655",
+        "stop_time": "2024-06-13T17:08:21.654"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T170524_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T170524_E_BIN",
+        "start_time": "2024-06-13T17:05:24.655",
+        "stop_time": "2024-06-13T17:08:21.654"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T170909_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T170909_B_BIN",
+        "start_time": "2024-06-13T17:09:09.629",
+        "stop_time": "2024-06-13T17:12:07.329"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T170909_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T170909_E_BIN",
+        "start_time": "2024-06-13T17:09:09.629",
+        "stop_time": "2024-06-13T17:12:07.329"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T171254_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T171254_B_BIN",
+        "start_time": "2024-06-13T17:12:54.629",
+        "stop_time": "2024-06-13T17:15:53.229"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T171254_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T171254_E_BIN",
+        "start_time": "2024-06-13T17:12:54.629",
+        "stop_time": "2024-06-13T17:15:53.229"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T171820_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T171820_B_BIN",
+        "start_time": "2024-06-13T17:18:20.629",
+        "stop_time": "2024-06-13T17:21:19.328"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T171820_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T171820_E_BIN",
+        "start_time": "2024-06-13T17:18:20.629",
+        "stop_time": "2024-06-13T17:21:19.328"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T172119_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T172119_B_BIN",
+        "start_time": "2024-06-13T17:21:19.628",
+        "stop_time": "2024-06-13T17:24:18.228"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T172119_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T172119_E_BIN",
+        "start_time": "2024-06-13T17:21:19.628",
+        "stop_time": "2024-06-13T17:24:18.228"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T172628_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T172628_B_BIN",
+        "start_time": "2024-06-13T17:26:28.328",
+        "stop_time": "2024-06-13T17:29:26.653"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T172628_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T172628_E_BIN",
+        "start_time": "2024-06-13T17:26:28.328",
+        "stop_time": "2024-06-13T17:29:26.653"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T172927_B_BIN_V01.LBL",
+        "product_id": "WAV_2024165T172927_B_BIN",
+        "start_time": "2024-06-13T17:29:27.303",
+        "stop_time": "2024-06-13T17:32:25.328"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T172927_E_BIN_V01.LBL",
+        "product_id": "WAV_2024165T172927_E_BIN",
+        "start_time": "2024-06-13T17:29:27.303",
+        "stop_time": "2024-06-13T17:32:25.328"
+      },
+      {
+        "family": "B_REC",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T192210_B_REC_V01.LBL",
+        "product_id": "WAV_2024165T192210_B_REC",
+        "start_time": "2024-06-13T19:22:10.294",
+        "stop_time": "2024-06-13T20:32:08.238"
+      },
+      {
+        "family": "E_REC",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T192210_E_REC_V01.LBL",
+        "product_id": "WAV_2024165T192210_E_REC",
+        "start_time": "2024-06-13T19:22:10.294",
+        "stop_time": "2024-06-13T20:32:08.238"
+      },
+      {
+        "family": "NBS_REC",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T192210_NBS_REC_V01.LBL",
+        "product_id": "WAV_2024165T192210_NBS_REC",
+        "start_time": "2024-06-13T19:22:10.294",
+        "stop_time": "2024-06-13T20:32:08.238"
+      },
+      {
+        "family": "B_REC",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T203914_B_REC_V01.LBL",
+        "product_id": "WAV_2024165T203914_B_REC",
+        "start_time": "2024-06-13T20:39:14.287",
+        "stop_time": "2024-06-13T22:52:06.626"
+      },
+      {
+        "family": "E_REC",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T203914_E_REC_V01.LBL",
+        "product_id": "WAV_2024165T203914_E_REC",
+        "start_time": "2024-06-13T20:39:14.287",
+        "stop_time": "2024-06-13T22:52:06.626"
+      },
+      {
+        "family": "NBS_REC",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024165T203914_NBS_REC_V01.LBL",
+        "product_id": "WAV_2024165T203914_NBS_REC",
+        "start_time": "2024-06-13T20:39:14.287",
+        "stop_time": "2024-06-13T22:52:06.626"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T041717_B_BIN_V01.LBL",
+        "product_id": "WAV_2024166T041717_B_BIN",
+        "start_time": "2024-06-14T04:17:17.575",
+        "stop_time": "2024-06-14T04:20:22.275"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T041717_E_BIN_V01.LBL",
+        "product_id": "WAV_2024166T041717_E_BIN",
+        "start_time": "2024-06-14T04:17:17.575",
+        "stop_time": "2024-06-14T04:20:22.275"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T042124_B_BIN_V01.LBL",
+        "product_id": "WAV_2024166T042124_B_BIN",
+        "start_time": "2024-06-14T04:21:24.250",
+        "stop_time": "2024-06-14T04:24:28.299"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T042124_E_BIN_V01.LBL",
+        "product_id": "WAV_2024166T042124_E_BIN",
+        "start_time": "2024-06-14T04:21:24.250",
+        "stop_time": "2024-06-14T04:24:28.299"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T042429_B_BIN_V01.LBL",
+        "product_id": "WAV_2024166T042429_B_BIN",
+        "start_time": "2024-06-14T04:24:29.149",
+        "stop_time": "2024-06-14T04:27:35.599"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T042429_E_BIN_V01.LBL",
+        "product_id": "WAV_2024166T042429_E_BIN",
+        "start_time": "2024-06-14T04:24:29.149",
+        "stop_time": "2024-06-14T04:27:35.599"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T043321_B_BIN_V01.LBL",
+        "product_id": "WAV_2024166T043321_B_BIN",
+        "start_time": "2024-06-14T04:33:21.149",
+        "stop_time": "2024-06-14T04:36:24.148"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T043321_E_BIN_V01.LBL",
+        "product_id": "WAV_2024166T043321_E_BIN",
+        "start_time": "2024-06-14T04:33:21.149",
+        "stop_time": "2024-06-14T04:36:24.148"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T044932_B_BIN_V01.LBL",
+        "product_id": "WAV_2024166T044932_B_BIN",
+        "start_time": "2024-06-14T04:49:32.147",
+        "stop_time": "2024-06-14T04:52:47.272"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T044932_E_BIN_V01.LBL",
+        "product_id": "WAV_2024166T044932_E_BIN",
+        "start_time": "2024-06-14T04:49:32.147",
+        "stop_time": "2024-06-14T04:52:47.272"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T051715_B_BIN_V01.LBL",
+        "product_id": "WAV_2024166T051715_B_BIN",
+        "start_time": "2024-06-14T05:17:15.570",
+        "stop_time": "2024-06-14T05:20:28.595"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T051715_E_BIN_V01.LBL",
+        "product_id": "WAV_2024166T051715_E_BIN",
+        "start_time": "2024-06-14T05:17:15.570",
+        "stop_time": "2024-06-14T05:20:28.595"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T052536_B_BIN_V01.LBL",
+        "product_id": "WAV_2024166T052536_B_BIN",
+        "start_time": "2024-06-14T05:25:36.119",
+        "stop_time": "2024-06-14T05:28:54.269"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T052536_E_BIN_V01.LBL",
+        "product_id": "WAV_2024166T052536_E_BIN",
+        "start_time": "2024-06-14T05:25:36.119",
+        "stop_time": "2024-06-14T05:28:54.269"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T053603_B_BIN_V01.LBL",
+        "product_id": "WAV_2024166T053603_B_BIN",
+        "start_time": "2024-06-14T05:36:03.244",
+        "stop_time": "2024-06-14T05:39:21.268"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T053603_E_BIN_V01.LBL",
+        "product_id": "WAV_2024166T053603_E_BIN",
+        "start_time": "2024-06-14T05:36:03.244",
+        "stop_time": "2024-06-14T05:39:21.268"
+      },
+      {
+        "family": "B_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T054336_B_BIN_V01.LBL",
+        "product_id": "WAV_2024166T054336_B_BIN",
+        "start_time": "2024-06-14T05:43:36.243",
+        "stop_time": "2024-06-14T05:46:53.268"
+      },
+      {
+        "family": "E_BIN",
+        "file_specification_name": "DATA/WAVES_BURST/2024149_ORBIT_62/WAV_2024166T054336_E_BIN_V01.LBL",
+        "product_id": "WAV_2024166T054336_E_BIN",
+        "start_time": "2024-06-14T05:43:36.243",
+        "stop_time": "2024-06-14T05:46:53.268"
+      }
+    ]
+  },
+  "replay_id": "juno_pj62_large_replay_v2",
+  "schema": "gcsi.pj62_discovery_evidence_sidecar",
+  "schema_version": 1
+}
