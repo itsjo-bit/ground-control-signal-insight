@@ -895,8 +895,13 @@ function DataSection(props: CommonProps) {
                       {formatBitsAsDataVolume(p.size_bits)}
                     </span>
                   )}
-                  <div style={{ width: 28, height: 3, background: 'rgba(46,58,79,0.8)', borderRadius: 2, flexShrink: 0 }}>
-                    <div style={{ width: `${p.criticality * 100}%`, height: '100%', borderRadius: 2, background: p.criticality >= 0.85 ? '#f87171' : p.criticality >= 0.7 ? '#f59e0b' : '#34d399' }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                    <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: 'rgba(147,160,180,0.5)', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+                      CRIT {p.criticality.toFixed(2)}
+                    </span>
+                    <div style={{ width: 28, height: 3, background: 'rgba(46,58,79,0.8)', borderRadius: 2 }}>
+                      <div style={{ width: `${p.criticality * 100}%`, height: '100%', borderRadius: 2, background: p.criticality >= 0.85 ? '#f87171' : p.criticality >= 0.7 ? '#f59e0b' : '#34d399' }} />
+                    </div>
                   </div>
                   <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: p.deadline_s < 120 ? '#f87171' : 'rgba(147,160,180,0.5)', flexShrink: 0, minWidth: 36, textAlign: 'right' }}>
                     {p.deadline_s < 3600 ? `${p.deadline_s.toFixed(0)}s` : `${(p.deadline_s / 3600).toFixed(1)}h`}
