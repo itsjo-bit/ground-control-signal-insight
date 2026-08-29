@@ -65,11 +65,18 @@ function deriveLinkStatus(
 
 // ── Format distance for overlay ──────────────────────────────────────────────
 
-function formatDist(km: number | null): string {
+function formatDistValue(km: number | null): string {
   if (km === null) return '—';
-  if (km >= 1_000_000) return `${(km / 1_000_000).toFixed(1)} M km`;
-  if (km >= 1_000)     return `${(km / 1_000).toFixed(1)} k km`;
-  return `${km.toFixed(0)} km`;
+  if (km >= 1_000_000) return `${(km / 1_000_000).toFixed(1)}`;
+  if (km >= 1_000)     return `${(km / 1_000).toFixed(1)}`;
+  return `${km.toFixed(0)}`;
+}
+
+function formatDistUnit(km: number | null): string {
+  if (km === null) return '';
+  if (km >= 1_000_000) return 'MILLION KM';
+  if (km >= 1_000)     return 'THOUSAND KM';
+  return 'KM';
 }
 
 // ── Scene component ───────────────────────────────────────────────────────────
@@ -158,7 +165,8 @@ function SceneContent({
     }
   });
 
-  const distLabel = formatDist(distanceKm);
+  const distValue = formatDistValue(distanceKm);
+  const distUnit  = formatDistUnit(distanceKm);
   const linkColor = {
     good:        '#22ddaa',
     warning:     '#ffaa33',
@@ -256,8 +264,21 @@ function SceneContent({
               color: '#cce8ff',
               letterSpacing: '0.03em',
             }}>
-              {distLabel}
+              {distValue}
             </div>
+            {distUnit && (
+              <div style={{
+                fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
+                fontSize: 9,
+                fontWeight: 600,
+                color: '#cce8ff',
+                letterSpacing: '0.08em',
+                whiteSpace: 'nowrap',
+                opacity: 0.85,
+              }}>
+                {distUnit}
+              </div>
+            )}
             {/* NOT TO SCALE label — visual spacing is presentation only */}
             <div
               data-testid="not-to-scale-label"
