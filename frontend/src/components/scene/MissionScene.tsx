@@ -238,18 +238,18 @@ function SceneContent({
       {/* Distance overlay — floats above the link midpoint */}
       {showLabels && (
         <Html
-          position={[linkMid.x, linkMid.y, linkMid.z]}
+          position={[linkMid.x, linkMid.y + 1.5, linkMid.z]}
           center
-          distanceFactor={65}
+          distanceFactor={48}
           occlude={false}
           style={{ pointerEvents: 'none', userSelect: 'none' }}
         >
           <div style={{
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
           }}>
             <div style={{
               fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-              fontSize: 9,
+              fontSize: 7,
               color: linkColor,
               letterSpacing: '0.1em',
               textTransform: 'uppercase',
@@ -259,7 +259,7 @@ function SceneContent({
             </div>
             <div style={{
               fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-              fontSize: 14,
+              fontSize: 11,
               fontWeight: 700,
               color: '#cce8ff',
               letterSpacing: '0.03em',
@@ -269,7 +269,7 @@ function SceneContent({
             {distUnit && (
               <div style={{
                 fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-                fontSize: 9,
+                fontSize: 7,
                 fontWeight: 600,
                 color: '#cce8ff',
                 letterSpacing: '0.08em',
@@ -284,7 +284,7 @@ function SceneContent({
               data-testid="not-to-scale-label"
               style={{
                 fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-                fontSize: 7,
+                fontSize: 6,
                 color: 'rgba(180,200,255,0.45)',
                 letterSpacing: '0.12em',
                 textTransform: 'uppercase',
@@ -296,7 +296,7 @@ function SceneContent({
             {linkStatus !== 'good' && (
               <div style={{
                 fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-                fontSize: 8,
+                fontSize: 7,
                 color: linkColor,
                 letterSpacing: '0.08em',
                 textTransform: 'uppercase',
