@@ -160,8 +160,8 @@ interface CommonProps {
   // Phase 6E-C7: source mode for historical context note in ConfigPanel
   sourceMode?: MissionSourceMode | null;
   // ── V3.5 props ───────────────────────────────────────────────────────────────
-  workspaceMode: WorkspaceMode;
-  onSetWorkspaceMode: (mode: WorkspaceMode) => void;
+  workspaceMode?: WorkspaceMode;
+  onSetWorkspaceMode?: (mode: WorkspaceMode) => void;
   // ── Phase 4.2F props ─────────────────────────────────────────────────────────
   experienceManifest: ExperienceManifest | null;
   experienceAvailable: boolean;
@@ -1694,10 +1694,7 @@ function AiSection(props: CommonProps) {
             )}
             {activeTab === 'decision' && (
               <>
-                {/* Human decision panel */}
-                <AiHumanDecisionPanel props={props} />
-
-                {/* Full decision chain */}
+                {/* Decision chain detail — for reference */}
                 <MissionDecisionPanel
                   prioritization={props.aiPrioritization}
                   recommendation={props.recommendation}
@@ -1708,6 +1705,10 @@ function AiSection(props: CommonProps) {
                   prioritizationError={props.aiPrioritizationError}
                   candidateCount={props.aiCandidateCount}
                 />
+                {/* Approve/Modify/Reject is in the Decision/Outcome panel (right) — single authoritative location */}
+                <div style={{ marginTop: 10, padding: '8px 10px', background: 'rgba(47,129,247,0.06)', border: '1px solid rgba(47,129,247,0.18)', borderRadius: 3, fontFamily: '"IBM Plex Sans", system-ui, sans-serif', fontSize: 11, color: '#8b949e', lineHeight: 1.5 }}>
+                  Approve, Modify, or Reject the recommendation in the <strong style={{ color: '#2f81f7' }}>Decision / Evidence</strong> panel on the right.
+                </div>
               </>
             )}
           </div>
@@ -2224,8 +2225,8 @@ export function RightPanel({
   onResetPanelWidth,
   panelWidth,
   panelDefaultWidth,
-  workspaceMode,
-  onSetWorkspaceMode,
+  workspaceMode = 'normal',
+  onSetWorkspaceMode = () => {},
   ...props
 }: RightPanelProps) {
   const heading = SECTION_HEADINGS[section];
@@ -2378,6 +2379,512 @@ export function RightPanel({
         )}
         {section === 'log'          && <LogSection {...props} workspaceMode={workspaceMode} onSetWorkspaceMode={onSetWorkspaceMode} />}
         {section === 'config'       && (
+          <ConfigPanel
+            settings={viewSettings}
+            onUpdate={onUpdateSetting}
+            onResetSettings={onResetSettings}
+            onResetPanelWidth={onResetPanelWidth}
+            panelWidth={panelWidth}
+            panelDefaultWidth={panelDefaultWidth}
+            availableScenarios={props.availableScenarios}
+            activeScenarioPath={props.activeScenarioPath}
+            scenarioSwitching={props.scenarioSwitching}
+            onSwitchScenario={props.onSwitchScenario}
+            sourceMode={props.sourceMode}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── DecisionPanel — lower-right zone of the four-zone layout ─────────────────
+//
+// Per-section decision / evidence / outcome content.
+// "What should the operator do, why, and what happened?"
+//
+// IMPORTANT: Approve/Modify/Reject/Execute controls exist ONLY here.
+// AnalysisPanel does not render duplicate decision controls.
+
+function DecisionMission(props: CommonProps) {
+  const ms = props.missionState;
+  const ls = props.linkState;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ ...CARD }}>
+        <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 9, color: '#8b949e', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid #30363d' }}>
+          Operational Context
+        </div>
+        {ms && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {[
+              { label: 'Phase', value: ms.mission_phase ?? '—' },
+              { label: 'Event', value: ms.current_event ?? '—' },
+              { label: 'Risk', value: ms.risk_level, color: ms.risk_level === 'CRITICAL' || ms.risk_level === 'HIGH' ? '#f85149' : ms.risk_level === 'MEDIUM' ? '#d29922' : '#3fb950' },
+              ...(ls ? [{ label: 'Link', value: ls.link_stability > 0.85 ? 'Stable' : ls.link_stability > 0.6 ? 'Degraded' : 'Unstable', color: ls.link_stability > 0.75 ? '#3fb950' : '#d29922' }] : []),
+            ].map(({ label, value, color }) => (
+              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '3px 0', borderBottom: '1px solid #21262d' }}>
+                <span style={{ fontFamily: '"IBM Plex Sans"', fontSize: 10, color: '#8b949e' }}>{label}</span>
+                <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 11, fontWeight: 600, color: color ?? '#e6edf3' }}>{value}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {!ms && (
+          <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 11, color: '#656d76' }}>Loading…</div>
+        )}
+        <div style={{ marginTop: 8, fontFamily: '"IBM Plex Sans"', fontSize: 10, color: '#656d76', lineHeight: 1.5 }}>
+          To act on this mission, select a decision mode in the AI or Data sections, then approve a transmission plan.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DecisionConfig() {
+  return (
+    <div style={{ ...CARD }}>
+      <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 9, color: '#8b949e', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 8 }}>
+        System Context
+      </div>
+      <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 11, color: '#8b949e', lineHeight: 1.5 }}>
+        Configuration changes take effect on next scenario load.
+        Use Reset or Refresh in the header to apply changes to mission data.
+      </div>
+    </div>
+  );
+}
+
+function DecisionLog(props: CommonProps) {
+  const hasResult = !!props.approveResult;
+  if (!hasResult) {
+    return (
+      <div style={{ ...CARD }}>
+        <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 9, color: '#8b949e', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 6 }}>
+          Mission Outcome
+        </div>
+        <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 11, color: '#656d76', lineHeight: 1.5 }}>
+          No transmission has been completed yet.
+          Complete a transmission to see the outcome summary here.
+        </div>
+      </div>
+    );
+  }
+  const sim = props.approveResult!.simulation_result;
+  const delivered = sim.delivered_packets.length;
+  const failed = sim.failed_packets.length;
+  const deferred = sim.deferred_packets.length;
+  return (
+    <div style={{ ...CARD }}>
+      <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 9, color: '#8b949e', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid #30363d' }}>
+        Transmission Outcome
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {[
+          { label: 'Delivered', value: `${delivered}`, color: '#3fb950' },
+          { label: 'Failed', value: `${failed}`, color: failed > 0 ? '#f85149' : '#3fb950' },
+          { label: 'Deferred', value: `${deferred}`, color: deferred > 0 ? '#d29922' : '#3fb950' },
+        ].map(({ label, value, color }) => (
+          <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '3px 0', borderBottom: '1px solid #21262d' }}>
+            <span style={{ fontFamily: '"IBM Plex Sans"', fontSize: 10, color: '#8b949e' }}>{label}</span>
+            <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 13, fontWeight: 700, color }}>{value}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: 8, fontFamily: '"IBM Plex Sans"', fontSize: 10, color: '#656d76' }}>
+        See Log section for full reception details, narrative, and report.
+      </div>
+    </div>
+  );
+}
+
+function DecisionTransmission(props: CommonProps) {
+  // The authoritative Approve/Modify/Reject and choreography belong here
+  // when decision mode is 'ai' (AI recommended plan).
+  // Manual TRANSMIT button remains in the Data section (lower-left) per spec.
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* AI authorization — primary decision widget */}
+      {props.decisionMode === 'ai' && (
+        <AiHumanDecisionPanel props={props} />
+      )}
+      {/* Outcome banner */}
+      <TransmissionOutcomeBanner
+        approvalPhase={props.approvalPhase}
+        simulationResult={props.approveResult?.simulation_result ?? null}
+        isAiRecommendedPlan={
+          props.approveResult?.simulation_result?.plan_id !== undefined &&
+          props.approveResult.simulation_result.plan_id !== 'operator-override' &&
+          props.approveResult.simulation_result.plan_id !== 'operator-manual'
+        }
+      />
+      {/* Manual mode: shows accounting only — TRANSMIT button stays in analysis (TransmissionSection) */}
+      {props.decisionMode === 'manual' && (
+        <div style={{ ...CARD }}>
+          <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 9, color: '#8b949e', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 6 }}>
+            Manual Authorization
+          </div>
+          <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 11, color: '#8b949e', lineHeight: 1.5 }}>
+            Review your selected products in the Transmission section (left), then use
+            <strong style={{ color: '#3fb950' }}> Transmit Selected</strong> to authorize a single execution.
+          </div>
+          {props.manualAssessment && !props.manualAssessmentStale && (
+            <div style={{ marginTop: 8, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+              {[
+                { label: 'SELECTED', value: `${props.manualAssessment.capacity_summary.selected_count}`, color: '#e6edf3' },
+                { label: 'RISK', value: props.manualAssessment.evaluation.risk_level, color: props.manualAssessment.evaluation.risk_level === 'LOW' ? '#3fb950' : props.manualAssessment.evaluation.risk_level === 'MEDIUM' ? '#d29922' : '#f85149' },
+              ].map(({ label, value, color }) => (
+                <div key={label}>
+                  <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 8, color: '#656d76', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 1 }}>{label}</div>
+                  <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 12, fontWeight: 700, color }}>{value}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {props.decisionMode === 'unselected' && (
+        <div style={{ ...CARD }}>
+          <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 9, color: '#8b949e', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 6 }}>
+            Authorization
+          </div>
+          <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 11, color: '#656d76', lineHeight: 1.5 }}>
+            Select a decision mode (AI Assisted or Manual) to begin planning a transmission.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DecisionData(props: CommonProps) {
+  // When a product is selected (manual mode), show selection context.
+  // Otherwise show concise mission bottleneck / context.
+  const hasSelection = props.manualSelectedIds.size > 0;
+  const hasAssessment = !!props.manualAssessment && !props.manualAssessmentStale;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {hasSelection ? (
+        <div style={{ ...CARD, borderColor: 'rgba(63,185,80,0.22)' }}>
+          <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 9, color: '#3fb950', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 6, paddingBottom: 6, borderBottom: '1px solid rgba(63,185,80,0.18)' }}>
+            Manual Selection
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '3px 0', borderBottom: '1px solid #21262d' }}>
+              <span style={{ fontFamily: '"IBM Plex Sans"', fontSize: 10, color: '#8b949e' }}>Selected</span>
+              <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 13, fontWeight: 700, color: '#3fb950' }}>{props.manualSelectedIds.size}</span>
+            </div>
+            {hasAssessment && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '3px 0', borderBottom: '1px solid #21262d' }}>
+                  <span style={{ fontFamily: '"IBM Plex Sans"', fontSize: 10, color: '#8b949e' }}>Plan risk</span>
+                  <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 11, fontWeight: 700, color: props.manualAssessment!.evaluation.risk_level === 'LOW' ? '#3fb950' : props.manualAssessment!.evaluation.risk_level === 'MEDIUM' ? '#d29922' : '#f85149' }}>
+                    {props.manualAssessment!.evaluation.risk_level}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '3px 0', borderBottom: '1px solid #21262d' }}>
+                  <span style={{ fontFamily: '"IBM Plex Sans"', fontSize: 10, color: '#8b949e' }}>Deferred</span>
+                  <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 11, fontWeight: 700, color: '#d29922' }}>{props.manualAssessment!.evaluation.deferred_packets.length}</span>
+                </div>
+              </>
+            )}
+          </div>
+          <div style={{ marginTop: 8, fontFamily: '"IBM Plex Sans"', fontSize: 10, color: '#656d76', lineHeight: 1.5 }}>
+            Navigate to Transmit section to evaluate and authorize your plan.
+          </div>
+        </div>
+      ) : (
+        <div style={{ ...CARD }}>
+          <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 9, color: '#8b949e', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 6 }}>
+            Mission Context
+          </div>
+          <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 11, color: '#8b949e', lineHeight: 1.5 }}>
+            Browse the data products in the table and select items to build a manual transmission plan.
+            Or navigate to the AI section to use AI-assisted prioritization.
+          </div>
+          {props.dataProductsCount > 0 && props.availableCapacityBits > 0 && (
+            <div style={{ marginTop: 8, fontFamily: '"IBM Plex Mono"', fontSize: 11, color: '#d29922' }}>
+              {props.dataProductsCount} products · {(props.queuedDataBits / props.availableCapacityBits).toFixed(0)}× queue pressure
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DecisionAi(props: CommonProps) {
+  // AI: recommendation, reasoning, risk, Approve/Modify/Reject
+  const hasResult = props.aiLifecycle === 'ready' || props.aiLifecycle === 'stale';
+  if (!hasResult) {
+    return (
+      <div style={{ ...CARD }}>
+        <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 9, color: '#8b949e', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 6 }}>
+          AI Decision
+        </div>
+        <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 11, color: '#656d76', lineHeight: 1.5 }}>
+          {props.aiLifecycle === 'analyzing' ? 'AI analysis in progress…' : 'Run AI analysis from the left panel to receive a recommendation.'}
+        </div>
+        {props.aiLifecycle === 'error' && props.aiError && (
+          <div style={{ marginTop: 6, fontFamily: '"IBM Plex Mono"', fontSize: 10, color: '#f85149' }}>
+            {props.aiError.slice(0, 120)}
+          </div>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* Authoritative decision widget — Approve / Modify / Reject */}
+      <AiHumanDecisionPanel props={props} />
+
+      {/* Outcome banner */}
+      <TransmissionOutcomeBanner
+        approvalPhase={props.approvalPhase}
+        simulationResult={props.approveResult?.simulation_result ?? null}
+        isAiRecommendedPlan={
+          props.approveResult?.simulation_result?.plan_id !== undefined &&
+          props.approveResult.simulation_result.plan_id !== 'operator-override' &&
+          props.approveResult.simulation_result.plan_id !== 'operator-manual'
+        }
+      />
+    </div>
+  );
+}
+
+export interface DecisionPanelOuterProps extends CommonProps {
+  section: NavSection;
+  workspaceMode: WorkspaceMode;
+  onSetWorkspaceMode: (mode: WorkspaceMode) => void;
+}
+
+const DECISION_HEADINGS: Record<NavSection, { icon: string; title: string }> = {
+  mission:      { icon: '◉', title: 'Operational Context' },
+  spacecraft:   { icon: '⬡', title: 'Spacecraft Context' },
+  comms:        { icon: '⌾', title: 'Link Context' },
+  data:         { icon: '▦', title: 'Selection Summary' },
+  ai:           { icon: '◈', title: 'Decision / Evidence' },
+  transmission: { icon: '↗', title: 'Authorization' },
+  log:          { icon: '≡', title: 'Outcome Summary' },
+  config:       { icon: '⚙', title: 'System Context' },
+};
+
+export function DecisionPanel({
+  section,
+  workspaceMode,
+  onSetWorkspaceMode,
+  ...props
+}: DecisionPanelOuterProps) {
+  const heading = DECISION_HEADINGS[section];
+  const isFocus = workspaceMode === 'focus';
+
+  return (
+    <div
+      data-testid={`decision-panel-${section}`}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        background: '#0d1117',
+        borderLeft: '1px solid #30363d',
+        overflow: 'hidden',
+        minWidth: 0,
+      }}
+    >
+      {/* Zone header */}
+      <div style={{
+        padding: '7px 12px 6px',
+        borderBottom: '1px solid #30363d',
+        flexShrink: 0,
+        background: '#161b22',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+      }}>
+        <span style={{ fontSize: 10, color: '#484f58' }}>{heading.icon}</span>
+        <span style={{
+          fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
+          fontSize: 10,
+          fontWeight: 600,
+          color: '#8b949e',
+          textTransform: 'uppercase',
+          letterSpacing: '0.07em',
+          flex: 1,
+        }}>
+          {heading.title}
+        </span>
+        {/* Focus/expand mode controls — appear in decision panel header */}
+        <WorkspaceModeControls mode={workspaceMode} onSet={onSetWorkspaceMode} />
+      </div>
+
+      {/* Scrollable content */}
+      <div style={{
+        flex: 1,
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        padding: '10px',
+        minHeight: 0,
+      }}>
+        {section === 'mission'    && <DecisionMission {...props} />}
+        {section === 'spacecraft' && <DecisionMission {...props} />}
+        {section === 'comms'      && <DecisionMission {...props} />}
+        {section === 'data'       && <DecisionData {...props} />}
+        {section === 'ai'         && <DecisionAi {...props} />}
+        {section === 'transmission' && <DecisionTransmission {...props} />}
+        {section === 'log'        && <DecisionLog {...props} />}
+        {section === 'config'     && <DecisionConfig />}
+        {isFocus && (
+          <div style={{ marginTop: 4, fontFamily: '"IBM Plex Sans"', fontSize: 10, color: '#444c56' }}>
+            Press Esc or click Exit Focus to return to normal layout.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── AnalysisPanel — lower-left zone of the four-zone layout ──────────────────
+//
+// Contextual analytical workbench driven by the selected navigation section.
+// Reuses the existing section rendering from RightPanel.
+// Does NOT contain Approve / Modify / Reject controls (those are in DecisionPanel).
+
+export interface AnalysisPanelProps extends CommonProps {
+  section: NavSection;
+  viewSettings: ViewSettings;
+  onUpdateSetting: <K extends keyof ViewSettings>(key: K, value: ViewSettings[K]) => void;
+  onResetSettings: () => void;
+  onResetPanelWidth: () => void;
+  panelWidth: number;
+  panelDefaultWidth: number;
+  workspaceMode: WorkspaceMode;
+  onSetWorkspaceMode: (mode: WorkspaceMode) => void;
+}
+
+const ANALYSIS_HEADINGS: Record<NavSection, { icon: string; title: string }> = {
+  mission:      { icon: '◉', title: 'Mission Analysis' },
+  spacecraft:   { icon: '⬡', title: 'Spacecraft' },
+  comms:        { icon: '⌾', title: 'Link Health & What-If' },
+  data:         { icon: '▦', title: 'Data Products' },
+  ai:           { icon: '◈', title: 'AI Analysis' },
+  transmission: { icon: '↗', title: 'Transmission' },
+  log:          { icon: '≡', title: 'Mission Log' },
+  config:       { icon: '⚙', title: 'Configuration' },
+};
+
+export function AnalysisPanel({
+  section,
+  viewSettings,
+  onUpdateSetting,
+  onResetSettings,
+  onResetPanelWidth,
+  panelWidth,
+  panelDefaultWidth,
+  workspaceMode,
+  onSetWorkspaceMode,
+  ...props
+}: AnalysisPanelProps) {
+  const heading = ANALYSIS_HEADINGS[section];
+
+  const aiStatusBadge = section === 'ai' && props.aiLifecycle !== 'standby' && (
+    <span style={{
+      marginLeft: 8, fontSize: 9, fontWeight: 700,
+      background: props.aiLifecycle === 'ready' ? 'rgba(63,185,80,0.10)' :
+                  props.aiLifecycle === 'analyzing' ? 'rgba(47,129,247,0.12)' :
+                  props.aiLifecycle === 'error' ? 'rgba(248,81,73,0.10)' :
+                  props.aiLifecycle === 'stale' ? 'rgba(210,153,34,0.10)' : 'transparent',
+      color: props.aiLifecycle === 'ready' ? '#3fb950' :
+             props.aiLifecycle === 'analyzing' ? '#2f81f7' :
+             props.aiLifecycle === 'error' ? '#f85149' :
+             props.aiLifecycle === 'stale' ? '#d29922' : 'transparent',
+      border: `1px solid ${props.aiLifecycle === 'ready' ? 'rgba(63,185,80,0.28)' :
+              props.aiLifecycle === 'analyzing' ? 'rgba(47,129,247,0.30)' :
+              props.aiLifecycle === 'error' ? 'rgba(248,81,73,0.28)' :
+              props.aiLifecycle === 'stale' ? 'rgba(210,153,34,0.28)' : 'transparent'}`,
+      borderRadius: 2, padding: '1px 5px',
+      fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
+      letterSpacing: '0.05em',
+    }}>
+      {props.aiLifecycle.toUpperCase()}
+    </span>
+  );
+
+  const dataBadge = section === 'data' && props.dataProductsCount > 0 && (
+    <span style={{
+      marginLeft: 8, fontSize: 9, fontWeight: 700,
+      background: '#21262d', color: '#8b949e',
+      border: '1px solid #30363d',
+      borderRadius: 2, padding: '1px 5px',
+      fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
+    }}>
+      {props.dataProductsCount}
+    </span>
+  );
+
+  return (
+    <div
+      data-testid={`analysis-panel-${section}`}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        background: '#0d1117',
+        overflow: 'hidden',
+        minWidth: 0,
+      }}
+    >
+      {/* Zone header */}
+      <div style={{
+        padding: '7px 12px 6px',
+        borderBottom: '1px solid #30363d',
+        flexShrink: 0,
+        background: '#161b22',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+      }}>
+        <span style={{ fontSize: 10, color: '#484f58' }}>{heading.icon}</span>
+        <span style={{
+          fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
+          fontSize: 10,
+          fontWeight: 600,
+          color: '#e6edf3',
+          letterSpacing: '0.01em',
+          flex: 1,
+          minWidth: 0,
+        }}>
+          {heading.title}
+          {aiStatusBadge}
+          {dataBadge}
+        </span>
+      </div>
+
+      {/* Scrollable content */}
+      <div style={{
+        flex: 1,
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        padding: '10px',
+        minWidth: 0,
+        minHeight: 0,
+      }}>
+        {section === 'mission'    && <MissionSection {...props} workspaceMode={workspaceMode} onSetWorkspaceMode={onSetWorkspaceMode} />}
+        {section === 'spacecraft' && <SpacecraftSection {...props} workspaceMode={workspaceMode} onSetWorkspaceMode={onSetWorkspaceMode} />}
+        {section === 'comms'      && <CommsSection {...props} workspaceMode={workspaceMode} onSetWorkspaceMode={onSetWorkspaceMode} />}
+        {section === 'data'       && <DataSection {...props} workspaceMode={workspaceMode} onSetWorkspaceMode={onSetWorkspaceMode} />}
+        {section === 'ai'         && <AiSection {...props} workspaceMode={workspaceMode} onSetWorkspaceMode={onSetWorkspaceMode} />}
+        {section === 'transmission' && (
+          <>
+            {props.decisionMode === 'unselected' && (
+              <DecisionModeSelector {...props} workspaceMode={workspaceMode} onSetWorkspaceMode={onSetWorkspaceMode} />
+            )}
+            <TransmissionSection {...props} workspaceMode={workspaceMode} onSetWorkspaceMode={onSetWorkspaceMode} />
+          </>
+        )}
+        {section === 'log'    && <LogSection {...props} workspaceMode={workspaceMode} onSetWorkspaceMode={onSetWorkspaceMode} />}
+        {section === 'config' && (
           <ConfigPanel
             settings={viewSettings}
             onUpdate={onUpdateSetting}

@@ -1,13 +1,18 @@
 /**
- * MissionControl — GCSI V3.5 primary layout.
+ * MissionControl — GCSI V4.0 four-zone mission operations workspace.
  *
- * V3.5 changes:
- * - Adaptive workspace system: normal | expanded | focus
- * - Focus mode hides 3D viewport; full panel workspace
- * - Expanded mode: ~58vw panel, 3D still visible
- * - Keyboard shortcuts: Ctrl+Shift+F (toggle focus), Esc (exit focus)
- * - Workspace mode persists across navigation; reset does NOT change mode
- * - workspaceMode stored in localStorage
+ * Layout:
+ *   nav | header / source context
+ *       | [3D viewport          | Mission Status     ]  ← upper row
+ *       | [Analysis Workspace   | Decision/Outcome   ]  ← lower row
+ *
+ * Workspace modes:
+ *   normal   — four-zone mission workspace
+ *   expanded — lower workspace receives more room (upper row shrinks)
+ *   focus    — analysis workspace fills the mission-workspace area
+ *
+ * State ownership unchanged — this is a pure layout refactor.
+ * No new API calls, no new domain semantics.
  */
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { classifyProvider, buildProviderBadgeLabel } from './utils/providerClassification';
@@ -51,7 +56,8 @@ import { SourceContextBanner } from './components/SourceContextBanner';
 import { ScenarioSwitcher } from './components/ScenarioSwitcher';
 import { NavigationSidebar, type NavSection } from './components/NavigationSidebar';
 import { MissionViewport } from './components/MissionViewport';
-import { RightPanel } from './components/RightPanel';
+import { MissionStatusSummary } from './components/MissionStatusSummary';
+import { AnalysisPanel, DecisionPanel } from './components/RightPanel';
 import { useResizablePanel } from './hooks/useResizablePanel';
 import { useViewSettings } from './hooks/useViewSettings';
 import type { ManualAssessmentResult, SessionEvent } from './experience/missionExperienceReducer';
@@ -391,7 +397,7 @@ const styles = `
 
 export default function MissionControl() {
   // ── Resize + settings hooks ────────────────────────────────────────────────
-  const { width: panelWidth, handleMouseDown: handleDividerMouseDown, resetWidth: resetPanelWidth, DEFAULT_WIDTH } = useResizablePanel();
+  const { width: panelWidth, resetWidth: resetPanelWidth, DEFAULT_WIDTH } = useResizablePanel();
   const { settings: viewSettings, update: updateViewSetting, resetSettings } = useViewSettings();
 
   // ── V3.5: Workspace mode ───────────────────────────────────────────────────
@@ -1325,15 +1331,124 @@ export default function MissionControl() {
     }).filter(Boolean) as import('./types/domain').Packet[],
   } : null;
 
-  // ── V3.5: Compute panel width based on workspace mode ─────────────────────
-  // In focus mode: panel fills everything except sidebar (64px)
-  // In expanded mode: clamp(650px, 58vw, 1100px)
-  // In normal mode: use manual panelWidth
-
   // ── Render ────────────────────────────────────────────────────────────────
 
   const isFocus = workspaceMode === 'focus';
   const isExpanded = workspaceMode === 'expanded';
+
+  // Shared prop object — constructed once, passed to both AnalysisPanel and DecisionPanel.
+  // This avoids duplication and ensures both zones always see the same state.
+  const sharedPanelProps = {
+    linkState,
+    missionState,
+    distanceKm,
+    propagationDelayS,
+    roundTripTimeS,
+    availableCapacityBits,
+    queuedDataBits,
+    dataProductsCount,
+    anomalies,
+    queue: queue ?? {} as CandidatePlan,
+    recommendation,
+    aiProvider,
+    aiRequestedProvider,
+    aiActualProvider,
+    aiPrioritization,
+    aiCandidateCount,
+    aiPrioritizationError,
+    aiPrioritizationFallbackReason,
+    aiRecommendationFallbackReason,
+    allPlans,
+    allEvaluations: displayEvals,
+    activePlanId,
+    approvalPhase,
+    approveResult,
+    whatIfEvals,
+    whatIfSnr,
+    recPlan,
+    recEval,
+    activeEval,
+    activePlan: activePlan ?? {} as CandidatePlan,
+    riskWeights,
+    onApproved: handleApproved,
+    onTransmitting: () => setApprovalPhase('transmitting'),
+    onApprovalError: handleApprovalError,
+    onWhatIfResult: handleWhatIfResult,
+    onSelectPlan: setActivePlanId,
+    decisionMode,
+    onSelectDecisionMode: setDecisionMode,
+    aiLifecycle,
+    aiError,
+    onRunAiAnalysis: runAiAnalysis,
+    rawDataProducts,
+    hasDataProducts,
+    manualSelectedIds,
+    manualOrder,
+    manualPlan,
+    onToggleManualSelect: handleToggleManualSelect,
+    onClearManualSelection: handleClearManualSelection,
+    onManualReorder: handleManualReorder,
+    availableScenarios,
+    activeScenarioPath,
+    scenarioSwitching,
+    onSwitchScenario: handleSwitchScenario,
+    sourceMode: sourceSummary?.mode ?? null,
+    experienceManifest,
+    experienceAvailable,
+    manualAssessment,
+    manualAssessmentLoading,
+    manualAssessmentError,
+    manualAssessmentStale,
+    onManualEvaluate: handleManualEvaluate,
+    onManualTransmit: handleManualTransmit,
+    onApproveAiPlan: handleApproveAiPlan,
+    onModifyAiPlan: handleModifyAiPlan,
+    onRejectAiPlan: handleRejectAiPlan,
+    executionId,
+    authorizedAtMs,
+    playbackStartedAtMs,
+    onSetPlaybackStarted: setPlaybackStartedAtMs,
+    aiRecommendationRejected,
+    sessionEvents,
+    choreographyActive,
+    pendingExecutionPlan,
+    onExecuteApproval: handleExecuteApproval,
+    executionResult: executionId ? (executionResultRef.current.get(executionId) ?? null) : null,
+    onChoreographyComplete: handleChoreographyComplete,
+    onChoreographyError: (msg: string) => {
+      const snap = executionSnapshotRef.current;
+      if (snap && snap.scenarioPath !== currentActiveScenarioPathRef.current) {
+        console.warn('[GCSI] Stale execution error discarded (scenario switched).');
+        return;
+      }
+      setError(msg);
+      setChoreographyActive(false);
+      setApprovalPhase('ready');
+    },
+    onAttemptPulse: setActivePulse,
+    onChoreographyPhaseChange: (phase: import('./components/TransmissionSequencePanel').TransmissionChoreographyPhase) => {
+      setChoreographyPhase(phase);
+      setPresentationPhase((prev) => {
+        const order: import('./components/TransmissionSequencePanel').TransmissionChoreographyPhase[] =
+          ['plan_uplink', 'contact_wait', 'transmitting', 'signal_transit', 'complete'];
+        const prevIdx = order.indexOf(prev);
+        const newIdx = order.indexOf(phase);
+        return newIdx > prevIdx ? phase : prev;
+      });
+    },
+    presentationPhase,
+  };
+
+  // ── Upper row heights ─────────────────────────────────────────────────────
+  // normal:   50/50 split between upper and lower rows
+  // expanded: upper row shrinks to give lower more room
+  // focus:    upper row gets 0 flex (viewport stays mounted but collapsed)
+  const upperRowFlex = isFocus ? '0 0 0px' : isExpanded ? '0 0 38%' : '1 1 50%';
+  const lowerRowFlex = isFocus ? '1 1 100%' : isExpanded ? '1 1 62%' : '1 1 50%';
+
+  // ── Right column width ────────────────────────────────────────────────────
+  // Approximately 34% of the mission-workspace area (right column = status + decision)
+  const rightColWidth = 'clamp(260px, 34%, 480px)';
 
   return (
     <>
@@ -1594,213 +1709,156 @@ export default function MissionControl() {
         </div>
       )}
 
-      {/* ── Main 3-column layout ──────────────────────────────────────────── */}
+      {/* ── Four-zone mission operations workspace ────────────────────────── */}
       {!loading && !error && (
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          overflow: 'hidden',
-          minHeight: 0,
-        }}>
-          {/* LEFT: Navigation sidebar — always visible, even in focus mode */}
+        <div
+          data-testid="mission-workspace"
+          style={{
+            flex: 1,
+            display: 'flex',
+            overflow: 'hidden',
+            minHeight: 0,
+          }}
+        >
+          {/* ── LEFT: Navigation sidebar — persistent ── */}
           <NavigationSidebar
             active={activeSection}
             onNavigate={setActiveSection}
           />
 
-          {/* CENTER: 3D Mission Viewport — hidden in focus mode */}
+          {/* ── MISSION WORKSPACE: 2-row, 2-col grid ── */}
           <div
-            className="workspace-viewport"
             style={{
-              flex: isFocus ? '0 0 0px' : 1,
-              minWidth: 0,
-              position: 'relative',
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
               overflow: 'hidden',
-              opacity: isFocus ? 0 : 1,
-              // Use visibility so the canvas stays mounted (preserves 3D state)
-              // but takes no space in focus mode
-              pointerEvents: isFocus ? 'none' : 'auto',
-              width: isFocus ? 0 : undefined,
+              minWidth: 0,
+              minHeight: 0,
             }}
           >
-            <MissionViewport
-              linkState={linkState}
-              missionState={missionState}
-              distanceKm={distanceKm}
-              approvalPhase={approvalPhase}
-              showStarfield={viewSettings.showStarfield}
-              showLabels={viewSettings.showLabels}
-              showCommLink={viewSettings.showCommLink}
-              smoothCamera={viewSettings.smoothCamera}
-              activePulse={activePulse}
-              pulseDirection={
-                choreographyActive
-                  ? (choreographyPhase === 'plan_uplink'
-                    ? 'earth_to_spacecraft'
-                    : 'spacecraft_to_earth')
-                  : 'idle'
-              }
-            />
-          </div>
-
-          {/* ── Drag divider — hidden in focus/expanded modes ── */}
-          {!isFocus && !isExpanded && (
+            {/* ── UPPER ROW: 3D viewport (left) + Mission Status (right) ── */}
             <div
-              className="workspace-divider"
-              onMouseDown={handleDividerMouseDown}
-              onDoubleClick={resetPanelWidth}
-              title="Drag to resize · Double-click to reset"
+              data-testid="workspace-upper-row"
               style={{
-                width: 4,
-                flexShrink: 0,
-                background: 'transparent',
-                borderLeft: '1px solid #30363d',
-                cursor: 'col-resize',
-                position: 'relative',
-                zIndex: 30,
-                transition: 'background 0.15s, border-color 0.15s',
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLDivElement).style.background = 'rgba(47,129,247,0.08)';
-                (e.currentTarget as HTMLDivElement).style.borderLeftColor = 'rgba(47,129,247,0.40)';
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLDivElement).style.background = 'transparent';
-                (e.currentTarget as HTMLDivElement).style.borderLeftColor = '#30363d';
+                flex: upperRowFlex,
+                display: 'flex',
+                overflow: 'hidden',
+                minHeight: 0,
+                borderBottom: '1px solid #30363d',
+                transition: 'flex 0.25s cubic-bezier(0.4,0,0.2,1)',
               }}
             >
-              {/* grip dots */}
-              <div style={{
-                position: 'absolute',
-                top: '50%', left: '50%',
-                transform: 'translate(-50%, -50%)',
-                display: 'flex', flexDirection: 'column', gap: 3,
-                pointerEvents: 'none',
-              }}>
-                {[0,1,2].map((i) => (
-                  <div key={i} style={{
-                    width: 2, height: 2, borderRadius: '50%',
-                    background: 'rgba(47,129,247,0.30)',
-                  }} />
-                ))}
+              {/* UPPER-LEFT: 3D Mission View — always mounted, shrinks in focus */}
+              <div
+                className="workspace-viewport"
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  position: 'relative',
+                  overflow: 'hidden',
+                  opacity: isFocus ? 0 : 1,
+                  pointerEvents: isFocus ? 'none' : 'auto',
+                  transition: 'opacity 0.2s ease',
+                }}
+              >
+                <MissionViewport
+                  linkState={linkState}
+                  missionState={missionState}
+                  distanceKm={distanceKm}
+                  approvalPhase={approvalPhase}
+                  showStarfield={viewSettings.showStarfield}
+                  showLabels={viewSettings.showLabels}
+                  showCommLink={viewSettings.showCommLink}
+                  smoothCamera={viewSettings.smoothCamera}
+                  activePulse={activePulse}
+                  pulseDirection={
+                    choreographyActive
+                      ? (choreographyPhase === 'plan_uplink'
+                        ? 'earth_to_spacecraft'
+                        : 'spacecraft_to_earth')
+                      : 'idle'
+                  }
+                />
+              </div>
+
+              {/* UPPER-RIGHT: Persistent Mission Status */}
+              <div
+                data-testid="mission-status-zone"
+                style={{
+                  width: rightColWidth,
+                  flexShrink: 0,
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minWidth: 0,
+                }}
+              >
+                <MissionStatusSummary
+                  linkState={linkState}
+                  missionState={missionState}
+                  availableCapacityBits={availableCapacityBits}
+                  queuedDataBits={queuedDataBits}
+                  dataProductsCount={dataProductsCount}
+                />
               </div>
             </div>
-          )}
 
-          {/* RIGHT: Contextual control panel */}
-          <RightPanel
-            section={activeSection}
-            panelWidth={panelWidth}
-            panelDefaultWidth={DEFAULT_WIDTH}
-            workspaceMode={workspaceMode}
-            onSetWorkspaceMode={setWorkspaceMode}
-            viewSettings={viewSettings}
-            onUpdateSetting={updateViewSetting}
-            onResetSettings={resetSettings}
-            onResetPanelWidth={resetPanelWidth}
-            linkState={linkState}
-            missionState={missionState}
-            distanceKm={distanceKm}
-            propagationDelayS={propagationDelayS}
-            roundTripTimeS={roundTripTimeS}
-            availableCapacityBits={availableCapacityBits}
-            queuedDataBits={queuedDataBits}
-            dataProductsCount={dataProductsCount}
-            anomalies={anomalies}
-            queue={queue ?? {} as CandidatePlan}
-            recommendation={recommendation}
-            aiProvider={aiProvider}
-            aiRequestedProvider={aiRequestedProvider}
-            aiActualProvider={aiActualProvider}
-            aiPrioritization={aiPrioritization}
-            aiCandidateCount={aiCandidateCount}
-            aiPrioritizationError={aiPrioritizationError}
-            aiPrioritizationFallbackReason={aiPrioritizationFallbackReason}
-            aiRecommendationFallbackReason={aiRecommendationFallbackReason}
-            allPlans={allPlans}
-            allEvaluations={displayEvals}
-            activePlanId={activePlanId}
-            approvalPhase={approvalPhase}
-            approveResult={approveResult}
-            whatIfEvals={whatIfEvals}
-            whatIfSnr={whatIfSnr}
-            recPlan={recPlan}
-            recEval={recEval}
-            activeEval={activeEval}
-            activePlan={activePlan ?? {} as CandidatePlan}
-            riskWeights={riskWeights}
-            onApproved={handleApproved}
-            onTransmitting={() => setApprovalPhase('transmitting')}
-            onApprovalError={handleApprovalError}
-            onWhatIfResult={handleWhatIfResult}
-            onSelectPlan={setActivePlanId}
-            decisionMode={decisionMode}
-            onSelectDecisionMode={setDecisionMode}
-            aiLifecycle={aiLifecycle}
-            aiError={aiError}
-            onRunAiAnalysis={runAiAnalysis}
-            rawDataProducts={rawDataProducts}
-            hasDataProducts={hasDataProducts}
-            manualSelectedIds={manualSelectedIds}
-            manualOrder={manualOrder}
-            manualPlan={manualPlan}
-            onToggleManualSelect={handleToggleManualSelect}
-            onClearManualSelection={handleClearManualSelection}
-            onManualReorder={handleManualReorder}
-            availableScenarios={availableScenarios}
-            activeScenarioPath={activeScenarioPath}
-            scenarioSwitching={scenarioSwitching}
-            onSwitchScenario={handleSwitchScenario}
-            sourceMode={sourceSummary?.mode ?? null}
-            experienceManifest={experienceManifest}
-            experienceAvailable={experienceAvailable}
-            manualAssessment={manualAssessment}
-            manualAssessmentLoading={manualAssessmentLoading}
-            manualAssessmentError={manualAssessmentError}
-            manualAssessmentStale={manualAssessmentStale}
-            onManualEvaluate={handleManualEvaluate}
-            onManualTransmit={handleManualTransmit}
-            onApproveAiPlan={handleApproveAiPlan}
-            onModifyAiPlan={handleModifyAiPlan}
-            onRejectAiPlan={handleRejectAiPlan}
-            executionId={executionId}
-            authorizedAtMs={authorizedAtMs}
-            playbackStartedAtMs={playbackStartedAtMs}
-            onSetPlaybackStarted={setPlaybackStartedAtMs}
-            aiRecommendationRejected={aiRecommendationRejected}
-            sessionEvents={sessionEvents}
-            choreographyActive={choreographyActive}
-            pendingExecutionPlan={pendingExecutionPlan}
-            onExecuteApproval={handleExecuteApproval}
-            executionResult={executionId ? (executionResultRef.current.get(executionId) ?? null) : null}
-            onChoreographyComplete={handleChoreographyComplete}
-            onChoreographyError={(msg) => {
-              // Phase 5.1F (WORKSTREAM D): Check scenario identity before committing error state.
-              const snap = executionSnapshotRef.current;
-              if (snap && snap.scenarioPath !== currentActiveScenarioPathRef.current) {
-                console.warn('[GCSI] Stale execution error discarded (scenario switched).');
-                return;
-              }
-              setError(msg);
-              setChoreographyActive(false);
-              setApprovalPhase('ready');
-            }}
-            onAttemptPulse={setActivePulse}
-            onChoreographyPhaseChange={(phase) => {
-              setChoreographyPhase(phase);
-              // Phase 5.1F: keep application-level presentationPhase in sync.
-              // This ensures navigation away and back shows the correct current phase.
-              // Phase only ever advances forward — never regresses.
-              setPresentationPhase((prev) => {
-                const order: import('./components/TransmissionSequencePanel').TransmissionChoreographyPhase[] =
-                  ['plan_uplink', 'contact_wait', 'transmitting', 'signal_transit', 'complete'];
-                const prevIdx = order.indexOf(prev);
-                const newIdx = order.indexOf(phase);
-                return newIdx > prevIdx ? phase : prev;
-              });
-            }}
-            presentationPhase={presentationPhase}
-          />
+            {/* ── LOWER ROW: Analysis (left) + Decision/Outcome (right) ── */}
+            <div
+              data-testid="workspace-lower-row"
+              style={{
+                flex: lowerRowFlex,
+                display: 'flex',
+                overflow: 'hidden',
+                minHeight: 0,
+                transition: 'flex 0.25s cubic-bezier(0.4,0,0.2,1)',
+              }}
+            >
+              {/* LOWER-LEFT: Contextual Analysis Workspace */}
+              <div
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
+              >
+                <AnalysisPanel
+                  section={activeSection}
+                  viewSettings={viewSettings}
+                  onUpdateSetting={updateViewSetting}
+                  onResetSettings={resetSettings}
+                  onResetPanelWidth={resetPanelWidth}
+                  panelWidth={panelWidth}
+                  panelDefaultWidth={DEFAULT_WIDTH}
+                  workspaceMode={workspaceMode}
+                  onSetWorkspaceMode={setWorkspaceMode}
+                  {...sharedPanelProps}
+                />
+              </div>
+
+              {/* LOWER-RIGHT: Decision / Evidence / Outcome Workspace */}
+              <div
+                style={{
+                  width: rightColWidth,
+                  flexShrink: 0,
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minWidth: 0,
+                }}
+              >
+                <DecisionPanel
+                  section={activeSection}
+                  workspaceMode={workspaceMode}
+                  onSetWorkspaceMode={setWorkspaceMode}
+                  {...sharedPanelProps}
+                />
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </>
