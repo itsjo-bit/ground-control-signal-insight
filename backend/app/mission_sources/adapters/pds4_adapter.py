@@ -632,7 +632,14 @@ def parse_generic_pds4_label(
     # 8. File_Area_Observational — extract data file metadata.
     data_files = _extract_pds4_data_files(root, label_url)
 
-    total_size = sum(f.file_size_bytes or 0 for f in data_files)
+    # Item 5: unknown size must NOT aggregate as zero.
+    # total_data_size_bytes = None if any file has unknown size.
+    from typing import Optional as _Optional
+    total_size: _Optional[int]
+    if any(f.file_size_bytes is None for f in data_files):
+        total_size = None
+    else:
+        total_size = sum(f.file_size_bytes for f in data_files)  # type: ignore[misc]
 
     # 9. Build ArchiveScienceProduct.
     import pydantic
@@ -796,15 +803,38 @@ def _extract_pds4_data_files(
             file_size_bytes = int(fsize_raw)
             size_certainty = ArchiveDataFileSizeCertainty.SIZE_METADATA_EXACT
 
-    # MD5 checksum.
+    # MD5 checksum — present and non-empty means we require a valid MD5 hex string.
+    # A malformed value must propagate as GenericPds4AdapterValidationError (Item 4).
     md5_elem = file_elem.find(f"{_PDS_NS_BRACED}md5_checksum")
     checksum_algorithm: Optional[str] = None
     checksum_value: Optional[str] = None
     if md5_elem is not None:
         raw_md5 = (md5_elem.text or "").strip().lower()
         if raw_md5:
+            # Validate MD5 format before recording it.
+            if not re.fullmatch(r"[0-9a-f]{32}", raw_md5):
+                raise GenericPds4AdapterValidationError(
+                    "PDS4 label File/md5_checksum is malformed (must be 32 hex chars)."
+                )
             checksum_algorithm = "MD5"
             checksum_value = raw_md5
+
+    # file_size: if present but not a valid byte-unit decimal, raise rather than silently ignore.
+    if fsize_elem is not None:
+        fsize_raw_check = (fsize_elem.text or "").strip()
+        fsize_unit_check = (fsize_elem.get("unit") or "").strip().lower()
+        if fsize_raw_check:
+            # unit must be "byte" or we cannot interpret it
+            if fsize_unit_check not in ("byte", ""):
+                raise GenericPds4AdapterValidationError(
+                    f"PDS4 label File/file_size has unsupported unit "
+                    f"{fsize_unit_check!r}; only 'byte' is supported."
+                )
+            if fsize_unit_check == "byte" and not _ASCII_DECIMAL_RE.match(fsize_raw_check):
+                raise GenericPds4AdapterValidationError(
+                    f"PDS4 label File/file_size has malformed value {fsize_raw_check!r}; "
+                    "expected a non-negative integer."
+                )
 
     # Derive file_ref from label URL directory + file_name.
     file_ref: Optional[str] = None
@@ -815,6 +845,7 @@ def _extract_pds4_data_files(
     except Exception:
         file_ref = None
 
+    import pydantic
     try:
         data_file = ArchiveDataFile(
             file_name=file_name,
@@ -824,8 +855,11 @@ def _extract_pds4_data_files(
             checksum_value=checksum_value,
             file_ref=file_ref,
         )
-    except pydantic.ValidationError:
-        return []
+    except pydantic.ValidationError as exc:
+        raise GenericPds4AdapterValidationError(
+            "PDS4 label File_Area_Observational/File declared an invalid payload: "
+            "checksum, file_name, or file_size metadata is malformed."
+        ) from exc
 
     return [data_file]
 
@@ -901,47 +935,58 @@ class GenericPds4ObservationalLabelAdapter:
         # Trust validation BEFORE any network request.
         _validate_label_url_trust(label_url, profile)
 
+        # True bounded streaming read — never materialises more than
+        # MAX_PDS4_LABEL_BYTES + 1 bytes regardless of Content-Length.
         try:
             with httpx.Client(follow_redirects=False, timeout=30.0) as client:
-                response = client.get(label_url)
+                with client.stream("GET", label_url) as response:
+                    status = response.status_code
+
+                    # Inspect HTTP status BEFORE consuming the body.
+
+                    # Reject redirects.
+                    if 300 <= status < 400:
+                        raise GenericPds4AdapterValidationError(
+                            f"PDS4 label URL returned an unexpected redirect (HTTP {status}). "
+                            "Redirects are not followed."
+                        )
+
+                    # Map unavailability codes.
+                    if status in (404, 429) or status >= 500:
+                        raise GenericPds4AdapterUnavailableError(
+                            f"PDS4 label is not available (HTTP {status})."
+                        )
+
+                    # Other client errors → validation error.
+                    if status >= 400:
+                        raise GenericPds4AdapterValidationError(
+                            f"PDS4 label URL returned an unexpected client error (HTTP {status})."
+                        )
+
+                    if status != 200:
+                        raise GenericPds4AdapterValidationError(
+                            f"PDS4 label URL returned unexpected status (HTTP {status})."
+                        )
+
+                    # Incrementally accumulate at most MAX_PDS4_LABEL_BYTES + 1 bytes.
+                    # Abort immediately once the limit is exceeded.
+                    chunks: list[bytes] = []
+                    accumulated = 0
+                    for chunk in response.iter_bytes():
+                        accumulated += len(chunk)
+                        if accumulated > MAX_PDS4_LABEL_BYTES:
+                            raise GenericPds4AdapterValidationError(
+                                f"PDS4 label response exceeds maximum allowed size "
+                                f"({MAX_PDS4_LABEL_BYTES} bytes)."
+                            )
+                        chunks.append(chunk)
+                    raw_bytes = b"".join(chunks)
+        except (GenericPds4AdapterValidationError, GenericPds4AdapterUnavailableError):
+            raise
         except httpx.TransportError as exc:
             raise GenericPds4AdapterUnavailableError(
                 "PDS4 label fetch failed due to a network transport error."
             ) from exc
-
-        status = response.status_code
-
-        # Reject redirects.
-        if 300 <= status < 400:
-            raise GenericPds4AdapterValidationError(
-                f"PDS4 label URL returned an unexpected redirect (HTTP {status}). "
-                "Redirects are not followed."
-            )
-
-        # Map unavailability codes.
-        if status in (404, 429) or status >= 500:
-            raise GenericPds4AdapterUnavailableError(
-                f"PDS4 label is not available (HTTP {status})."
-            )
-
-        # Other client errors → validation error.
-        if status >= 400:
-            raise GenericPds4AdapterValidationError(
-                f"PDS4 label URL returned an unexpected client error (HTTP {status})."
-            )
-
-        if status != 200:
-            raise GenericPds4AdapterValidationError(
-                f"PDS4 label URL returned unexpected status (HTTP {status})."
-            )
-
-        # Bounded read.
-        raw_bytes = response.content
-        if len(raw_bytes) > MAX_PDS4_LABEL_BYTES:
-            raise GenericPds4AdapterValidationError(
-                f"PDS4 label response exceeds maximum allowed size "
-                f"({MAX_PDS4_LABEL_BYTES} bytes)."
-            )
 
         # Parse and validate.
         product, provenance = parse_generic_pds4_label(

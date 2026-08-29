@@ -470,9 +470,42 @@ class ArchiveScienceProduct(BaseModel):
         this product.  May be empty for products where file metadata is
         not yet captured.
 
-    total_data_size_bytes : int
-        Deterministic sum of all data_file sizes.  MUST equal
-        sum(f.file_size_bytes or 0 for f in data_files).
+    total_data_size_bytes : int | None
+        Exact aggregate size in bytes when ALL relevant data files have a
+        known, exact size (ArchiveDataFileSizeCertainty.SIZE_METADATA_EXACT
+        or SIZE_DISCOVERED_APPROXIMATE).
+
+        None when ANY data file has an unknown size
+        (size_certainty == SIZE_UNKNOWN or file_size_bytes is None).
+
+        An empty data_files tuple produces total_data_size_bytes = 0 (not None),
+        because "zero files" is distinct from "files with unknown size".
+
+        Zero-byte payload (all files have file_size_bytes == 0) is also
+        distinct from unknown-size payload: total_data_size_bytes == 0 (not None).
+
+        Callers must NOT treat None as 0.
+
+    Notes on source vs. normalization facts
+    ----------------------------------------
+    The following fields are SOURCE-NORMALIZED archive facts (verbatim or
+    lightly normalised from the label):
+
+        source_dataset_id, source_product_id, source_version,
+        observation_start_utc, observation_stop_utc, target_names,
+        payload metadata (data_files, total_data_size_bytes),
+        instrument_name / spacecraft_name (when present in the label).
+
+    The following fields are DETERMINISTIC NORMALIZATION CLASSIFICATIONS
+    derived from validated dataset identity and/or profile binding:
+
+        product_family  — from the adapter profile (not a NASA label field)
+        mission_name    — from profile.expected_mission (bound to the profile
+                          identity; provenance already records the profile_id)
+
+    If mission_name is populated from profile.expected_mission rather than
+    an explicit label field, the derivation is explicit: the provenance record
+    carries the profile_id, which binds mission_name to the profile.
 
     source_label_ref : str | None
         Reference URL/path to the authoritative source label for this
@@ -543,11 +576,15 @@ class ArchiveScienceProduct(BaseModel):
         default_factory=tuple,
         description="Normalized data-file metadata. File names must be unique.",
     )
-    total_data_size_bytes: int = Field(
+    total_data_size_bytes: Optional[int] = Field(
+        default=None,
         description=(
-            "Deterministic sum of all data_file sizes in bytes. "
-            "Must equal sum(f.file_size_bytes or 0 for f in data_files)."
-        )
+            "Exact aggregate size in bytes when ALL data files have known size. "
+            "None when ANY file has unknown size. "
+            "0 when there are no data files (empty payload). "
+            "0 when all files have file_size_bytes == 0 (zero-byte payload). "
+            "Must NOT be treated as 0 when None."
+        ),
     )
     source_label_ref: Optional[str] = Field(
         default=None,
@@ -581,9 +618,9 @@ class ArchiveScienceProduct(BaseModel):
 
     @field_validator("total_data_size_bytes", mode="after")
     @classmethod
-    def _non_negative_total(cls, v: int) -> int:
-        if v < 0:
-            raise ValueError("total_data_size_bytes must be >= 0.")
+    def _non_negative_total(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v < 0:
+            raise ValueError("total_data_size_bytes must be >= 0 when not None.")
         return v
 
     @model_validator(mode="after")
@@ -599,13 +636,26 @@ class ArchiveScienceProduct(BaseModel):
                     "observation_start_utc must be <= observation_stop_utc."
                 )
 
-        # 2. Total size must equal sum of data_files (None counts as 0).
-        expected_total = sum(f.file_size_bytes or 0 for f in self.data_files)
-        if self.total_data_size_bytes != expected_total:
-            raise ValueError(
-                f"total_data_size_bytes ({self.total_data_size_bytes}) must equal "
-                f"sum of data_files sizes ({expected_total})."
-            )
+        # 2. Total size semantics (Item 5: unknown size != 0):
+        #    - If any file has unknown size → total must be None.
+        #    - If all files have known size → total must equal exact sum.
+        #    - If no files → total must be 0 (not None).
+        has_unknown = any(
+            f.file_size_bytes is None for f in self.data_files
+        )
+        if has_unknown:
+            if self.total_data_size_bytes is not None:
+                raise ValueError(
+                    "total_data_size_bytes must be None when any data file has "
+                    "unknown size (file_size_bytes is None)."
+                )
+        else:
+            expected_total = sum(f.file_size_bytes or 0 for f in self.data_files)
+            if self.total_data_size_bytes != expected_total:
+                raise ValueError(
+                    f"total_data_size_bytes ({self.total_data_size_bytes!r}) must equal "
+                    f"sum of data_files sizes ({expected_total}) when all sizes are known."
+                )
 
         # 3. File names must be unique within this product.
         names = [f.file_name for f in self.data_files]
@@ -1085,9 +1135,9 @@ class VerifiedInventoryManifest(BaseModel):
       a source/inventory artifact.
     - Empty manifests (0 entries) are rejected — a manifest must have at
       least one entry.
-    - ``source_records`` defaults to empty tuple for backward compatibility
-      with existing test fixtures; referential integrity is only enforced
-      when source_records is non-empty.
+    - ``source_records`` is mandatory and non-empty.  A VerifiedInventoryManifest
+      without a source registry is not a valid verified manifest.
+      Every representation_record_id must resolve to a source record.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -1106,11 +1156,12 @@ class VerifiedInventoryManifest(BaseModel):
         )
     )
     source_records: tuple[VerifiedSourceRecordRef, ...] = Field(
-        default_factory=tuple,
         description=(
             "Registry of verified source records referenced by entries. "
-            "When non-empty, all representation_record_ids and "
-            "source_fact_provenance_ids in entries must resolve here."
+            "Must be non-empty: a VerifiedInventoryManifest without a source "
+            "registry is not a valid verified manifest. "
+            "All representation_record_ids and source_fact_provenance_ids in "
+            "entries must resolve here."
         ),
     )
 
@@ -1121,8 +1172,17 @@ class VerifiedInventoryManifest(BaseModel):
 
     @model_validator(mode="after")
     def _validate_manifest_integrity(self) -> "VerifiedInventoryManifest":
-        """Enforce all manifest integrity rules."""
-        # Rule: non-empty.
+        """Enforce all manifest integrity rules.
+
+        Validation order:
+        1. entries non-empty (structural)
+        2. unique logical_product_ids (structural)
+        3. no duplicate representation_record_ids (structural)
+        4. manifest_id correct (integrity)
+        5. source_records non-empty (Item 6: verified manifest must have registry)
+        6. source_records no-duplicate + referential integrity
+        """
+        # Rule: non-empty entries.
         if not self.entries:
             raise ValueError(
                 "VerifiedInventoryManifest must contain at least one entry."
@@ -1159,39 +1219,47 @@ class VerifiedInventoryManifest(BaseModel):
                 f"Expected: {expected_id!r}. Got: {self.manifest_id!r}."
             )
 
-        # Rules 4–6: source_records referential integrity (only when non-empty).
-        if self.source_records:
-            # Rule 4: no duplicate source_record_id in source_records.
-            seen_srids: set[str] = set()
-            seen_prov_ids: set[str] = set()
-            for sr in self.source_records:
-                if sr.source_record_id in seen_srids:
+        # Rule 4: source_records must be non-empty (Item 6).
+        # A VerifiedInventoryManifest without a source registry is not verified.
+        if not self.source_records:
+            raise ValueError(
+                "VerifiedInventoryManifest.source_records must be non-empty. "
+                "A verified manifest must include its source registry. "
+                "Every representation_record_id must resolve to a source record."
+            )
+
+        # Rules 5–7: source_records referential integrity (always enforced).
+        # Rule 5: no duplicate source_record_id in source_records.
+        seen_srids: set[str] = set()
+        seen_prov_ids: set[str] = set()
+        for sr in self.source_records:
+            if sr.source_record_id in seen_srids:
+                raise ValueError(
+                    f"Duplicate source_record_id {sr.source_record_id!r} "
+                    "in VerifiedInventoryManifest.source_records."
+                )
+            seen_srids.add(sr.source_record_id)
+            seen_prov_ids.add(sr.provenance_id)
+
+        # Rule 6: every representation_record_id must resolve.
+        for entry in self.entries:
+            for rid in entry.representation_record_ids:
+                if rid not in seen_srids:
                     raise ValueError(
-                        f"Duplicate source_record_id {sr.source_record_id!r} "
-                        "in VerifiedInventoryManifest.source_records."
+                        f"representation_record_id {rid!r} in entry "
+                        f"{entry.logical_product_id!r} does not resolve to "
+                        "any source_record_id in source_records."
                     )
-                seen_srids.add(sr.source_record_id)
-                seen_prov_ids.add(sr.provenance_id)
 
-            # Rule 5: every representation_record_id must resolve.
-            for entry in self.entries:
-                for rid in entry.representation_record_ids:
-                    if rid not in seen_srids:
-                        raise ValueError(
-                            f"representation_record_id {rid!r} in entry "
-                            f"{entry.logical_product_id!r} does not resolve to "
-                            "any source_record_id in source_records."
-                        )
-
-            # Rule 6: every source_fact_provenance_id must resolve.
-            for entry in self.entries:
-                for prov_id in entry.source_fact_provenance_ids:
-                    if prov_id not in seen_prov_ids:
-                        raise ValueError(
-                            f"source_fact_provenance_id {prov_id!r} in entry "
-                            f"{entry.logical_product_id!r} does not resolve to "
-                            "any provenance_id in source_records."
-                        )
+        # Rule 7: every source_fact_provenance_id must resolve.
+        for entry in self.entries:
+            for prov_id in entry.source_fact_provenance_ids:
+                if prov_id not in seen_prov_ids:
+                    raise ValueError(
+                        f"source_fact_provenance_id {prov_id!r} in entry "
+                        f"{entry.logical_product_id!r} does not resolve to "
+                        "any provenance_id in source_records."
+                    )
 
         return self
 
@@ -1202,7 +1270,7 @@ class VerifiedInventoryManifest(BaseModel):
         source_records: (
             tuple[VerifiedSourceRecordRef, ...]
             | list[VerifiedSourceRecordRef]
-        ) = (),
+        ),
     ) -> "VerifiedInventoryManifest":
         """Construct a manifest with auto-computed manifest_id.
 
@@ -1212,9 +1280,8 @@ class VerifiedInventoryManifest(BaseModel):
             Non-empty collection of VerifiedInventoryEntry objects.
 
         source_records:
-            Optional collection of VerifiedSourceRecordRef objects.
-            When provided and non-empty, referential integrity is enforced.
-            Defaults to empty tuple for backward compatibility.
+            Mandatory non-empty collection of VerifiedSourceRecordRef objects.
+            Every representation_record_id in entries must resolve to an entry here.
 
         Returns
         -------

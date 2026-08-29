@@ -74,11 +74,11 @@ def _waves_reparser(
 class TestArchiveLabelSnapshotStore:
     def _write_and_load(self, tmp_path: Path) -> tuple[ArchiveScienceProduct, ProvenanceRecord]:
         raw = _WAVES_BURST_LABEL
-        product, prov = _waves_reparser(raw, "test://label.lbl", _RETRIEVED_AT)
+        product, prov = _waves_reparser(raw, "fixture:label.lbl", _RETRIEVED_AT)
         snap_path = tmp_path / "test.snapshot.json"
         ArchiveLabelSnapshotStore.write(
             raw_label_bytes=raw,
-            source_ref="test://label.lbl",
+            source_ref="fixture:label.lbl",
             product=product,
             provenance=prov,
             reparser=_waves_reparser,

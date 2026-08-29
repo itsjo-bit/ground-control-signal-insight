@@ -124,6 +124,30 @@ def _make_entry(
     )
 
 
+def _auto_refs_for_entries(
+    entries: list[VerifiedInventoryEntry],
+) -> list[VerifiedSourceRecordRef]:
+    """Build minimal source_record refs for each representation_record_id in entries.
+
+    Used to satisfy the mandatory source_records requirement in tests that
+    are not specifically testing referential integrity behavior.
+    """
+    refs = []
+    seen: set[str] = set()
+    for e in entries:
+        for rid in e.representation_record_ids:
+            if rid not in seen:
+                refs.append(VerifiedSourceRecordRef(
+                    source_record_id=rid,
+                    source_standard=ArchiveSourceStandard.PDS4,
+                    provenance_id=f"auto-prov-{len(refs):04d}",
+                    normalizer_id="gcsi.generic_pds4_label.v1",
+                    profile_id="jiram_pds4",
+                ))
+                seen.add(rid)
+    return refs
+
+
 # ===========================================================================
 # A. ArchiveSourceStandard
 # ===========================================================================
@@ -878,13 +902,16 @@ class TestVerifiedInventoryManifest:
         return entries
 
     def test_valid_single_entry(self):
-        m = VerifiedInventoryManifest.build([_make_entry()])
+        entry = _make_entry()
+        refs = _auto_refs_for_entries([entry])
+        m = VerifiedInventoryManifest.build([entry], source_records=refs)
         assert len(m.entries) == 1
 
     def test_411_entries_scale(self):
         """411 entries must not create any special-case code path."""
         entries = self._make_411_entries()
-        m = VerifiedInventoryManifest.build(entries)
+        refs = _auto_refs_for_entries(entries)
+        m = VerifiedInventoryManifest.build(entries, source_records=refs)
         assert len(m.entries) == 411
         assert len(m.manifest_id) == 64  # SHA-256 hex
 
@@ -898,50 +925,69 @@ class TestVerifiedInventoryManifest:
             )
             for i in range(500)
         ]
-        m = VerifiedInventoryManifest.build(entries)
+        refs = _auto_refs_for_entries(entries)
+        m = VerifiedInventoryManifest.build(entries, source_records=refs)
         assert len(m.entries) == 500
 
     def test_empty_entries_rejected(self):
         with pytest.raises(pydantic.ValidationError, match="[Ee]mpty|at least one"):
-            VerifiedInventoryManifest.build([])
+            VerifiedInventoryManifest.build([], source_records=[_make_source_record_ref()])
 
     def test_duplicate_logical_ids_rejected(self):
         e1 = _make_entry("LP-001", ("rid1",))
         e2 = _make_entry("LP-001", ("rid2",))  # duplicate logical ID
+        refs = _auto_refs_for_entries([e1, e2])
         with pytest.raises(pydantic.ValidationError, match="[Dd]uplicate"):
-            VerifiedInventoryManifest.build([e1, e2])
+            VerifiedInventoryManifest.build([e1, e2], source_records=refs)
 
     def test_duplicate_representation_ids_across_entries_rejected(self):
         e1 = _make_entry("LP-001", ("shared-rid",))
         e2 = _make_entry("LP-002", ("shared-rid",))  # same repr ID in different entry
+        refs = _auto_refs_for_entries([e1])  # only one ref (deduped)
         with pytest.raises(pydantic.ValidationError, match="shared-rid"):
-            VerifiedInventoryManifest.build([e1, e2])
+            VerifiedInventoryManifest.build([e1, e2], source_records=refs)
 
     def test_manifest_id_deterministic(self):
-        entries = [_make_entry("LP-001"), _make_entry("LP-002", ("rid2",))]
-        m1 = VerifiedInventoryManifest.build(entries)
-        m2 = VerifiedInventoryManifest.build(entries)
+        e1 = _make_entry("LP-001")
+        e2 = _make_entry("LP-002", ("rid2",))
+        entries = [e1, e2]
+        refs = _auto_refs_for_entries(entries)
+        m1 = VerifiedInventoryManifest.build(entries, source_records=refs)
+        m2 = VerifiedInventoryManifest.build(entries, source_records=refs)
         assert m1.manifest_id == m2.manifest_id
 
     def test_manifest_id_wrong_rejected(self):
         e = _make_entry()
-        correct_id = _compute_manifest_id((e,))
+        refs = _auto_refs_for_entries([e])
+        correct_id = _compute_manifest_id((e,), tuple(refs))
         wrong_id = "a" * 64
         assert wrong_id != correct_id
         with pytest.raises(pydantic.ValidationError, match="manifest_id"):
-            VerifiedInventoryManifest(manifest_id=wrong_id, entries=(e,))
+            VerifiedInventoryManifest(manifest_id=wrong_id, entries=(e,), source_records=tuple(refs))
 
     def test_immutable(self):
-        m = VerifiedInventoryManifest.build([_make_entry()])
+        entry = _make_entry()
+        refs = _auto_refs_for_entries([entry])
+        m = VerifiedInventoryManifest.build([entry], source_records=refs)
         with pytest.raises(Exception):
             m.entries = ()  # type: ignore[misc]
 
     def test_canonical_serialization_stable(self):
         entries = self._make_411_entries()
-        m = VerifiedInventoryManifest.build(entries)
+        refs = _auto_refs_for_entries(entries)
+        m = VerifiedInventoryManifest.build(entries, source_records=refs)
         json1 = m.model_dump_json()
         json2 = m.model_dump_json()
         assert json1 == json2
+
+    def test_no_source_records_rejected(self):
+        """VerifiedInventoryManifest without source_records must be rejected (Item 6)."""
+        e = _make_entry()
+        refs = _auto_refs_for_entries([e])
+        correct_id = _compute_manifest_id((e,), tuple(refs))
+        # Build empty source_records manifest — should fail.
+        with pytest.raises(pydantic.ValidationError, match="source_records|registry"):
+            VerifiedInventoryManifest.build([e], source_records=[])
 
     # -----------------------------------------------------------------------
     # Source record registry (Section L)
@@ -1002,34 +1048,54 @@ class TestVerifiedInventoryManifest:
 
     def test_manifest_id_changes_when_availability_changes(self):
         e1 = _make_entry("LP-001", ("rid1",), availability=_NOW_UTC)
-        m1 = VerifiedInventoryManifest.build([e1])
+        refs1 = _auto_refs_for_entries([e1])
+        m1 = VerifiedInventoryManifest.build([e1], source_records=refs1)
         later = datetime(2025, 1, 1, tzinfo=timezone.utc)
         e2 = _make_entry("LP-001", ("rid1",), availability=later)
-        m2 = VerifiedInventoryManifest.build([e2])
+        refs2 = _auto_refs_for_entries([e2])
+        m2 = VerifiedInventoryManifest.build([e2], source_records=refs2)
         assert m1.manifest_id != m2.manifest_id
 
     def test_manifest_id_changes_when_representation_changes(self):
         e1 = _make_entry("LP-001", ("rid1",))
-        m1 = VerifiedInventoryManifest.build([e1])
+        refs1 = _auto_refs_for_entries([e1])
+        m1 = VerifiedInventoryManifest.build([e1], source_records=refs1)
         e2 = _make_entry("LP-001", ("rid2",))
-        m2 = VerifiedInventoryManifest.build([e2])
+        refs2 = _auto_refs_for_entries([e2])
+        m2 = VerifiedInventoryManifest.build([e2], source_records=refs2)
         assert m1.manifest_id != m2.manifest_id
 
     def test_manifest_id_changes_when_provenance_ref_changes(self):
+        # Use a source_records ref that has prov-A as its provenance_id so
+        # the entry's source_fact_provenance_ids can resolve.
         e1 = VerifiedInventoryEntry(
             logical_product_id="LP-001",
             representation_record_ids=("rid1",),
             availability_time_utc=_NOW_UTC,
             source_fact_provenance_ids=("prov-A",),
         )
-        m1 = VerifiedInventoryManifest.build([e1])
+        ref1 = VerifiedSourceRecordRef(
+            source_record_id="rid1",
+            source_standard=ArchiveSourceStandard.PDS4,
+            provenance_id="prov-A",
+            normalizer_id="gcsi.generic_pds4_label.v1",
+            profile_id="jiram_pds4",
+        )
+        m1 = VerifiedInventoryManifest.build([e1], source_records=[ref1])
         e2 = VerifiedInventoryEntry(
             logical_product_id="LP-001",
             representation_record_ids=("rid1",),
             availability_time_utc=_NOW_UTC,
             source_fact_provenance_ids=("prov-B",),
         )
-        m2 = VerifiedInventoryManifest.build([e2])
+        ref2 = VerifiedSourceRecordRef(
+            source_record_id="rid1",
+            source_standard=ArchiveSourceStandard.PDS4,
+            provenance_id="prov-B",
+            normalizer_id="gcsi.generic_pds4_label.v1",
+            profile_id="jiram_pds4",
+        )
+        m2 = VerifiedInventoryManifest.build([e2], source_records=[ref2])
         assert m1.manifest_id != m2.manifest_id
 
     def test_manifest_id_changes_when_source_records_change(self):
@@ -1050,6 +1116,7 @@ class TestVerifiedInventoryManifest:
         """Entries in different order produce the same manifest_id."""
         e1 = _make_entry("LP-A", ("rid-a",))
         e2 = _make_entry("LP-B", ("rid-b",))
-        m1 = VerifiedInventoryManifest.build([e1, e2])
-        m2 = VerifiedInventoryManifest.build([e2, e1])
+        refs = _auto_refs_for_entries([e1, e2])
+        m1 = VerifiedInventoryManifest.build([e1, e2], source_records=refs)
+        m2 = VerifiedInventoryManifest.build([e2, e1], source_records=refs)
         assert m1.manifest_id == m2.manifest_id

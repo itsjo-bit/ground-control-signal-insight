@@ -270,6 +270,16 @@ class GenericPds3AdapterProfile(BaseModel):
 # Pre-built profiles for B1 target families
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Official PDS node host/path constants (established during Phase 6F-A).
+# ---------------------------------------------------------------------------
+
+# PDS-PPI node: hosts WAVES, FGM, JADE, JEDI.
+_PPI_HOST: str = "pds-ppi.igpp.ucla.edu"
+
+# PDS Small Bodies / Rings node: hosts JunoCam EDR.
+_RINGS_HOST: str = "pds-rings.seti.org"
+
 WAVES_BURST_PDS3_PROFILE = GenericPds3AdapterProfile(
     profile_id="waves_burst_pds3",
     expected_mission="JUNO",
@@ -282,6 +292,8 @@ WAVES_BURST_PDS3_PROFILE = GenericPds3AdapterProfile(
     require_spacecraft_id=True,
     require_instrument_id=True,
     size_derivation_strategy=Pds3SizeDerivationStrategy.RECORD_BYTES_X_FILE_RECORDS,
+    allowed_hosts=frozenset({_PPI_HOST}),
+    allowed_path_prefixes=("/data/juno-wav-3-cdr-calibrated-v2.0/jno-e-j-ss-wav-3-cdr-bstfull/",),
 )
 
 WAVES_SURVEY_PDS3_PROFILE = GenericPds3AdapterProfile(
@@ -296,6 +308,8 @@ WAVES_SURVEY_PDS3_PROFILE = GenericPds3AdapterProfile(
     require_spacecraft_id=True,
     require_instrument_id=True,
     size_derivation_strategy=Pds3SizeDerivationStrategy.RECORD_BYTES_X_FILE_RECORDS,
+    allowed_hosts=frozenset({_PPI_HOST}),
+    allowed_path_prefixes=("/data/juno-wav-3-cdr-calibrated-v2.0/jno-e-j-ss-wav-3-cdr-srvy/",),
 )
 
 JUNOCAM_PDS3_PROFILE = GenericPds3AdapterProfile(
@@ -308,6 +322,8 @@ JUNOCAM_PDS3_PROFILE = GenericPds3AdapterProfile(
     require_spacecraft_id=True,
     require_instrument_id=True,
     size_derivation_strategy=Pds3SizeDerivationStrategy.FILE_SIZE,
+    allowed_hosts=frozenset({_RINGS_HOST}),
+    allowed_path_prefixes=("/holdings/jno-e-jnc-2-edr-l1a-v1.0/data/",),
 )
 
 FGM_PDS3_PROFILE = GenericPds3AdapterProfile(
@@ -320,6 +336,8 @@ FGM_PDS3_PROFILE = GenericPds3AdapterProfile(
     require_spacecraft_id=True,
     require_instrument_id=True,
     size_derivation_strategy=Pds3SizeDerivationStrategy.RECORD_BYTES_X_FILE_RECORDS,
+    allowed_hosts=frozenset({_PPI_HOST}),
+    allowed_path_prefixes=("/data/juno/juno-fgm/",),
 )
 
 JADE_PDS3_PROFILE = GenericPds3AdapterProfile(
@@ -332,6 +350,8 @@ JADE_PDS3_PROFILE = GenericPds3AdapterProfile(
     require_spacecraft_id=True,
     require_instrument_id=True,
     size_derivation_strategy=Pds3SizeDerivationStrategy.NONE,
+    allowed_hosts=frozenset({_PPI_HOST}),
+    allowed_path_prefixes=("/data/juno/juno-jade/",),
 )
 
 JEDI_PDS3_PROFILE = GenericPds3AdapterProfile(
@@ -344,6 +364,8 @@ JEDI_PDS3_PROFILE = GenericPds3AdapterProfile(
     require_spacecraft_id=True,
     require_instrument_id=True,
     size_derivation_strategy=Pds3SizeDerivationStrategy.NONE,
+    allowed_hosts=frozenset({_PPI_HOST}),
+    allowed_path_prefixes=("/data/juno/juno-jedi/",),
 )
 
 
@@ -1003,7 +1025,17 @@ def parse_generic_pds3_label(
     retrieved_at_utc = retrieved_at.astimezone(timezone.utc)
 
     # 0. URL trust validation — BEFORE any parsing (Section C).
-    if source_ref.startswith("https://"):
+    #
+    # Always validate external-looking refs.  Do NOT skip validation for
+    # non-https schemes (e.g. http://, ftp://, evil://) — those must be
+    # explicitly rejected by _validate_pds3_source_url_trust rather than
+    # silently bypassed.
+    #
+    # Offline fixture/local-parsing paths must use a clearly non-URL form
+    # (e.g. "fixture:waves_test" or a bare filename without "://").
+    # Any source_ref that contains "://" is treated as a network URL and
+    # validated; bare local identifiers (no "://") bypass trust validation.
+    if "://" in source_ref:
         _validate_pds3_source_url_trust(source_ref, profile)
 
     # 1. Size limit.
@@ -1159,7 +1191,13 @@ def parse_generic_pds3_label(
                 "PDS3 label produced an invalid ArchiveDataFile record."
             ) from exc
 
-    total_size = sum(f.file_size_bytes or 0 for f in data_files)
+    # Item 5: unknown size must NOT aggregate as zero.
+    # total_data_size_bytes = None if any file has unknown size.
+    total_size: Optional[int]
+    if any(f.file_size_bytes is None for f in data_files):
+        total_size = None
+    else:
+        total_size = sum(f.file_size_bytes for f in data_files)  # type: ignore[misc]
 
     # 12. Build source_record_id.
     source_record_id = build_pds3_source_record_id(
@@ -1284,47 +1322,59 @@ class GenericPds3ObservationalLabelAdapter:
         # Trust validation BEFORE any network request.
         _validate_pds3_source_url_trust(source_url, profile)
 
+        # True bounded streaming read — never materialises more than
+        # MAX_PDS3_LABEL_BYTES + 1 bytes regardless of Content-Length.
         try:
             with httpx.Client(follow_redirects=False, timeout=30.0) as client:
-                response = client.get(source_url)
+                with client.stream("GET", source_url) as response:
+                    status = response.status_code
+
+                    # Inspect HTTP status BEFORE consuming the body.
+
+                    # Reject redirects.
+                    if 300 <= status < 400:
+                        raise GenericPds3AdapterValidationError(
+                            f"PDS3 label URL returned an unexpected redirect (HTTP {status}). "
+                            "Redirects are not followed."
+                        )
+
+                    # Map unavailability codes.
+                    if status in (404, 429) or status >= 500:
+                        raise GenericPds3AdapterUnavailableError(
+                            f"PDS3 label is not available (HTTP {status})."
+                        )
+
+                    # Other client errors → validation error.
+                    if status >= 400:
+                        raise GenericPds3AdapterValidationError(
+                            f"PDS3 label URL returned an unexpected client error (HTTP {status})."
+                        )
+
+                    if status != 200:
+                        raise GenericPds3AdapterValidationError(
+                            f"PDS3 label URL returned unexpected status (HTTP {status})."
+                        )
+
+                    # Incrementally accumulate at most MAX_PDS3_LABEL_BYTES + 1 bytes.
+                    # Abort immediately once the limit is exceeded.
+                    chunks: list[bytes] = []
+                    accumulated = 0
+                    limit = MAX_PDS3_LABEL_BYTES + 1
+                    for chunk in response.iter_bytes():
+                        accumulated += len(chunk)
+                        if accumulated > MAX_PDS3_LABEL_BYTES:
+                            raise GenericPds3AdapterValidationError(
+                                f"PDS3 label response exceeds maximum allowed size "
+                                f"({MAX_PDS3_LABEL_BYTES} bytes)."
+                            )
+                        chunks.append(chunk)
+                    raw_bytes = b"".join(chunks)
+        except (GenericPds3AdapterValidationError, GenericPds3AdapterUnavailableError):
+            raise
         except httpx.TransportError as exc:
             raise GenericPds3AdapterUnavailableError(
                 "PDS3 label fetch failed due to a network transport error."
             ) from exc
-
-        status = response.status_code
-
-        # Reject redirects.
-        if 300 <= status < 400:
-            raise GenericPds3AdapterValidationError(
-                f"PDS3 label URL returned an unexpected redirect (HTTP {status}). "
-                "Redirects are not followed."
-            )
-
-        # Map unavailability codes.
-        if status in (404, 429) or status >= 500:
-            raise GenericPds3AdapterUnavailableError(
-                f"PDS3 label is not available (HTTP {status})."
-            )
-
-        # Other client errors → validation error.
-        if status >= 400:
-            raise GenericPds3AdapterValidationError(
-                f"PDS3 label URL returned an unexpected client error (HTTP {status})."
-            )
-
-        if status != 200:
-            raise GenericPds3AdapterValidationError(
-                f"PDS3 label URL returned unexpected status (HTTP {status})."
-            )
-
-        # Bounded read.
-        raw_bytes = response.content
-        if len(raw_bytes) > MAX_PDS3_LABEL_BYTES:
-            raise GenericPds3AdapterValidationError(
-                f"PDS3 label response exceeds maximum allowed size "
-                f"({MAX_PDS3_LABEL_BYTES} bytes)."
-            )
 
         # Parse and validate.
         product, provenance = parse_generic_pds3_label(

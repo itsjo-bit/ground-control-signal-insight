@@ -258,19 +258,23 @@ class TestPds3TransportSemantics:
     def _req(self):
         return GenericPds3SourceRequest(source_url=self._URL)
 
-    def _mock_response(self, status: int, content: bytes = b""):
+    def _mock_stream_response(self, status: int, content: bytes = b""):
+        """Build a mock streaming response for httpx.Client.stream()."""
         resp = MagicMock()
         resp.status_code = status
-        resp.content = content
-        return resp
+        resp.iter_bytes = MagicMock(return_value=iter([content] if content else []))
+        stream_cm = MagicMock()
+        stream_cm.__enter__ = MagicMock(return_value=resp)
+        stream_cm.__exit__ = MagicMock(return_value=False)
+        return stream_cm, resp
 
     def _patched_fetch(self, status: int, content: bytes = b""):
-        resp = self._mock_response(status, content)
+        stream_cm, _resp = self._mock_stream_response(status, content)
         with patch("httpx.Client") as mock_client_cls:
             mock_cm = MagicMock()
             mock_cm.__enter__ = MagicMock(return_value=mock_cm)
             mock_cm.__exit__ = MagicMock(return_value=False)
-            mock_cm.get = MagicMock(return_value=resp)
+            mock_cm.stream = MagicMock(return_value=stream_cm)
             mock_client_cls.return_value = mock_cm
             return GenericPds3ObservationalLabelAdapter.fetch(
                 self._req(), self._PROFILE, _RETRIEVED_AT
@@ -313,20 +317,20 @@ class TestPds3TransportSemantics:
         with pytest.raises(GenericPds3AdapterValidationError, match="size"):
             self._patched_fetch(200, oversized)
 
-    def test_at_most_one_get_per_fetch(self):
-        """The adapter must issue exactly one GET per fetch call."""
-        resp = self._mock_response(404, b"")
+    def test_at_most_one_stream_per_fetch(self):
+        """The adapter must issue exactly one streaming GET per fetch call."""
+        stream_cm, _resp = self._mock_stream_response(404, b"")
         with patch("httpx.Client") as mock_client_cls:
             mock_cm = MagicMock()
             mock_cm.__enter__ = MagicMock(return_value=mock_cm)
             mock_cm.__exit__ = MagicMock(return_value=False)
-            mock_cm.get = MagicMock(return_value=resp)
+            mock_cm.stream = MagicMock(return_value=stream_cm)
             mock_client_cls.return_value = mock_cm
             with pytest.raises(GenericPds3AdapterUnavailableError):
                 GenericPds3ObservationalLabelAdapter.fetch(
                     self._req(), self._PROFILE, _RETRIEVED_AT
                 )
-            assert mock_cm.get.call_count == 1
+            assert mock_cm.stream.call_count == 1
 
 
 class TestPds4PublicPathSecurityViaParser:
@@ -475,15 +479,22 @@ class TestPds4TransportSemantics:
     def _req(self):
         return GenericPds4SourceRequest(label_url=self._URL)
 
-    def _patched_fetch(self, status: int, content: bytes = b""):
+    def _mock_stream_response(self, status: int, content: bytes = b""):
         resp = MagicMock()
         resp.status_code = status
-        resp.content = content
+        resp.iter_bytes = MagicMock(return_value=iter([content] if content else []))
+        stream_cm = MagicMock()
+        stream_cm.__enter__ = MagicMock(return_value=resp)
+        stream_cm.__exit__ = MagicMock(return_value=False)
+        return stream_cm, resp
+
+    def _patched_fetch(self, status: int, content: bytes = b""):
+        stream_cm, _resp = self._mock_stream_response(status, content)
         with patch("httpx.Client") as mock_client_cls:
             mock_cm = MagicMock()
             mock_cm.__enter__ = MagicMock(return_value=mock_cm)
             mock_cm.__exit__ = MagicMock(return_value=False)
-            mock_cm.get = MagicMock(return_value=resp)
+            mock_cm.stream = MagicMock(return_value=stream_cm)
             mock_client_cls.return_value = mock_cm
             return GenericPds4ObservationalLabelAdapter.fetch(
                 self._req(), self._PROFILE, _RETRIEVED_AT
@@ -514,21 +525,20 @@ class TestPds4TransportSemantics:
         with pytest.raises(GenericPds4AdapterValidationError, match="size"):
             self._patched_fetch(200, oversized)
 
-    def test_at_most_one_get_per_fetch(self):
-        resp = MagicMock()
-        resp.status_code = 404
-        resp.content = b""
+    def test_at_most_one_stream_per_fetch(self):
+        """The adapter must issue exactly one streaming GET per fetch call."""
+        stream_cm, _resp = self._mock_stream_response(404, b"")
         with patch("httpx.Client") as mock_client_cls:
             mock_cm = MagicMock()
             mock_cm.__enter__ = MagicMock(return_value=mock_cm)
             mock_cm.__exit__ = MagicMock(return_value=False)
-            mock_cm.get = MagicMock(return_value=resp)
+            mock_cm.stream = MagicMock(return_value=stream_cm)
             mock_client_cls.return_value = mock_cm
             with pytest.raises(GenericPds4AdapterUnavailableError):
                 GenericPds4ObservationalLabelAdapter.fetch(
                     self._req(), self._PROFILE, _RETRIEVED_AT
                 )
-            assert mock_cm.get.call_count == 1
+            assert mock_cm.stream.call_count == 1
 
 
 # ===========================================================================
@@ -878,43 +888,63 @@ class TestManifestSourceRegistry:
 class TestManifestIdSemanticMutations:
     """Section M: manifest_id must cover all semantic content."""
 
-    def _build(self, entries, source_records=()):
-        return VerifiedInventoryManifest.build(entries, source_records=list(source_records))
+    def _make_ref_for_rid(self, rid: str, prov_id: str = "prov-000") -> VerifiedSourceRecordRef:
+        return VerifiedSourceRecordRef(
+            source_record_id=rid,
+            source_standard=ArchiveSourceStandard.PDS3,
+            provenance_id=prov_id,
+            normalizer_id=_PDS3_NORMALIZER_ID,
+            profile_id="waves_burst_pds3",
+        )
+
+    def _build_with_auto_refs(self, entries):
+        """Build manifest with auto-generated source_records for each rid."""
+        all_rids = list({rid for e in entries for rid in e.representation_record_ids})
+        all_prov_ids = list({pid for e in entries for pid in e.source_fact_provenance_ids})
+        # Build one ref per rid; if there are provenance ids, use the first as prov_id.
+        refs = []
+        for i, rid in enumerate(all_rids):
+            prov_id = all_prov_ids[i] if i < len(all_prov_ids) else f"auto-prov-{i:04d}"
+            refs.append(self._make_ref_for_rid(rid, prov_id))
+        return VerifiedInventoryManifest.build(entries, source_records=refs)
 
     def test_id_changes_when_availability_changes(self):
         e1 = _make_entry("LP-001", ("rid1",), avail=datetime(2024, 1, 1, tzinfo=timezone.utc))
-        m1 = self._build([e1])
+        m1 = self._build_with_auto_refs([e1])
         e2 = _make_entry("LP-001", ("rid1",), avail=datetime(2025, 1, 1, tzinfo=timezone.utc))
-        m2 = self._build([e2])
+        m2 = self._build_with_auto_refs([e2])
         assert m1.manifest_id != m2.manifest_id
 
     def test_id_changes_when_representation_changes(self):
         e1 = _make_entry("LP-001", ("rid-A",))
-        m1 = self._build([e1])
+        m1 = self._build_with_auto_refs([e1])
         e2 = _make_entry("LP-001", ("rid-B",))
-        m2 = self._build([e2])
+        m2 = self._build_with_auto_refs([e2])
         assert m1.manifest_id != m2.manifest_id
 
     def test_id_changes_when_provenance_ref_changes(self):
         e1 = _make_entry("LP-001", ("rid1",), prov_ids=("prov-A",))
-        m1 = self._build([e1])
+        ref1 = self._make_ref_for_rid("rid1", "prov-A")
+        m1 = VerifiedInventoryManifest.build([e1], source_records=[ref1])
         e2 = _make_entry("LP-001", ("rid1",), prov_ids=("prov-B",))
-        m2 = self._build([e2])
+        ref2 = self._make_ref_for_rid("rid1", "prov-B")
+        m2 = VerifiedInventoryManifest.build([e2], source_records=[ref2])
         assert m1.manifest_id != m2.manifest_id
 
     def test_id_changes_when_source_record_changes(self):
         entry = _make_entry("LP-001", ("pds3:DS:P001",))
         ref1 = _make_ref("pds3:DS:P001", "prov-001", profile_id="waves_burst_pds3.v1")
         ref2 = _make_ref("pds3:DS:P001", "prov-001", profile_id="waves_burst_pds3.v2")
-        m1 = self._build([entry], source_records=[ref1])
-        m2 = self._build([entry], source_records=[ref2])
+        m1 = VerifiedInventoryManifest.build([entry], source_records=[ref1])
+        m2 = VerifiedInventoryManifest.build([entry], source_records=[ref2])
         assert m1.manifest_id != m2.manifest_id
 
     def test_canonical_reorder_same_id(self):
         e1 = _make_entry("LP-AAA", ("rid-a",))
         e2 = _make_entry("LP-ZZZ", ("rid-z",))
-        m1 = self._build([e1, e2])
-        m2 = self._build([e2, e1])  # reversed order
+        refs = [self._make_ref_for_rid("rid-a"), self._make_ref_for_rid("rid-z", "prov-001")]
+        m1 = VerifiedInventoryManifest.build([e1, e2], source_records=refs)
+        m2 = VerifiedInventoryManifest.build([e2, e1], source_records=refs)  # reversed order
         assert m1.manifest_id == m2.manifest_id
 
 
@@ -1033,90 +1063,126 @@ class TestRealProfileUrls:
         with pytest.raises(GenericPds4AdapterValidationError, match="[Hh]ost"):
             _validate_label_url_trust(url, MWR_GENERIC_PDS4_PROFILE)
 
-    # --- PDS3 Profile URL patterns ---
+    # --- PDS3 Profile URL patterns — ACTUAL PRODUCTION PROFILE OBJECTS ---
+    # These tests prove the REAL production profile trust boundaries, not copies.
 
-    def _make_profile_with_url(self, base_profile: GenericPds3AdapterProfile,
-                                host: str, path_prefix: str) -> GenericPds3AdapterProfile:
-        """Build a constrained copy of a profile with specific host/path."""
-        return GenericPds3AdapterProfile(
-            profile_id=base_profile.profile_id + "_url_test",
-            expected_mission=base_profile.expected_mission,
-            expected_spacecraft=base_profile.expected_spacecraft,
-            expected_instrument=base_profile.expected_instrument,
-            expected_data_set_id_prefix=base_profile.expected_data_set_id_prefix,
-            product_family=base_profile.product_family,
-            allowed_processing_levels=base_profile.allowed_processing_levels,
-            require_start_stop_time=base_profile.require_start_stop_time,
-            allowed_hosts=frozenset({host}),
-            allowed_path_prefixes=(path_prefix,),
-            size_derivation_strategy=base_profile.size_derivation_strategy,
-        )
-
-    def test_junocam_pds3_url_pattern(self):
-        """JunoCam PDS3 URL pattern: ppi.pds.nasa.gov or equivalent PDS node."""
+    def test_junocam_pds3_official_url_accepted(self):
+        """JUNOCAM_PDS3_PROFILE: pds-rings.seti.org official URL accepted."""
         from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
-        profile = self._make_profile_with_url(
-            JUNOCAM_PDS3_PROFILE,
-            "pds-rings.seti.org",
-            "/holdings/jno-e-jnc-2-edr-l1a-v1.0/data/",
-        )
         url = "https://pds-rings.seti.org/holdings/jno-e-jnc-2-edr-l1a-v1.0/data/jncr_2024165_01m01280_v01.lbl"
-        _validate_pds3_source_url_trust(url, profile)
+        _validate_pds3_source_url_trust(url, JUNOCAM_PDS3_PROFILE)
 
-    def test_fgm_pds3_url_pattern(self):
-        """FGM PDS3 URL pattern: PDS-PPI node."""
+    def test_junocam_pds3_wrong_host_rejected(self):
+        """JUNOCAM_PDS3_PROFILE: wrong host rejected."""
         from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
-        profile = self._make_profile_with_url(
-            FGM_PDS3_PROFILE,
-            "pds-ppi.igpp.ucla.edu",
-            "/data/juno/juno-fgm/",
-        )
+        with pytest.raises(GenericPds3AdapterValidationError, match="[Hh]ost"):
+            _validate_pds3_source_url_trust(
+                "https://evil.example.com/holdings/jno-e-jnc-2-edr-l1a-v1.0/data/t.lbl",
+                JUNOCAM_PDS3_PROFILE,
+            )
+
+    def test_junocam_pds3_wrong_path_rejected(self):
+        """JUNOCAM_PDS3_PROFILE: sibling/wrong path rejected."""
+        from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
+        with pytest.raises(GenericPds3AdapterValidationError, match="[Pp]refix|[Pp]ath"):
+            _validate_pds3_source_url_trust(
+                "https://pds-rings.seti.org/WRONG/path/t.lbl",
+                JUNOCAM_PDS3_PROFILE,
+            )
+
+    def test_fgm_pds3_official_url_accepted(self):
+        """FGM_PDS3_PROFILE: pds-ppi.igpp.ucla.edu official URL accepted."""
+        from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
         url = "https://pds-ppi.igpp.ucla.edu/data/juno/juno-fgm/data/fgm_2024165_orbit62.lbl"
-        _validate_pds3_source_url_trust(url, profile)
+        _validate_pds3_source_url_trust(url, FGM_PDS3_PROFILE)
 
-    def test_jade_pds3_url_pattern(self):
-        """JADE PDS3 URL pattern."""
+    def test_fgm_pds3_wrong_host_rejected(self):
         from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
-        profile = self._make_profile_with_url(
-            JADE_PDS3_PROFILE,
-            "pds-ppi.igpp.ucla.edu",
-            "/data/juno/juno-jade/",
-        )
+        with pytest.raises(GenericPds3AdapterValidationError, match="[Hh]ost"):
+            _validate_pds3_source_url_trust(
+                "https://evil.example.com/data/juno/juno-fgm/t.lbl",
+                FGM_PDS3_PROFILE,
+            )
+
+    def test_fgm_pds3_wrong_path_rejected(self):
+        from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
+        with pytest.raises(GenericPds3AdapterValidationError, match="[Pp]refix|[Pp]ath"):
+            _validate_pds3_source_url_trust(
+                "https://pds-ppi.igpp.ucla.edu/data/OTHER/path/t.lbl",
+                FGM_PDS3_PROFILE,
+            )
+
+    def test_jade_pds3_official_url_accepted(self):
+        """JADE_PDS3_PROFILE: official URL accepted."""
+        from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
         url = "https://pds-ppi.igpp.ucla.edu/data/juno/juno-jade/data/jad_l20_lo_tof3d_2024165.lbl"
-        _validate_pds3_source_url_trust(url, profile)
+        _validate_pds3_source_url_trust(url, JADE_PDS3_PROFILE)
 
-    def test_jedi_pds3_url_pattern(self):
-        """JEDI PDS3 URL pattern."""
+    def test_jade_pds3_wrong_host_rejected(self):
         from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
-        profile = self._make_profile_with_url(
-            JEDI_PDS3_PROFILE,
-            "pds-ppi.igpp.ucla.edu",
-            "/data/juno/juno-jedi/",
-        )
+        with pytest.raises(GenericPds3AdapterValidationError, match="[Hh]ost"):
+            _validate_pds3_source_url_trust(
+                "https://evil.example.com/data/juno/juno-jade/t.lbl",
+                JADE_PDS3_PROFILE,
+            )
+
+    def test_jedi_pds3_official_url_accepted(self):
+        """JEDI_PDS3_PROFILE: official URL accepted."""
+        from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
         url = "https://pds-ppi.igpp.ucla.edu/data/juno/juno-jedi/data/jed_2024165_ch0_l2.lbl"
-        _validate_pds3_source_url_trust(url, profile)
+        _validate_pds3_source_url_trust(url, JEDI_PDS3_PROFILE)
 
-    def test_waves_survey_pds3_url_pattern(self):
-        """WAVES Survey PDS3 URL pattern."""
+    def test_jedi_pds3_wrong_host_rejected(self):
         from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
-        profile = self._make_profile_with_url(
-            WAVES_SURVEY_PDS3_PROFILE,
-            "pds-ppi.igpp.ucla.edu",
-            "/data/juno-wav-3-cdr-calibrated-v2.0/jno-e-j-ss-wav-3-cdr-srvy/",
-        )
+        with pytest.raises(GenericPds3AdapterValidationError, match="[Hh]ost"):
+            _validate_pds3_source_url_trust(
+                "https://evil.example.com/data/juno/juno-jedi/t.lbl",
+                JEDI_PDS3_PROFILE,
+            )
+
+    def test_waves_survey_pds3_official_url_accepted(self):
+        """WAVES_SURVEY_PDS3_PROFILE: official URL accepted."""
+        from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
         url = "https://pds-ppi.igpp.ucla.edu/data/juno-wav-3-cdr-calibrated-v2.0/jno-e-j-ss-wav-3-cdr-srvy/data/2024/wav_2024165_srvy.lbl"
-        _validate_pds3_source_url_trust(url, profile)
+        _validate_pds3_source_url_trust(url, WAVES_SURVEY_PDS3_PROFILE)
 
-    def test_waves_burst_pds3_url_pattern(self):
-        """WAVES Burst PDS3 URL pattern."""
+    def test_waves_survey_pds3_wrong_host_rejected(self):
         from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
-        profile = self._make_profile_with_url(
-            WAVES_BURST_PDS3_PROFILE,
-            "pds-ppi.igpp.ucla.edu",
-            "/data/juno-wav-3-cdr-calibrated-v2.0/jno-e-j-ss-wav-3-cdr-bstfull/",
-        )
+        with pytest.raises(GenericPds3AdapterValidationError, match="[Hh]ost"):
+            _validate_pds3_source_url_trust(
+                "https://evil.example.com/data/juno-wav-3-cdr-calibrated-v2.0/jno-e-j-ss-wav-3-cdr-srvy/t.lbl",
+                WAVES_SURVEY_PDS3_PROFILE,
+            )
+
+    def test_waves_survey_pds3_wrong_path_rejected(self):
+        from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
+        with pytest.raises(GenericPds3AdapterValidationError, match="[Pp]refix|[Pp]ath"):
+            _validate_pds3_source_url_trust(
+                "https://pds-ppi.igpp.ucla.edu/data/WRONG/path/t.lbl",
+                WAVES_SURVEY_PDS3_PROFILE,
+            )
+
+    def test_waves_burst_pds3_official_url_accepted(self):
+        """WAVES_BURST_PDS3_PROFILE: official URL accepted."""
+        from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
         url = "https://pds-ppi.igpp.ucla.edu/data/juno-wav-3-cdr-calibrated-v2.0/jno-e-j-ss-wav-3-cdr-bstfull/data/2024/wav_2024165t055551_b_bin.lbl"
-        _validate_pds3_source_url_trust(url, profile)
+        _validate_pds3_source_url_trust(url, WAVES_BURST_PDS3_PROFILE)
+
+    def test_waves_burst_pds3_wrong_host_rejected(self):
+        from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
+        with pytest.raises(GenericPds3AdapterValidationError, match="[Hh]ost"):
+            _validate_pds3_source_url_trust(
+                "https://evil.example.com/data/juno-wav-3-cdr-calibrated-v2.0/jno-e-j-ss-wav-3-cdr-bstfull/t.lbl",
+                WAVES_BURST_PDS3_PROFILE,
+            )
+
+    def test_waves_burst_pds3_wrong_path_rejected(self):
+        from backend.app.mission_sources.adapters.pds3_adapter import _validate_pds3_source_url_trust
+        with pytest.raises(GenericPds3AdapterValidationError, match="[Pp]refix|[Pp]ath"):
+            _validate_pds3_source_url_trust(
+                "https://pds-ppi.igpp.ucla.edu/data/WRONG/path/t.lbl",
+                WAVES_BURST_PDS3_PROFILE,
+            )
 
     # Profile identity checks
     def test_jiram_profile_id(self):

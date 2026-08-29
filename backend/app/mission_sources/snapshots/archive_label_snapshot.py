@@ -149,6 +149,11 @@ ReparserFn = Callable[
 # The registry maps (normalizer_id, profile_id) → ReparserFn.
 # Callers register parsers before loading snapshots; load() resolves via
 # this registry rather than accepting arbitrary callable injection.
+#
+# Item 7: duplicate registration (overwrite) is forbidden.  Once a parser
+# is registered for a (normalizer_id, profile_id) pair it cannot be changed.
+# Production code must register at startup; tests that need a different parser
+# must use load_from_explicit_reparser() which bypasses the registry entirely.
 _PARSER_REGISTRY: dict[tuple[str, str], ReparserFn] = {}
 
 
@@ -158,7 +163,15 @@ def register_parser(
     """Register a reparser for a specific normalizer_id + profile_id pair.
 
     Must be called BEFORE loading any snapshot that uses this combination.
-    Re-registering the same key with a new callable overwrites the previous.
+
+    Raises
+    ------
+    ValueError
+        If normalizer_id or profile_id is empty.
+
+    ArchiveSnapshotValidationError
+        If the (normalizer_id, profile_id) pair is already registered.
+        Duplicate registration / overwrite is forbidden.
 
     Parameters
     ----------
@@ -169,6 +182,31 @@ def register_parser(
     reparser:
         Callable accepting (raw_bytes, source_ref, retrieved_at) and
         returning (ArchiveScienceProduct, ProvenanceRecord).
+    """
+    if not normalizer_id.strip():
+        raise ValueError("normalizer_id must not be empty.")
+    if not profile_id.strip():
+        raise ValueError("profile_id must not be empty.")
+    key = (normalizer_id, profile_id)
+    if key in _PARSER_REGISTRY:
+        raise ArchiveSnapshotValidationError(
+            f"Parser for normalizer_id={normalizer_id!r} / profile_id={profile_id!r} "
+            "is already registered. Duplicate registration / overwrite is forbidden. "
+            "Use load_from_explicit_reparser() for test/migration paths."
+        )
+    _PARSER_REGISTRY[key] = reparser
+
+
+def _register_parser_force(
+    normalizer_id: str, profile_id: str, reparser: ReparserFn
+) -> None:
+    """Internal helper: register or overwrite a parser in the registry.
+
+    FOR TEST USE ONLY.  Production code must use register_parser() which
+    forbids overwrite.  This function bypasses the overwrite guard to allow
+    test isolation (re-registering between tests).
+
+    Not exported from the public module interface.
     """
     if not normalizer_id.strip():
         raise ValueError("normalizer_id must not be empty.")
@@ -449,7 +487,17 @@ class ArchiveLabelSnapshotStore:
         """
         path = Path(path)
 
-        # 1. retrieved_at.
+        # 1. Reject unknown/empty normalizer_id or profile_id BEFORE any I/O (Item 8).
+        if not normalizer_id.strip():
+            raise ArchiveSnapshotValidationError(
+                "Snapshot write rejected: normalizer_id must not be empty."
+            )
+        if not profile_id.strip():
+            raise ArchiveSnapshotValidationError(
+                "Snapshot write rejected: profile_id must not be empty."
+            )
+
+        # 2. retrieved_at.
         retrieved_at = provenance.retrieved_at
         if retrieved_at is None:
             raise ArchiveSnapshotValidationError(
@@ -460,7 +508,7 @@ class ArchiveLabelSnapshotStore:
                 "Snapshot write rejected: provenance.retrieved_at is not timezone-aware."
             )
 
-        # 2. SHA-256 consistency.
+        # 3. SHA-256 consistency.
         computed_hash = hashlib.sha256(raw_label_bytes).hexdigest()
         if provenance.content_sha256 is None or computed_hash != provenance.content_sha256:
             raise ArchiveSnapshotValidationError(
@@ -468,14 +516,14 @@ class ArchiveLabelSnapshotStore:
                 "provenance.content_sha256."
             )
 
-        # 3. source_record_id consistency.
+        # 4. source_record_id consistency.
         if provenance.source_record_id != product.source_record_id:
             raise ArchiveSnapshotValidationError(
                 "Snapshot write rejected: provenance.source_record_id does not "
                 "match product.source_record_id."
             )
 
-        # 4. Re-run the SAME shared parser.
+        # 5. Re-run the SAME shared parser.
         effective_ref = source_ref or product.source_label_ref or ""
         try:
             rederived_product, rederived_provenance = reparser(
@@ -497,37 +545,58 @@ class ArchiveLabelSnapshotStore:
                 "with the raw label."
             )
 
-        # 5. Base64 encode.
+        # 6. Base64 encode.
         raw_b64 = base64.b64encode(raw_label_bytes).decode("ascii")
 
-        # 6. Snapshot ID.
+        # 7. Snapshot ID.
         retrieved_at_iso = _canonical_retrieved_at(retrieved_at)
         standard_val = product.source_standard.value
         snapshot_id = _compute_snapshot_id(
             standard_val, provenance.provenance_id, retrieved_at_iso
         )
 
-        # 7. Envelope dict.
+        # 8. Construct and validate the envelope with Pydantic BEFORE serializing (Item 8).
+        # This rejects empty/mismatched normalizer_id or profile_id that would only
+        # fail later on load.
+        try:
+            envelope = ArchiveLabelSnapshotEnvelope(
+                snapshot_schema=SNAPSHOT_SCHEMA,
+                snapshot_version=SNAPSHOT_VERSION,
+                snapshot_id=snapshot_id,
+                snapshot_source_standard=standard_val,
+                source_ref=source_ref,
+                retrieved_at=retrieved_at,
+                raw_label_base64=raw_b64,
+                raw_label_sha256=computed_hash,
+                product=product,
+                provenance=provenance,
+                normalizer_id=normalizer_id,
+                profile_id=profile_id,
+            )
+        except PydanticValidationError as exc:
+            raise ArchiveSnapshotValidationError(
+                "Snapshot write rejected: envelope validation failed."
+            ) from exc
+
+        # 9. Serialize from the validated envelope.
         envelope_dict: dict = {
-            "snapshot_schema": SNAPSHOT_SCHEMA,
-            "snapshot_version": SNAPSHOT_VERSION,
-            "snapshot_id": snapshot_id,
-            "snapshot_source_standard": standard_val,
-            "source_ref": source_ref,
+            "snapshot_schema": envelope.snapshot_schema,
+            "snapshot_version": envelope.snapshot_version,
+            "snapshot_id": envelope.snapshot_id,
+            "snapshot_source_standard": envelope.snapshot_source_standard,
+            "source_ref": envelope.source_ref,
             "retrieved_at": retrieved_at_iso,
-            "raw_label_base64": raw_b64,
-            "raw_label_sha256": computed_hash,
+            "raw_label_base64": envelope.raw_label_base64,
+            "raw_label_sha256": envelope.raw_label_sha256,
             "product": product.model_dump(mode="json"),
             "provenance": provenance.model_dump(mode="json"),
-            "normalizer_id": normalizer_id,
-            "profile_id": profile_id,
+            "normalizer_id": envelope.normalizer_id,
+            "profile_id": envelope.profile_id,
         }
-
-        # 8. Serialize.
         serialized = json.dumps(envelope_dict, sort_keys=True, indent=2)
         content_bytes = (serialized + "\n").encode("utf-8")
 
-        # 9. Size check.
+        # 10. Size check.
         if len(content_bytes) > _MAX_SNAPSHOT_BYTES:
             raise ArchiveSnapshotValidationError(
                 f"Snapshot write rejected: serialised snapshot exceeds maximum "
@@ -803,5 +872,23 @@ def _finish_load(
             f"{rederived_product.source_standard.value!r}."
         )
 
-    # 18. Return verified result.
+    # 18. Cross-check normalizer_id vs source_standard (Item 7).
+    # A PDS3 normalizer must not be used with a PDS4 snapshot and vice versa.
+    # Convention: PDS3 normalizer IDs contain "pds3"; PDS4 normalizer IDs contain "pds4".
+    norm_id_lower = envelope.normalizer_id.lower()
+    std_val = rederived_product.source_standard.value  # "pds3" or "pds4"
+    if "pds3" in norm_id_lower and std_val != "pds3":
+        raise ArchiveSnapshotValidationError(
+            f"Snapshot normalizer_id {envelope.normalizer_id!r} is a PDS3 normalizer "
+            f"but snapshot_source_standard is {std_val!r}. "
+            "Normalizer/source_standard mismatch."
+        )
+    if "pds4" in norm_id_lower and std_val != "pds4":
+        raise ArchiveSnapshotValidationError(
+            f"Snapshot normalizer_id {envelope.normalizer_id!r} is a PDS4 normalizer "
+            f"but snapshot_source_standard is {std_val!r}. "
+            "Normalizer/source_standard mismatch."
+        )
+
+    # 19. Return verified result.
     return rederived_product, rederived_provenance
