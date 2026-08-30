@@ -498,6 +498,22 @@ export default function MissionControl() {
   const [manualOrder, setManualOrder] = useState<string[]>([]);
   const manualSelectedIds = useMemo(() => new Set(manualOrder), [manualOrder]);
 
+  // ── Phase 8B: Modify-AI plan provenance ──────────────────────────────────
+  // Tracks whether the current manual selection was seeded from an AI recommendation
+  // (via Modify) or started fresh. Cleared on source switch, reset, and new manual
+  // workflow starts.
+  //
+  // 'manual'           — fresh manual planning, independent of any AI recommendation
+  // 'ai_recommendation' — seeded from an AI recommended plan via Modify
+  const [manualEditOrigin, setManualEditOrigin] = useState<'manual' | 'ai_recommendation'>('manual');
+
+  // The AI evaluation's deferred_packets at the moment Modify was clicked.
+  // This is IMMUTABLE provenance — it does NOT update when the operator edits the
+  // selection. It exists solely to show the operator what the original AI baseline
+  // evaluation expected to defer. Reset to null on source switch, reset, and fresh
+  // manual workflow starts.
+  const [aiBaselineDeferredIds, setAiBaselineDeferredIds] = useState<ReadonlySet<string>>(new Set());
+
   // ── Phase 5.1E: Application-level execution coordinator ──────────────────
   // INVARIANTS:
   //   E1 One operator authorization creates exactly one executionId.
@@ -775,6 +791,8 @@ export default function MissionControl() {
     setAllPlans((prev) => prev.filter((p) => p.plan_id !== 'ai-prioritized'));
     setAllEvaluations((prev) => prev.filter((e) => e.plan_id !== 'ai-prioritized'));
     setManualOrder([]);
+    setManualEditOrigin('manual');
+    setAiBaselineDeferredIds(new Set());
     clearManualAssessmentState();
     setAiRecommendationRejected(false);
     setChoreographyActive(false);
@@ -834,6 +852,8 @@ export default function MissionControl() {
     setAllPlans((prev) => prev.filter((p) => p.plan_id !== 'ai-prioritized'));
     setAllEvaluations((prev) => prev.filter((e) => e.plan_id !== 'ai-prioritized'));
     setManualOrder([]);
+    setManualEditOrigin('manual');
+    setAiBaselineDeferredIds(new Set());
     clearManualAssessmentState();
     setAiRecommendationRejected(false);
     setChoreographyActive(false);
@@ -1005,6 +1025,9 @@ export default function MissionControl() {
 
   function handleClearManualSelection() {
     setManualOrder([]);
+    // Clearing selection ends any AI-seeded modify context — operator is starting fresh.
+    setManualEditOrigin('manual');
+    setAiBaselineDeferredIds(new Set());
     clearManualAssessmentState();
   }
 
@@ -1165,16 +1188,65 @@ export default function MissionControl() {
     setActiveSection('transmission');
   }, [recPlan, recommendation, addSessionEvent, activeSourceId]);
 
-  /** Modify: seed manual mode with AI plan packet IDs, switch to manual planning. */
+  /**
+   * Modify: seed manual mode from the AI recommendation's expected-to-fit subset.
+   *
+   * SEMANTIC BOUNDARY (Phase 8B):
+   *   CandidatePlan.packets is a complete priority ordering, NOT a
+   *   "selected-to-transmit" subset. The deterministic evaluator decides which
+   *   products are expected to fit via EvaluationResult.deferred_packets.
+   *
+   *   Therefore Modify must use EvaluationResult.deferred_packets to derive the
+   *   editable expected-to-fit subset. Seeding with the full CandidatePlan would
+   *   silently include products the evaluator already expects to defer, producing
+   *   a misleading "403/403 selected" display for high-volume sources.
+   *
+   * Fail-safe: both recPlan AND recEval are required. Without recEval we cannot
+   * know which products are expected to fit. We surface a clear error rather than
+   * falling back to "all packets selected".
+   *
+   * Validation: every ID in recEval.deferred_packets must belong to recPlan.packets.
+   * An unknown ID indicates an inconsistent backend state — we fail safely.
+   */
   const handleModifyAiPlan = useCallback(() => {
     if (!recPlan) return;
-    const orderedIds = recPlan.packets.map((p) => p.packet_id);
-    setManualOrder(orderedIds);
+
+    // TASK 4: Fail safe — recEval is required to determine the expected-to-fit subset.
+    if (!recEval) {
+      setError(
+        'Cannot modify this recommendation because its plan evaluation is unavailable. ' +
+        'Re-run AI analysis.'
+      );
+      return;
+    }
+
+    // TASK 5: Validate that every deferred ID belongs to the plan.
+    const planPacketIds = new Set(recPlan.packets.map((p) => p.packet_id));
+    const unknownDeferredIds = recEval.deferred_packets.filter((id) => !planPacketIds.has(id));
+    if (unknownDeferredIds.length > 0) {
+      setError(
+        'Cannot modify this recommendation: the plan evaluation references unknown product IDs ' +
+        `[${unknownDeferredIds.slice(0, 3).join(', ')}${unknownDeferredIds.length > 3 ? '…' : ''}]. ` +
+        'Re-run AI analysis.'
+      );
+      return;
+    }
+
+    // TASK 3: Seed only products NOT in deferred_packets, preserving plan order.
+    const deferredIds = new Set(recEval.deferred_packets);
+    const editableOrder = recPlan.packets
+      .filter((p) => !deferredIds.has(p.packet_id))
+      .map((p) => p.packet_id);
+
+    setManualOrder(editableOrder);
+    // Record immutable AI baseline provenance for the UI.
+    setManualEditOrigin('ai_recommendation');
+    setAiBaselineDeferredIds(deferredIds);
     clearManualAssessmentState();
     setDecisionMode('manual');
     setAiRecommendationRejected(false);
     setActiveSection('data');
-  }, [recPlan, clearManualAssessmentState]);
+  }, [recPlan, recEval, clearManualAssessmentState]);
 
   /** Reject: no backend mutation, no transmission, no state change except flag. */
   const handleRejectAiPlan = useCallback(() => {
@@ -1331,6 +1403,8 @@ export default function MissionControl() {
     manualSelectedIds,
     manualOrder,
     manualPlan,
+    manualEditOrigin,
+    aiBaselineDeferredIds,
     onToggleManualSelect: handleToggleManualSelect,
     onClearManualSelection: handleClearManualSelection,
     onManualReorder: handleManualReorder,

@@ -148,6 +148,10 @@ interface CommonProps {
   manualSelectedIds: Set<string>;
   manualOrder: string[];
   manualPlan: CandidatePlan | null;
+  /** Phase 8B: whether manual mode was seeded from an AI recommendation via Modify */
+  manualEditOrigin: 'manual' | 'ai_recommendation';
+  /** Phase 8B: immutable snapshot of AI baseline deferred IDs at Modify time */
+  aiBaselineDeferredIds: ReadonlySet<string>;
   onToggleManualSelect: (productId: string) => void;
   onClearManualSelection: () => void;
   onManualReorder: (newOrder: string[]) => void;
@@ -848,11 +852,14 @@ function DataSection(props: CommonProps) {
             const isExp = expandedId === p.product_id;
             const rank = props.manualOrder.indexOf(p.product_id);
             const critColor = p.criticality >= 0.85 ? '#f85149' : p.criticality >= 0.7 ? '#d29922' : '#3fb950';
+            // Phase 8B: AI baseline deferred status (only relevant in Modify-AI mode)
+            const isAiModifyMode = props.decisionMode === 'manual' && props.manualEditOrigin === 'ai_recommendation';
+            const wasAiBaselineDeferred = isAiModifyMode && props.aiBaselineDeferredIds.has(p.product_id);
             return (
               <div key={p.product_id} style={{
-                background: isSelected ? 'rgba(63,185,80,0.06)' : 'transparent',
+                background: isSelected ? 'rgba(63,185,80,0.06)' : wasAiBaselineDeferred && !isSelected ? 'rgba(210,153,34,0.04)' : 'transparent',
                 borderBottom: '1px solid #30363d',
-                borderLeft: isSelected ? '2px solid #3fb950' : '2px solid transparent',
+                borderLeft: isSelected ? '2px solid #3fb950' : wasAiBaselineDeferred && !isSelected ? '2px solid rgba(210,153,34,0.4)' : '2px solid transparent',
                 overflow: 'hidden',
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 6px', cursor: 'pointer' }}
@@ -872,6 +879,10 @@ function DataSection(props: CommonProps) {
                   )}
                   {isSelected && rank >= 0 && (
                     <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#3fb950', minWidth: 16, textAlign: 'right', flexShrink: 0 }}>#{rank + 1}</span>
+                  )}
+                  {/* Phase 8B: AI baseline status badge — only shown in Modify-AI mode */}
+                  {isAiModifyMode && !isSelected && wasAiBaselineDeferred && (
+                    <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 8, color: '#d29922', letterSpacing: '0.05em', flexShrink: 0, whiteSpace: 'nowrap' }}>AI DEFERRED</span>
                   )}
                   {p.anomaly_id && (
                     <span style={{ color: '#f85149', fontSize: 9, fontFamily: '"IBM Plex Mono"', fontWeight: 700, flexShrink: 0 }}>⚠</span>
@@ -2694,18 +2705,46 @@ function DecisionData(props: CommonProps) {
   const hasSelection = props.manualSelectedIds.size > 0;
   const hasAssessment = !!props.manualAssessment && !props.manualAssessmentStale;
 
+  // Phase 8B: distinguish Modify-AI from fresh manual planning
+  const isAiModifyOrigin = props.manualEditOrigin === 'ai_recommendation';
+  // Count of originally-deferred products that the operator has NOT re-selected.
+  const aiBaselineDeferredCount = props.aiBaselineDeferredIds.size;
+  // Detect whether operator has diverged from the initial AI seeded selection.
+  const operatorModified = isAiModifyOrigin && hasSelection && (() => {
+    // The operator has modified if the current selection differs from the initial AI seeding.
+    // We detect this by checking if any selected item was originally AI-deferred (added by operator)
+    // or if any originally-scheduled item is no longer selected (removed by operator).
+    for (const id of props.aiBaselineDeferredIds) {
+      if (props.manualSelectedIds.has(id)) return true;
+    }
+    return false;
+  })();
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {hasSelection ? (
-        <div style={{ ...CARD, borderColor: 'rgba(63,185,80,0.22)' }}>
-          <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 9, color: '#3fb950', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 6, paddingBottom: 6, borderBottom: '1px solid rgba(63,185,80,0.18)' }}>
-            Manual Selection
+        <div style={{ ...CARD, borderColor: isAiModifyOrigin ? 'rgba(47,129,247,0.25)' : 'rgba(63,185,80,0.22)' }}>
+          {/* Phase 8B: header distinguishes Modify-AI from fresh manual */}
+          <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 9, color: isAiModifyOrigin ? '#2f81f7' : '#3fb950', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 6, paddingBottom: 6, borderBottom: `1px solid ${isAiModifyOrigin ? 'rgba(47,129,247,0.18)' : 'rgba(63,185,80,0.18)'}` }}>
+            {isAiModifyOrigin ? 'Modified AI Plan' : 'Manual Selection'}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '3px 0', borderBottom: '1px solid #21262d' }}>
-              <span style={{ fontFamily: '"IBM Plex Sans"', fontSize: 10, color: '#8b949e' }}>Selected</span>
+              {/* Phase 8B: use "Scheduled / Selected" terminology in AI-modify mode */}
+              <span style={{ fontFamily: '"IBM Plex Sans"', fontSize: 10, color: '#8b949e' }}>
+                {isAiModifyOrigin ? 'Scheduled / Selected' : 'Selected'}
+              </span>
               <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 13, fontWeight: 700, color: '#3fb950' }}>{props.manualSelectedIds.size}</span>
             </div>
+            {/* Phase 8B: show AI baseline deferred count in Modify-AI mode */}
+            {isAiModifyOrigin && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '3px 0', borderBottom: '1px solid #21262d' }}>
+                <span style={{ fontFamily: '"IBM Plex Sans"', fontSize: 10, color: '#8b949e' }}>
+                  {operatorModified ? 'Original AI Baseline Deferred' : 'AI Baseline Deferred'}
+                </span>
+                <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 11, fontWeight: 700, color: aiBaselineDeferredCount > 0 ? '#d29922' : '#3fb950' }}>{aiBaselineDeferredCount}</span>
+              </div>
+            )}
             {hasAssessment && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '3px 0', borderBottom: '1px solid #21262d' }}>
@@ -2715,14 +2754,18 @@ function DecisionData(props: CommonProps) {
                   </span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '3px 0', borderBottom: '1px solid #21262d' }}>
-                  <span style={{ fontFamily: '"IBM Plex Sans"', fontSize: 10, color: '#8b949e' }}>Deferred</span>
+                  <span style={{ fontFamily: '"IBM Plex Sans"', fontSize: 10, color: '#8b949e' }}>
+                    {isAiModifyOrigin ? 'Current Plan Deferred' : 'Deferred'}
+                  </span>
                   <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 11, fontWeight: 700, color: '#d29922' }}>{props.manualAssessment!.evaluation.deferred_packets.length}</span>
                 </div>
               </>
             )}
           </div>
           <div style={{ marginTop: 8, fontFamily: '"IBM Plex Sans"', fontSize: 10, color: '#656d76', lineHeight: 1.5 }}>
-            Navigate to Transmit section to evaluate and authorize your plan.
+            {isAiModifyOrigin
+              ? 'Seeded from AI recommendation. Navigate to Transmit to evaluate your modified plan.'
+              : 'Navigate to Transmit section to evaluate and authorize your plan.'}
           </div>
         </div>
       ) : (

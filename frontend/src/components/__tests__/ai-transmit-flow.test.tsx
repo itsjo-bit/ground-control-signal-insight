@@ -187,6 +187,8 @@ function makeProps(overrides: {
     manualSelectedIds: new Set<string>(),
     manualOrder: [],
     manualPlan: null,
+    manualEditOrigin: 'manual' as const,
+    aiBaselineDeferredIds: new Set<string>(),
     onToggleManualSelect: NOOP,
     onClearManualSelection: NOOP,
     onManualReorder: NOOP,
