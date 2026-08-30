@@ -115,7 +115,7 @@ RULES (non-negotiable):
 3. You must NOT perform calculations or invent metric values.
 4. Respond ONLY with a valid JSON object matching the schema below.
 
-METRIC CATEGORIES — consider BOTH for a balanced recommendation:
+METRIC CATEGORIES — consider ALL for a balanced recommendation:
 
 Telecom / feasibility:
   risk_score                    — overall transmission risk [0,1]; lower is safer
@@ -124,15 +124,35 @@ Telecom / feasibility:
   deadline_miss_rate            — fraction of packets missing deadlines [0,1]
   bandwidth_utilization         — fraction of link bandwidth used [0,1]
   window_pressure               — pressure on remaining window [0,1]
-  mission_value                 — weighted delivery value
+  mission_value                 — operational weighted value (criticality × mission relevance);
+                                  NOT the same as scientific_value_capture_rate
 
 Mission semantic outcome:
-  scientific_value_capture_rate — fraction of total scientific value delivered [0,1]
+  scientific_value_capture_rate — fraction of total scientific value delivered [0,1].
+                                  Use this metric when making claims about scientific data
+                                  capture, science return, or scientific value. Do NOT
+                                  substitute mission_value for scientific_value_capture_rate.
   required_delivery_rate        — fraction of required products delivered [0,1]
   active_anomaly_delivery_rate  — fraction of anomaly-linked products delivered [0,1]
   high_severity_anomaly_coverage_rate — fraction of high-severity anomalies with coverage [0,1]
   anomaly_weighted_coverage     — severity-weighted anomaly coverage [0,1]
   average_delivered_age_s       — mean age of delivered data (lower = fresher)
+
+Subsystem composition (trade-off evidence — present when available):
+  delivered_subsystems          — count of distinct subsystems with >=1 projected delivered product
+  total_subsystems              — count of all distinct non-empty subsystem names in the inventory
+  subsystem_coverage_rate       — delivered_subsystems / total_subsystems [0,1]
+  delivered_by_subsystem        — projected delivered product count keyed by subsystem name
+
+  IMPORTANT — subsystem coverage is a TRADE-OFF SIGNAL, not a diversity objective:
+  * Do NOT automatically select the most diverse option.
+  * Do NOT reject a single-subsystem plan on the basis of low coverage alone.
+  * A concentrated plan may be correct when operational urgency, anomaly diagnostics,
+    or required delivery strongly justifies it.
+  * Broader subsystem representation may be valuable when multiple instruments hold
+    complementary science or diagnostic data important to the current mission context.
+  * Compare subsystem composition against criticality, scientific value, anomaly relevance,
+    required delivery, link efficiency, and mission phase before drawing conclusions.
 
 DECISION GUIDANCE:
 - Select the option whose trade-offs are BEST SUPPORTED by the authoritative metrics
@@ -142,6 +162,10 @@ DECISION GUIDANCE:
 - Do NOT automatically favor the lowest risk if it sacrifices required anomaly diagnostics.
 - Consider active anomaly severity and coverage when diagnostic data is at stake.
 - Higher active_anomaly_delivery_rate matters more when high-severity anomalies are present.
+- If you make a claim about scientific data capture or science return, cite
+  scientific_value_capture_rate, not mission_value.
+- If you make a claim about subsystem breadth or diversity, cite the subsystem
+  composition metrics (subsystem_coverage_rate or delivered_by_subsystem).
 - Your role is advisory trade-off interpretation, not autonomous decision-making.
 
 RESPONSE SCHEMA:
@@ -223,6 +247,33 @@ class Stage2PlanSummary(BaseModel):
     high_severity_anomaly_coverage_rate: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     anomaly_weighted_coverage: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     average_delivered_age_s: Optional[float] = Field(default=None, ge=0.0)
+
+    # Subsystem composition evidence (from MissionOutcomeEvaluator) — all optional
+    # DESCRIPTIVE: these are trade-off signals, not mandatory diversity objectives.
+    # A single-subsystem plan is not invalid. Higher coverage is not always better.
+    delivered_subsystems: Optional[int] = Field(
+        default=None, ge=0,
+        description="Number of distinct subsystems with >=1 projected delivered product",
+    )
+    total_subsystems: Optional[int] = Field(
+        default=None, ge=0,
+        description="Total distinct non-empty subsystem names in authoritative inventory",
+    )
+    subsystem_coverage_rate: Optional[float] = Field(
+        default=None, ge=0.0, le=1.0,
+        description=(
+            "delivered_subsystems / total_subsystems. "
+            "Null when total_subsystems is 0. "
+            "Trade-off signal only — not a diversity objective."
+        ),
+    )
+    delivered_by_subsystem: Optional[dict] = Field(
+        default=None,
+        description=(
+            "Projected non-deferred product count keyed by normalised subsystem name. "
+            "Compact structured evidence. Subsystem names are mission content, not plan provenance."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -427,6 +478,11 @@ def build_stage2_summaries(
             high_severity_anomaly_coverage_rate=mo.high_severity_anomaly_coverage_rate if mo else None,
             anomaly_weighted_coverage=mo.anomaly_weighted_coverage if mo else None,
             average_delivered_age_s=mo.average_delivered_age_s if mo else None,
+            # Subsystem composition evidence (when available)
+            delivered_subsystems=mo.delivered_subsystems if mo else None,
+            total_subsystems=mo.total_subsystems if mo else None,
+            subsystem_coverage_rate=mo.subsystem_coverage_rate if mo else None,
+            delivered_by_subsystem=dict(mo.delivered_by_subsystem) if mo else None,
         ))
 
     return summaries

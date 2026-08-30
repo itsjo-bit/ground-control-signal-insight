@@ -136,10 +136,14 @@ from ..domain.anomaly_policy import (  # noqa: E402  (import after module-level 
     is_applicable_anomaly,
 )
 
+#: Fallback key used when a DataProduct.subsystem is empty/whitespace-only.
+UNKNOWN_SUBSYSTEM_KEY: str = "__unknown__"
+
 __all__ = [
     "DEFAULT_HIGH_SEVERITY_THRESHOLD",
     "APPLICABLE_ANOMALY_STATUSES",
     "is_applicable_anomaly",
+    "UNKNOWN_SUBSYSTEM_KEY",
     "MissionOutcomeEvaluationError",
     "AnomalyCoverageDetail",
     "MissionOutcomeResult",
@@ -276,7 +280,18 @@ class MissionOutcomeResult(BaseModel):
         Both null when no products were delivered.
 
     Subsystem breakdown
-        delivered_by_subsystem — dict mapping subsystem → delivered count.
+        delivered_by_subsystem — dict mapping normalised subsystem name → delivered count.
+        Products with empty/whitespace subsystem are keyed under ``"__unknown__"``.
+
+    Subsystem coverage (authoritative denominator)
+        total_subsystems — distinct non-empty subsystem names in full inventory.
+        delivered_subsystems — distinct subsystems with ≥1 projected delivered product.
+        subsystem_coverage_rate — delivered_subsystems / total_subsystems (None when 0).
+
+        These are DESCRIPTIVE metrics only:
+        * A single-subsystem plan is not automatically invalid.
+        * A higher coverage rate is not automatically better.
+        * The denominator uses the full authoritative inventory, not the plan alone.
 
     Per-anomaly detail
         anomaly_coverage_by_id — list of :class:`AnomalyCoverageDetail` objects.
@@ -338,7 +353,42 @@ class MissionOutcomeResult(BaseModel):
     # ── Subsystem breakdown ───────────────────────────────────────────────────
     delivered_by_subsystem: dict[str, int] = Field(
         default_factory=dict,
-        description="Number of delivered products per spacecraft subsystem",
+        description=(
+            "Number of projected non-deferred products per subsystem. "
+            "Keys are normalised subsystem names (stripped, lower-cased). "
+            "Products with empty subsystem are grouped under '__unknown__'. "
+            "Semantics: sum(values()) == delivered_products when every authoritative "
+            "product has a non-empty subsystem."
+        ),
+    )
+
+    # ── Subsystem coverage ────────────────────────────────────────────────────
+    total_subsystems: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Number of distinct non-empty normalised subsystem names across the "
+            "FULL authoritative DataProduct inventory. This is the authoritative "
+            "denominator — a plan cannot improve its coverage by omitting products."
+        ),
+    )
+    delivered_subsystems: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Number of distinct subsystem names with at least one projected "
+            "non-deferred product. Always <= total_subsystems."
+        ),
+    )
+    subsystem_coverage_rate: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "delivered_subsystems / total_subsystems. "
+            "None when total_subsystems == 0 (no non-empty subsystem data in inventory). "
+            "DESCRIPTIVE ONLY — higher is not automatically better."
+        ),
     )
 
     # ── Per-anomaly detail ────────────────────────────────────────────────────
@@ -641,11 +691,51 @@ class MissionOutcomeEvaluator:
         )
         med_age: float | None = statistics.median(delivered_ages) if delivered_ages else None
 
-        # ── Subsystem delivery breakdown ──────────────────────────────────────
+        # ── Subsystem delivery breakdown & coverage ───────────────────────────
+        #
+        # Normalise subsystem names: strip whitespace, lower-case.
+        # Empty/whitespace-only subsystem values are grouped under UNKNOWN_SUBSYSTEM_KEY.
+        #
+        # Authoritative denominator policy (mirrors existing rate denominators):
+        #   total_subsystems = distinct NON-EMPTY normalised names across ALL auth products
+        #   delivered_subsystems = distinct names with >=1 projected non-deferred product
+        #   subsystem_coverage_rate = delivered_subsystems / total_subsystems
+        #                              (None when total_subsystems == 0)
+        #
+        # The denominator excludes __unknown__ so that products with missing subsystem
+        # metadata do not inflate total_subsystems.
+
+        def _norm_subsystem(s: str) -> str:
+            """Return normalised subsystem key; empty/whitespace → UNKNOWN_SUBSYSTEM_KEY."""
+            stripped = s.strip().lower()
+            return stripped if stripped else UNKNOWN_SUBSYSTEM_KEY
+
+        # Build delivered_by_subsystem (includes __unknown__ if applicable)
         subsystem_counts: dict[str, int] = {}
         for dp in all_auth_products:
             if dp.product_id in delivered_ids:
-                subsystem_counts[dp.subsystem] = subsystem_counts.get(dp.subsystem, 0) + 1
+                key = _norm_subsystem(dp.subsystem)
+                subsystem_counts[key] = subsystem_counts.get(key, 0) + 1
+
+        # Compute authoritative total_subsystems from FULL inventory (non-empty only)
+        auth_subsystem_names: set[str] = set()
+        for dp in all_auth_products:
+            norm = _norm_subsystem(dp.subsystem)
+            if norm != UNKNOWN_SUBSYSTEM_KEY:
+                auth_subsystem_names.add(norm)
+        total_subs = len(auth_subsystem_names)
+
+        # delivered_subsystems: distinct NON-EMPTY subsystems with >=1 delivered product
+        delivered_subs_set: set[str] = {
+            k for k in subsystem_counts
+            if k != UNKNOWN_SUBSYSTEM_KEY and subsystem_counts[k] > 0
+        }
+        delivered_subs = len(delivered_subs_set)
+
+        # subsystem_coverage_rate: None when total_subs == 0 (no non-empty subsystem data)
+        sub_coverage_rate: float | None = (
+            delivered_subs / total_subs if total_subs > 0 else None
+        )
 
         return MissionOutcomeResult(
             plan_id=plan.plan_id,
@@ -675,8 +765,11 @@ class MissionOutcomeEvaluator:
             # Data age
             average_delivered_age_s=avg_age,
             median_delivered_age_s=med_age,
-            # Subsystem breakdown
+            # Subsystem breakdown + coverage
             delivered_by_subsystem=subsystem_counts,
+            total_subsystems=total_subs,
+            delivered_subsystems=delivered_subs,
+            subsystem_coverage_rate=sub_coverage_rate,
             # Per-anomaly detail
             anomaly_coverage_by_id=coverage_details,
         )

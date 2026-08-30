@@ -666,27 +666,33 @@ export function MissionDecisionPanel({
           color={AI_COLOR}
         />
         <Stat
-          label="Selected for window"
+          label="Prioritized queue"
           value={String(selectedCount)}
-          sub="products"
+          sub="products in plan"
           color={DETERM_COLOR}
         />
         <Stat
-          label="Payload"
-          value={selectedBits > 0 ? formatBitsAsDataVolume(selectedBits) : '—'}
-          sub="to transmit"
+          label="Projected this contact"
+          value={String(selectedCount - deferredCount)}
+          sub="non-deferred"
+          color={DETERM_COLOR}
         />
         <Stat
-          label="Deferred"
+          label="Projected deferred"
           value={deferredCount > 0 ? String(deferredCount) : '0'}
-          sub="this window"
+          sub="capacity limited"
           color={deferredCount > 0 ? WARN_COLOR : undefined}
+        />
+        <Stat
+          label="Priority queue payload"
+          value={selectedBits > 0 ? formatBitsAsDataVolume(selectedBits) : '—'}
+          sub="full plan (incl. deferred)"
         />
         {estTransmissionS !== null && (
           <Stat
-            label="Est. transmission"
+            label="Full queue tx time"
             value={fmtSeconds(estTransmissionS)}
-            sub="payload ÷ goodput"
+            sub="est. at current goodput"
             color={MUTED}
           />
         )}
@@ -835,7 +841,9 @@ export function MissionDecisionPanel({
       }}>
         AI rankings are advisory. Transmission selection and feasibility are determined by the
         deterministic scheduler and evaluated against actual link capacity.
-        Estimated transmission time = payload ÷ goodput (display estimate — not a guarantee).
+        Prioritized queue = full plan including products that may be deferred.
+        Projected this contact = products not deferred by the capacity evaluator.
+        Full queue tx time = priority queue payload ÷ current goodput (display estimate — not a guarantee).
         Approve the recommended plan below.
       </div>
 

@@ -112,11 +112,44 @@ Full trust boundary documentation: [`docs/trust_boundary.md`](trust_boundary.md)
 | `agent/candidate_prioritizer.py` | Deterministic 50-candidate screening |
 | `agent/stage2_blinding.py` | OPTION alias mapping (SHA-256 based, deterministic) |
 | `evaluator/plan_evaluator.py` | Authoritative physical plan assessment |
-| `evaluator/mission_outcome_evaluator.py` | Authoritative mission-semantic outcome |
+| `evaluator/mission_outcome_evaluator.py` | Authoritative mission-semantic outcome (including subsystem coverage) |
 | `domain/plan_integrity.py` | Canonical fingerprint & approval verification |
 | `simulation/simulator.py` | Stochastic Bernoulli transmission simulator |
 | `api/routes_agent.py` | AI triage + recommendation finalization |
 | `api/routes_approve.py` | Approval + authoritative packet reconstruction |
+
+---
+
+## Subsystem Coverage — Design Intent (Phase 8B.2)
+
+`MissionOutcomeEvaluator` computes subsystem-composition metrics that are exposed to
+Stage-2 as descriptive decision evidence:
+
+| Field | Meaning |
+|---|---|
+| `total_subsystems` | Distinct non-empty subsystem names in the **full authoritative** inventory |
+| `delivered_subsystems` | Distinct subsystems with ≥1 projected non-deferred product |
+| `subsystem_coverage_rate` | `delivered_subsystems / total_subsystems` (None when denominator is 0) |
+| `delivered_by_subsystem` | Product count per normalised subsystem name |
+
+**These are DESCRIPTIVE metrics — not diversity objectives:**
+
+- A single-subsystem plan is NOT automatically invalid.
+- A higher `subsystem_coverage_rate` is NOT automatically better.
+- Stage-2 may prefer a concentrated plan when operational urgency, anomaly diagnostics,
+  or required-delivery obligations strongly justify it.
+- Broader subsystem representation may be valuable when multiple instruments hold
+  complementary science or diagnostic data relevant to the current mission context.
+- The operator is always the final authority.
+
+The denominator (`total_subsystems`) uses the full authoritative `DataProduct` inventory —
+a plan cannot improve its coverage rate by omitting products from the queue.
+
+Subsystem names appearing in `delivered_by_subsystem` (e.g. `jiram`, `mwr`, `jade`) are
+**mission content**, not plan provenance. They do NOT violate Stage-2 blinding.
+
+Plan provenance strings (e.g. `value-per-cost`, `baseline`, `ai-prioritized`, `strategy`)
+remain forbidden from the Stage-2 context.
 
 ---
 
