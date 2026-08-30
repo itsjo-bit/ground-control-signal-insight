@@ -290,7 +290,7 @@ function Hero({ onLaunch, onLaunchWithSource }: HeroProps) {
         </div>
       </div>
 
-      {/* Telemetry micro-labels — floating right side, product detail */}
+      {/* Telemetry micro-labels — floating right side, pass-start baseline */}
       <div style={{
         position: 'absolute', right: 'clamp(20px, 4vw, 60px)', top: '50%',
         transform: 'translateY(-40%)',
@@ -298,11 +298,19 @@ function Hero({ onLaunch, onLaunchWithSource }: HeroProps) {
         display: 'flex', flexDirection: 'column', gap: 12,
         alignItems: 'flex-end',
       }}>
+        {/* Context label */}
+        <div style={{
+          fontFamily: MONO, fontSize: 7, color: C.amber,
+          letterSpacing: '0.14em', textTransform: 'uppercase',
+          textAlign: 'right', opacity: 0.85,
+        }}>
+          Juno PJ62 V2 · Modeled Pass-Start Baseline
+        </div>
         {[
-          { key: 'PRODUCTS',  val: '403',      unit: 'eligible data products' },
-          { key: 'QUEUED',    val: '9.35',     unit: 'Gbit queued' },
-          { key: 'CAPACITY',  val: '81',       unit: 'Mbit available' },
-          { key: 'PRESSURE',  val: '~115×',    unit: 'comm constraint ratio' },
+          { key: 'PRODUCTS',  val: '403',      unit: 'eligible products' },
+          { key: 'QUEUED',    val: '9.35',     unit: 'Gbit modeled queue' },
+          { key: 'CAPACITY',  val: '81',       unit: 'Mbit modeled pass-start capacity' },
+          { key: 'PRESSURE',  val: '~115×',    unit: 'modeled pass-start pressure' },
         ].map(({ key, val, unit }) => (
           <div key={key} style={{
             background: 'rgba(13,17,23,0.70)',
@@ -371,9 +379,9 @@ function H2({ children }: { children: React.ReactNode }) {
 
 function ProblemSection() {
   const stats = [
-    { val: '~115×', desc: 'More data produced than can be transmitted on a single pass' },
-    { val: 'Hours', desc: 'One-way signal propagation delay to/from outer solar system' },
-    { val: 'Minutes', desc: 'Typical contact window — decisions must be right on the first attempt' },
+    { val: '~115×', desc: 'Modeled Juno PJ62 V2 pass-start queue pressure' },
+    { val: '~50 min', desc: 'One-way signal propagation at the Juno replay epoch' },
+    { val: '15 min', desc: 'Modeled initial communication window' },
   ];
 
   return (
@@ -592,7 +600,7 @@ function ScenariosSection({ onLaunch, onLaunchWithSource }: ScenariosProps) {
         <p style={{ fontFamily: SANS, fontSize: 14, color: C.textSec, lineHeight: 1.65,
           maxWidth: 560, marginBottom: 48 }}>
           GCSI ships with two mission scenarios: a synthetic testbed for workflow
-          evaluation and a full historical reconstruction using verified planetary data.
+          evaluation and a historical replay grounded in verified NASA/JPL/PDS evidence.
         </p>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20 }}>
@@ -607,12 +615,12 @@ function ScenariosSection({ onLaunch, onLaunchWithSource }: ScenariosProps) {
                 Synthetic Scenario
               </div>
               <span style={{
-                fontFamily: MONO, fontSize: 7, color: C.green,
-                border: `1px solid ${C.green}33`, borderRadius: 2,
-                padding: '1px 6px', background: `${C.green}11`, letterSpacing: '0.10em',
+                fontFamily: MONO, fontSize: 7, color: C.accent,
+                border: `1px solid ${C.accent}33`, borderRadius: 2,
+                padding: '1px 6px', background: `${C.accent}11`, letterSpacing: '0.10em',
                 textTransform: 'uppercase',
               }}>
-                Active
+                Testbed
               </span>
             </div>
             <div style={{ fontFamily: SANS, fontSize: 20, fontWeight: 700, color: C.text, marginBottom: 10 }}>
@@ -673,9 +681,9 @@ function ScenariosSection({ onLaunch, onLaunchWithSource }: ScenariosProps) {
               </span>
             </div>
             <div style={{ fontFamily: SANS, fontSize: 13, color: C.textSec, lineHeight: 1.65, marginBottom: 20 }}>
-              A full reconstruction of NASA's Juno spacecraft Perijove 62 pass, built
-              from verified NASA/JPL/PDS product inventories and modeled communication
-              constraints derived from real orbital geometry.
+              Historical replay grounded in verified NASA/JPL/PDS Juno PJ62 archive
+              evidence, with explicit GCSI-modeled communication constraints derived
+              from real orbital geometry.
             </div>
             <div style={{ fontFamily: MONO, fontSize: 9, color: C.textDim,
               letterSpacing: '0.10em', textTransform: 'uppercase', marginBottom: 16 }}>
@@ -719,7 +727,7 @@ function TrustSection() {
     {
       label: 'Comm Constraint Ratio',
       value: '~115×',
-      desc: '9.35 Gbit queued against 81 Mbit actual downlink budget — realistic mission pressure',
+      desc: '9.35 Gbit modeled queue against 81 Mbit modeled pass-start downlink capacity — realistic mission pressure',
       color: C.amber,
     },
     {
