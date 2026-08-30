@@ -682,8 +682,8 @@ function ScenariosSection({ onLaunch, onLaunchWithSource }: ScenariosProps) {
             </div>
             <div style={{ fontFamily: SANS, fontSize: 13, color: C.textSec, lineHeight: 1.65, marginBottom: 20 }}>
               Historical replay grounded in verified NASA/JPL/PDS Juno PJ62 archive
-              evidence, with explicit GCSI-modeled communication constraints derived
-              from real orbital geometry.
+              evidence, with explicit GCSI-modeled communication constraints and
+              spacecraft–Earth geometry context.
             </div>
             <div style={{ fontFamily: MONO, fontSize: 9, color: C.textDim,
               letterSpacing: '0.10em', textTransform: 'uppercase', marginBottom: 16 }}>
