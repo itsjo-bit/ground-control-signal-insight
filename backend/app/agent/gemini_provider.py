@@ -18,20 +18,21 @@ POST https://generativelanguage.googleapis.com/v1beta/models/<model>:generateCon
   "generationConfig": {
     "response_mime_type": "application/json",
     "temperature": 0.0,
-    "maxOutputTokens": 1024
+    "maxOutputTokens": 4096
   }
 }
 
 Configuration
 -------------
 GCSI_GEMINI_API_KEY   — Google AI API key (required to activate this provider)
-GCSI_GEMINI_MODEL     — Model name (default: gemini-3.5-flash-lite)
+GCSI_GEMINI_MODEL     — Model name (default: gemini-2.5-flash-lite-preview-06-17)
 GCSI_GEMINI_TIMEOUT   — HTTP timeout in seconds (default: 30.0)
 
 Error handling
 --------------
 AIProviderError       — API key missing, network failure, non-200 response, timeout
-AIResponseError       — Response is malformed, missing required fields, or invalid
+AIResponseError       — Response is malformed, missing required fields, invalid, or
+                        truncated due to output-token limit
 AIHallucinationError  — Evidence item cites a field not in the known citeable set
 """
 
@@ -75,11 +76,136 @@ from .stage2_blinding import (
 # Constants
 # ---------------------------------------------------------------------------
 
-_DEFAULT_MODEL = "gemini-3.5-flash-lite"
+_DEFAULT_MODEL = "gemini-2.5-flash-lite-preview-06-17"
 _DEFAULT_TIMEOUT = 30.0
 _GEMINI_BASE_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models"
 )
+
+# Gemini 3.x model name prefix used to detect thinking-capable models.
+# Only models whose name starts with "gemini-3" receive thinkingConfig.
+_GEMINI_3X_PREFIX = "gemini-3"
+
+# Stage-2 output token budget — generous enough for a complete structured
+# response including verbose evidence arrays.
+_STAGE2_MAX_OUTPUT_TOKENS = 4096
+
+# Finish-reason values that indicate the model stopped normally.
+_NORMAL_FINISH_REASONS = frozenset({"STOP", "END_OF_TURN"})
+
+# Finish-reason values that indicate the output was cut short by token limit.
+_TRUNCATION_FINISH_REASONS = frozenset({"MAX_TOKENS", "MAX_OUTPUT_TOKENS"})
+
+
+def _is_gemini_3x(model: str) -> bool:
+    """Return True when *model* identifies a Gemini 3.x series model.
+
+    Only Gemini 3.x models support ``thinkingConfig`` in GenerateContent.
+    Sending this parameter to older models (2.x, 1.x) may trigger a 400 error.
+    """
+    return model.lower().startswith(_GEMINI_3X_PREFIX)
+
+
+def _build_stage2_response_schema(option_aliases: list[str]) -> dict:
+    """Build the Gemini GenerateContent responseSchema for a Stage-2 request.
+
+    The schema enforces:
+    * Root is an OBJECT (not an array).
+    * ``recommended_option_id`` is a STRING constrained to the current opaque
+      OPTION aliases — no real plan IDs are enumerated.
+    * Required fields: recommended_option_id, reasoning, confidence, evidence.
+    * ``evidence`` items require source, field, interpretation.
+    * ``alternative_option_id`` is optional and aliased to the same enum.
+
+    Args:
+        option_aliases: The list of current OPTION aliases (e.g. ["OPTION-A",
+                        "OPTION-B", ...]).  These are the ONLY values the model
+                        may return in recommended_option_id / alternative_option_id.
+
+    Returns:
+        A dict describing the Gemini GenerateContent responseSchema.
+    """
+    option_id_schema: dict = {
+        "type": "STRING",
+        "enum": option_aliases,
+    }
+    return {
+        "type": "OBJECT",
+        "properties": {
+            "recommended_option_id": option_id_schema,
+            "reasoning": {"type": "STRING"},
+            "confidence": {
+                "type": "NUMBER",
+            },
+            "evidence": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "option_id": {"type": "STRING"},
+                        "source": {"type": "STRING"},
+                        "field": {"type": "STRING"},
+                        "interpretation": {"type": "STRING"},
+                    },
+                    "required": ["source", "field", "interpretation"],
+                },
+            },
+            "alternative_option_id": option_id_schema,
+        },
+        "required": [
+            "recommended_option_id",
+            "reasoning",
+            "confidence",
+            "evidence",
+        ],
+    }
+
+
+def _extract_text_from_candidate(body: dict) -> str:
+    """Extract the text content from a Gemini GenerateContent response body.
+
+    Also inspects the candidate's ``finishReason`` when present.  If the
+    response was terminated due to hitting the output-token limit, raises
+    ``AIResponseError`` with a diagnostic message before the caller attempts
+    to parse truncated content as valid JSON.
+
+    Args:
+        body: Parsed JSON body of the Gemini API response.
+
+    Returns:
+        The raw text string from the first candidate.
+
+    Raises:
+        AIProviderError: If the response body has an unexpected shape.
+        AIResponseError: If the candidate's finishReason indicates truncation.
+    """
+    try:
+        candidate = body["candidates"][0]
+    except (KeyError, IndexError) as exc:
+        raise AIProviderError(
+            f"Unexpected Gemini API response shape: {type(exc).__name__} — {str(exc)[:200]}"
+        ) from exc
+
+    # Inspect finishReason when present — truncation must be diagnosed before
+    # attempting to parse the (likely incomplete) text as JSON.
+    finish_reason: str | None = candidate.get("finishReason")
+    if finish_reason is not None:
+        if finish_reason in _TRUNCATION_FINISH_REASONS:
+            raise AIResponseError(
+                f"Gemini model output was truncated due to output-token limit "
+                f"(finishReason={finish_reason!r}).  "
+                "Increase maxOutputTokens or simplify the prompt."
+            )
+        # Unknown finish reasons (e.g. SAFETY, RECITATION) are allowed to fall
+        # through; the subsequent JSON parse will surface any content issues.
+
+    try:
+        text: str = candidate["content"]["parts"][0]["text"]
+        return text
+    except (KeyError, IndexError, TypeError) as exc:
+        raise AIProviderError(
+            f"Unexpected Gemini API response shape: {type(exc).__name__} — {str(exc)[:200]}"
+        ) from exc
 
 
 class GeminiProvider(BaseAIProvider):
@@ -95,7 +221,7 @@ class GeminiProvider(BaseAIProvider):
     Args:
         api_key:   Google AI API key.  Defaults to ``GCSI_GEMINI_API_KEY``.
         model:     Model identifier.  Defaults to ``GCSI_GEMINI_MODEL`` or
-                   ``gemini-3.5-flash-lite``.
+                   ``gemini-2.5-flash-lite-preview-06-17``.
         timeout_s: HTTP timeout in seconds.  Defaults to ``GCSI_GEMINI_TIMEOUT``
                    or ``30.0``.
     """
@@ -172,6 +298,7 @@ class GeminiProvider(BaseAIProvider):
             AIProviderError: if the API key is absent, the network fails,
                              authentication fails, or a non-200 response is
                              returned.
+            AIResponseError: if the candidate finishReason indicates truncation.
         """
         if not self._api_key:
             raise AIProviderError(
@@ -226,11 +353,8 @@ class GeminiProvider(BaseAIProvider):
 
         try:
             body = resp.json()
-            # Standard Gemini response path:
-            # candidates[0].content.parts[0].text
-            text: str = body["candidates"][0]["content"]["parts"][0]["text"]
-            return text
-        except (KeyError, IndexError, json.JSONDecodeError) as exc:
+            return _extract_text_from_candidate(body)
+        except (json.JSONDecodeError, AIProviderError) as exc:
             raise AIProviderError(
                 f"Unexpected Gemini API response shape: {type(exc).__name__} — "
                 f"{str(exc)[:200]}"
@@ -367,9 +491,14 @@ class GeminiProvider(BaseAIProvider):
         Sends the compact option summaries to Gemini using the Stage-2 system prompt.
         The model returns an opaque option alias (OPTION-X), not a real plan ID.
 
+        Stage-2 uses:
+        - maxOutputTokens = 4096 (increased from 1024 to prevent truncation)
+        - responseSchema enforcing the exact OPTION alias set (structured output)
+        - thinkingConfig with thinkingLevel=MINIMAL for Gemini 3.x models only
+
         Raises:
             AIProviderError:  If the API key is missing or the API fails.
-            AIResponseError:  If the response fails validation.
+            AIResponseError:  If the response fails validation or is truncated.
         """
         if not self._api_key:
             raise AIProviderError(
@@ -378,8 +507,27 @@ class GeminiProvider(BaseAIProvider):
         alias_map = {s.option_id: s.option_id for s in summaries}
         user_message = build_stage2_user_message(summaries, link_state, mission_state, anomalies)
 
+        # Build the list of valid opaque OPTION aliases for the response schema.
+        option_aliases = sorted(alias_map.keys())
+        response_schema = _build_stage2_response_schema(option_aliases)
+
         url = f"{_GEMINI_BASE_URL}/{self._model}:generateContent"
         params = {"key": self._api_key}
+
+        generation_config: dict[str, Any] = {
+            "response_mime_type": "application/json",
+            "responseSchema": response_schema,
+            "temperature": 0.0,
+            "maxOutputTokens": _STAGE2_MAX_OUTPUT_TOKENS,
+        }
+
+        # Gemini 3.x models support thinkingConfig.  Stage-2 is a constrained
+        # selection task — MINIMAL thinking reduces latency and output pressure
+        # without changing the decision criteria.  Older Gemini models do not
+        # support this parameter and must not receive it.
+        if _is_gemini_3x(self._model):
+            generation_config["thinkingConfig"] = {"thinkingBudget": 0}
+
         payload = {
             "system_instruction": {
                 "parts": [{"text": _STAGE2_SYSTEM_PROMPT}]
@@ -390,27 +538,40 @@ class GeminiProvider(BaseAIProvider):
                     "parts": [{"text": user_message}],
                 }
             ],
-            "generationConfig": {
-                "response_mime_type": "application/json",
-                "temperature": 0.0,
-                "maxOutputTokens": 1024,
-            },
+            "generationConfig": generation_config,
         }
         try:
             with httpx.Client(timeout=self._timeout_s) as client:
                 resp = client.post(url, params=params, json=payload)
+        except httpx.TimeoutException as exc:
+            raise AIProviderError(
+                f"Gemini Stage-2 API request timed out after {self._timeout_s}s"
+            ) from exc
         except httpx.RequestError as exc:
             raise AIProviderError(
                 f"Gemini Stage-2 API request failed: {type(exc).__name__}"
             ) from exc
+        if resp.status_code == 400:
+            raise AIProviderError(
+                f"Gemini Stage-2 API returned HTTP 400 (bad request): {resp.text[:500]}"
+            )
+        if resp.status_code in (401, 403):
+            raise AIProviderError(
+                f"Gemini Stage-2 API returned HTTP {resp.status_code}: authentication / "
+                "authorisation failed.  Verify that GCSI_GEMINI_API_KEY is valid."
+            )
         if resp.status_code != 200:
             raise AIProviderError(
                 f"Gemini Stage-2 API returned HTTP {resp.status_code}: {resp.text[:500]}"
             )
+
         try:
             body = resp.json()
-            raw = body["candidates"][0]["content"]["parts"][0]["text"]
-        except (KeyError, IndexError) as exc:
+            raw = _extract_text_from_candidate(body)
+        except AIResponseError:
+            # Re-raise truncation errors from _extract_text_from_candidate directly.
+            raise
+        except (KeyError, IndexError, json.JSONDecodeError) as exc:
             raise AIProviderError(f"Unexpected Gemini Stage-2 response shape: {exc}") from exc
 
         try:

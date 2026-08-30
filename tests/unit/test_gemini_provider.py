@@ -739,3 +739,567 @@ class TestGeminiTruncatedJson:
         result = provider._parse_response(json.dumps(data), self._plans(), self._evals())
         assert isinstance(result, AIRecommendation)
         assert result.reasoning == long_reasoning
+
+
+# ===========================================================================
+# Phase 8B.4 — Gemini Stage-2 hardening tests
+# Tasks 11–14: request shape, complete response, truncation, finish reason
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# Shared Stage-2 fixtures
+# ---------------------------------------------------------------------------
+
+from backend.app.agent.gemini_provider import (
+    _build_stage2_response_schema,
+    _extract_text_from_candidate,
+    _is_gemini_3x,
+    _STAGE2_MAX_OUTPUT_TOKENS,
+)
+from backend.app.agent.stage2_blinding import Stage2PlanSummary
+
+
+def _make_stage2_summary(option_id: str) -> Stage2PlanSummary:
+    """Minimal Stage2PlanSummary for Stage-2 tests."""
+    return Stage2PlanSummary(
+        option_id=option_id,
+        total_packets=10,
+        deferred_count=2,
+        risk_score=0.2,
+        risk_level="LOW",
+        mission_value=1.5,
+        critical_packets_delivered=8,
+        total_critical_packets=8,
+        deadline_misses=0,
+        deadline_miss_rate=0.0,
+        bandwidth_utilization=0.6,
+        retransmission_overhead=0.0,
+        window_pressure=0.4,
+        scientific_value_capture_rate=0.85,
+        required_delivery_rate=1.0,
+    )
+
+
+def _make_stage2_summaries() -> list[Stage2PlanSummary]:
+    return [
+        _make_stage2_summary("OPTION-A"),
+        _make_stage2_summary("OPTION-B"),
+        _make_stage2_summary("OPTION-C"),
+    ]
+
+
+def _valid_stage2_text(recommended: str = "OPTION-B") -> str:
+    """Return a complete, valid Stage-2 JSON response as Gemini would produce."""
+    return json.dumps({
+        "recommended_option_id": recommended,
+        "reasoning": "During pre-contact anomaly triage, OPTION-B delivers the highest "
+                     "anomaly coverage while maintaining acceptable risk.",
+        "confidence": 0.91,
+        "evidence": [
+            {
+                "option_id": recommended,
+                "source": "candidate_option",
+                "field": "scientific_value_capture_rate",
+                "interpretation": "Highest scientific capture rate among options.",
+            }
+        ],
+        "alternative_option_id": "OPTION-C",
+    })
+
+
+def _make_stage2_httpx_response(text_body: str, status_code: int = 200,
+                                 finish_reason: str | None = None):
+    """Create a mock httpx.Response for Stage-2 calls."""
+    candidate: dict = {
+        "content": {
+            "parts": [{"text": text_body}]
+        }
+    }
+    if finish_reason is not None:
+        candidate["finishReason"] = finish_reason
+
+    response_json = {"candidates": [candidate]}
+    mock_resp = MagicMock()
+    mock_resp.status_code = status_code
+    mock_resp.json.return_value = response_json
+    mock_resp.text = json.dumps(response_json)
+    return mock_resp
+
+
+def _patch_stage2_httpx(response):
+    """Context-manager: replace httpx.Client used by recommend_from_summaries."""
+    mock_client = MagicMock()
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+    mock_client.post.return_value = response
+    return patch("backend.app.agent.gemini_provider.httpx.Client", return_value=mock_client)
+
+
+def _captured_stage2_payload(
+    provider: GeminiProvider,
+    summaries: list[Stage2PlanSummary] | None = None,
+) -> dict:
+    """Invoke recommend_from_summaries with a mock and return the JSON payload sent."""
+    if summaries is None:
+        summaries = _make_stage2_summaries()
+
+    text = _valid_stage2_text(summaries[0].option_id)
+    mock_resp = _make_stage2_httpx_response(text)
+
+    mock_client = MagicMock()
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+    mock_client.post.return_value = mock_resp
+
+    with patch("backend.app.agent.gemini_provider.httpx.Client", return_value=mock_client):
+        provider.recommend_from_summaries(
+            summaries, make_link_state(), make_mission_state()
+        )
+
+    _, kwargs = mock_client.post.call_args
+    return kwargs["json"]
+
+
+# ---------------------------------------------------------------------------
+# TASK 11 — Stage-2 request shape
+# ---------------------------------------------------------------------------
+
+class TestStage2RequestShape:
+    """Task 11: prove Stage-2 request contains the required fields/values."""
+
+    def _provider_2x(self) -> GeminiProvider:
+        """Provider configured with a Gemini 2.x model (no thinkingConfig)."""
+        return GeminiProvider(api_key="fake-key", model="gemini-2.0-flash")
+
+    def _provider_3x(self) -> GeminiProvider:
+        """Provider configured with a Gemini 3.x model (thinkingConfig required)."""
+        return GeminiProvider(api_key="fake-key", model="gemini-3.0-flash")
+
+    def test_response_mime_type_is_application_json(self):
+        payload = _captured_stage2_payload(self._provider_2x())
+        assert payload["generationConfig"]["response_mime_type"] == "application/json"
+
+    def test_response_schema_is_present(self):
+        payload = _captured_stage2_payload(self._provider_2x())
+        assert "responseSchema" in payload["generationConfig"]
+
+    def test_response_schema_root_is_object(self):
+        payload = _captured_stage2_payload(self._provider_2x())
+        schema = payload["generationConfig"]["responseSchema"]
+        assert schema["type"] == "OBJECT"
+
+    def test_response_schema_required_fields(self):
+        payload = _captured_stage2_payload(self._provider_2x())
+        schema = payload["generationConfig"]["responseSchema"]
+        required = set(schema["required"])
+        assert "recommended_option_id" in required
+        assert "reasoning" in required
+        assert "confidence" in required
+        assert "evidence" in required
+
+    def test_response_schema_option_aliases_are_opaque(self):
+        """Schema enum must only contain OPTION-X aliases, no real plan IDs."""
+        summaries = _make_stage2_summaries()
+        payload = _captured_stage2_payload(self._provider_2x(), summaries=summaries)
+        schema = payload["generationConfig"]["responseSchema"]
+        aliases = schema["properties"]["recommended_option_id"]["enum"]
+        for alias in aliases:
+            assert alias.startswith("OPTION-"), (
+                f"Schema enum contains non-opaque alias: {alias!r}"
+            )
+        # Must contain all provided aliases
+        assert set(aliases) == {"OPTION-A", "OPTION-B", "OPTION-C"}
+
+    def test_response_schema_no_real_plan_ids(self):
+        """Schema must never enumerate real plan names."""
+        summaries = _make_stage2_summaries()
+        payload = _captured_stage2_payload(self._provider_2x(), summaries=summaries)
+        schema_json = json.dumps(payload["generationConfig"]["responseSchema"])
+        for forbidden in ("baseline", "ai-prioritized", "deadline-first",
+                          "mission-critical-first", "value-per-cost"):
+            assert forbidden not in schema_json, (
+                f"Forbidden plan name {forbidden!r} found in responseSchema"
+            )
+
+    def test_max_output_tokens_is_4096(self):
+        payload = _captured_stage2_payload(self._provider_2x())
+        assert payload["generationConfig"]["maxOutputTokens"] == _STAGE2_MAX_OUTPUT_TOKENS
+        assert payload["generationConfig"]["maxOutputTokens"] == 4096
+
+    def test_max_output_tokens_is_not_1024(self):
+        payload = _captured_stage2_payload(self._provider_2x())
+        assert payload["generationConfig"]["maxOutputTokens"] != 1024
+
+    def test_gemini_2x_has_no_thinking_config(self):
+        """A Gemini 2.x model must NOT receive thinkingConfig."""
+        payload = _captured_stage2_payload(self._provider_2x())
+        assert "thinkingConfig" not in payload["generationConfig"]
+
+    def test_gemini_3x_has_thinking_config(self):
+        """A Gemini 3.x model MUST receive thinkingConfig."""
+        payload = _captured_stage2_payload(self._provider_3x())
+        assert "thinkingConfig" in payload["generationConfig"]
+
+    def test_gemini_3x_thinking_budget_is_zero(self):
+        """thinkingConfig must set thinkingBudget=0 (minimal thinking)."""
+        payload = _captured_stage2_payload(self._provider_3x())
+        thinking = payload["generationConfig"]["thinkingConfig"]
+        assert thinking.get("thinkingBudget") == 0
+
+
+# ---------------------------------------------------------------------------
+# Helper: _is_gemini_3x
+# ---------------------------------------------------------------------------
+
+class TestIsGemini3x:
+    def test_gemini_3_flash_is_3x(self):
+        assert _is_gemini_3x("gemini-3.0-flash") is True
+
+    def test_gemini_3_5_flash_is_3x(self):
+        assert _is_gemini_3x("gemini-3.5-flash-lite") is True
+
+    def test_gemini_2_flash_is_not_3x(self):
+        assert _is_gemini_3x("gemini-2.0-flash") is False
+
+    def test_gemini_2_5_flash_is_not_3x(self):
+        assert _is_gemini_3x("gemini-2.5-flash-lite-preview-06-17") is False
+
+    def test_gemini_1_5_flash_is_not_3x(self):
+        assert _is_gemini_3x("gemini-1.5-flash") is False
+
+    def test_case_insensitive(self):
+        assert _is_gemini_3x("Gemini-3.0-Flash") is True
+
+
+# ---------------------------------------------------------------------------
+# Helper: _build_stage2_response_schema
+# ---------------------------------------------------------------------------
+
+class TestBuildStage2ResponseSchema:
+    def test_root_type_is_object(self):
+        schema = _build_stage2_response_schema(["OPTION-A", "OPTION-B"])
+        assert schema["type"] == "OBJECT"
+
+    def test_required_fields_present(self):
+        schema = _build_stage2_response_schema(["OPTION-A"])
+        assert set(schema["required"]) >= {
+            "recommended_option_id", "reasoning", "confidence", "evidence"
+        }
+
+    def test_option_alias_enum_matches_input(self):
+        aliases = ["OPTION-A", "OPTION-B", "OPTION-C", "OPTION-D"]
+        schema = _build_stage2_response_schema(aliases)
+        enum = schema["properties"]["recommended_option_id"]["enum"]
+        assert set(enum) == set(aliases)
+
+    def test_recommended_option_id_type_is_string(self):
+        schema = _build_stage2_response_schema(["OPTION-A"])
+        assert schema["properties"]["recommended_option_id"]["type"] == "STRING"
+
+    def test_evidence_type_is_array(self):
+        schema = _build_stage2_response_schema(["OPTION-A"])
+        assert schema["properties"]["evidence"]["type"] == "ARRAY"
+
+    def test_evidence_items_required_fields(self):
+        schema = _build_stage2_response_schema(["OPTION-A"])
+        items = schema["properties"]["evidence"]["items"]
+        assert set(items["required"]) >= {"source", "field", "interpretation"}
+
+
+# ---------------------------------------------------------------------------
+# TASK 12 — Complete structured Stage-2 response
+# ---------------------------------------------------------------------------
+
+class TestStage2CompleteResponse:
+    """Task 12: mock a valid complete Stage-2 response and verify parsing."""
+
+    def _provider(self) -> GeminiProvider:
+        return GeminiProvider(api_key="fake-key", model="gemini-2.0-flash")
+
+    def test_complete_response_parses_successfully(self):
+        """A full valid Stage-2 JSON is accepted by parse_stage2_response."""
+        summaries = _make_stage2_summaries()
+        resp = _make_stage2_httpx_response(_valid_stage2_text("OPTION-B"))
+
+        with _patch_stage2_httpx(resp):
+            result = self._provider().recommend_from_summaries(
+                summaries, make_link_state(), make_mission_state()
+            )
+
+        assert isinstance(result, AIRecommendation)
+        assert result.recommended_plan_id == "OPTION-B"
+
+    def test_alias_remains_opaque_in_result(self):
+        """The recommended_plan_id in the result is still an opaque OPTION alias."""
+        summaries = _make_stage2_summaries()
+        resp = _make_stage2_httpx_response(_valid_stage2_text("OPTION-A"))
+
+        with _patch_stage2_httpx(resp):
+            result = self._provider().recommend_from_summaries(
+                summaries, make_link_state(), make_mission_state()
+            )
+
+        # Must be a valid OPTION alias — never a real plan ID at this stage
+        assert result.recommended_plan_id.startswith("OPTION-")
+        for forbidden in ("baseline", "ai-prioritized", "deadline-first"):
+            assert forbidden not in result.recommended_plan_id
+
+    def test_confidence_is_preserved(self):
+        summaries = _make_stage2_summaries()
+        resp = _make_stage2_httpx_response(_valid_stage2_text("OPTION-B"))
+
+        with _patch_stage2_httpx(resp):
+            result = self._provider().recommend_from_summaries(
+                summaries, make_link_state(), make_mission_state()
+            )
+
+        assert result.confidence == pytest.approx(0.91)
+
+    def test_alternative_option_id_preserved(self):
+        summaries = _make_stage2_summaries()
+        resp = _make_stage2_httpx_response(_valid_stage2_text("OPTION-B"))
+
+        with _patch_stage2_httpx(resp):
+            result = self._provider().recommend_from_summaries(
+                summaries, make_link_state(), make_mission_state()
+            )
+
+        # OPTION-C is the alternative in _valid_stage2_text
+        assert result.alternative_plan_id == "OPTION-C"
+
+    def test_evidence_option_ids_are_opaque(self):
+        """Evidence option_ids must remain OPTION aliases, never real plan IDs."""
+        summaries = _make_stage2_summaries()
+        resp = _make_stage2_httpx_response(_valid_stage2_text("OPTION-B"))
+
+        with _patch_stage2_httpx(resp):
+            result = self._provider().recommend_from_summaries(
+                summaries, make_link_state(), make_mission_state()
+            )
+
+        for ev in result.evidence:
+            if ev.option_id is not None:
+                assert ev.option_id.startswith("OPTION-"), (
+                    f"Evidence option_id is not opaque: {ev.option_id!r}"
+                )
+
+    def test_parser_remains_authoritative_on_invalid_alias(self):
+        """Even with structured output, the parser must reject unknown aliases."""
+        summaries = _make_stage2_summaries()
+        bad_json = json.dumps({
+            "recommended_option_id": "OPTION-Z",  # not in alias_map
+            "reasoning": "...",
+            "confidence": 0.8,
+            "evidence": [],
+            "alternative_option_id": None,
+        })
+        resp = _make_stage2_httpx_response(bad_json)
+
+        with _patch_stage2_httpx(resp):
+            with pytest.raises(AIResponseError):
+                self._provider().recommend_from_summaries(
+                    summaries, make_link_state(), make_mission_state()
+                )
+
+
+# ---------------------------------------------------------------------------
+# TASK 13 — Truncated Stage-2 response
+# ---------------------------------------------------------------------------
+
+class TestStage2TruncatedResponse:
+    """Task 13: mock the exact truncation failure observed in production."""
+
+    def _provider(self) -> GeminiProvider:
+        return GeminiProvider(api_key="fake-key", model="gemini-2.0-flash")
+
+    def _summaries(self):
+        return _make_stage2_summaries()
+
+    def test_truncated_string_is_rejected(self):
+        """Simulates the exact production failure: unterminated string in reasoning."""
+        truncated = (
+            '{\n'
+            '  "recommended_option_id": "OPTION-D",\n'
+            '  "reasoning": "During pre-contact anomaly triage ...'
+            # deliberately cut off — no closing quote, no closing brace
+        )
+        resp = _make_stage2_httpx_response(truncated)
+        with _patch_stage2_httpx(resp):
+            with pytest.raises(AIResponseError):
+                self._provider().recommend_from_summaries(
+                    self._summaries(), make_link_state(), make_mission_state()
+                )
+
+    def test_truncated_string_variant_a_is_rejected(self):
+        """Second exact production failure variant: OPTION-A."""
+        truncated = (
+            '{\n'
+            '  "recommended_option_id": "OPTION-A",\n'
+            '  "reasoning": "During pre-contact anomaly triage ...'
+        )
+        resp = _make_stage2_httpx_response(truncated)
+        with _patch_stage2_httpx(resp):
+            with pytest.raises(AIResponseError):
+                self._provider().recommend_from_summaries(
+                    self._summaries(), make_link_state(), make_mission_state()
+                )
+
+    def test_truncated_mid_object_is_rejected(self):
+        truncated = '{"recommended_option_id": "OPTION-A", "reasoning": "ok"'
+        resp = _make_stage2_httpx_response(truncated)
+        with _patch_stage2_httpx(resp):
+            with pytest.raises(AIResponseError):
+                self._provider().recommend_from_summaries(
+                    self._summaries(), make_link_state(), make_mission_state()
+                )
+
+    def test_no_json_repair_attempted(self):
+        """Truncated output must not be silently repaired — error must propagate."""
+        truncated = '{"recommended_option_id": "OPTION-B", "reasoning": "...'
+        resp = _make_stage2_httpx_response(truncated)
+        with _patch_stage2_httpx(resp):
+            # Must raise, not return a patched-up recommendation
+            with pytest.raises((AIResponseError, AIProviderError)):
+                self._provider().recommend_from_summaries(
+                    self._summaries(), make_link_state(), make_mission_state()
+                )
+
+    def test_empty_response_text_is_rejected(self):
+        resp = _make_stage2_httpx_response("")
+        with _patch_stage2_httpx(resp):
+            with pytest.raises((AIResponseError, AIProviderError)):
+                self._provider().recommend_from_summaries(
+                    self._summaries(), make_link_state(), make_mission_state()
+                )
+
+
+# ---------------------------------------------------------------------------
+# TASK 14 — Finish reason handling
+# ---------------------------------------------------------------------------
+
+class TestStage2FinishReason:
+    """Task 14: verify finishReason inspection and truncation error handling."""
+
+    # ── _extract_text_from_candidate unit tests ───────────────────────────────
+
+    def test_stop_finish_reason_succeeds(self):
+        """STOP is a normal completion — text is returned without error."""
+        body = {
+            "candidates": [{
+                "finishReason": "STOP",
+                "content": {"parts": [{"text": "hello"}]},
+            }]
+        }
+        text = _extract_text_from_candidate(body)
+        assert text == "hello"
+
+    def test_end_of_turn_finish_reason_succeeds(self):
+        body = {
+            "candidates": [{
+                "finishReason": "END_OF_TURN",
+                "content": {"parts": [{"text": "world"}]},
+            }]
+        }
+        text = _extract_text_from_candidate(body)
+        assert text == "world"
+
+    def test_no_finish_reason_succeeds(self):
+        """A candidate with no finishReason field is treated as normal completion."""
+        body = {
+            "candidates": [{
+                "content": {"parts": [{"text": "ok"}]},
+            }]
+        }
+        text = _extract_text_from_candidate(body)
+        assert text == "ok"
+
+    def test_max_tokens_finish_reason_raises_ai_response_error(self):
+        """MAX_TOKENS indicates truncation — must raise AIResponseError."""
+        body = {
+            "candidates": [{
+                "finishReason": "MAX_TOKENS",
+                "content": {"parts": [{"text": '{"recommended_option_id": "OPTION-A"'}]},
+            }]
+        }
+        with pytest.raises(AIResponseError, match="truncated"):
+            _extract_text_from_candidate(body)
+
+    def test_max_output_tokens_finish_reason_raises_ai_response_error(self):
+        """MAX_OUTPUT_TOKENS also indicates truncation."""
+        body = {
+            "candidates": [{
+                "finishReason": "MAX_OUTPUT_TOKENS",
+                "content": {"parts": [{"text": "partial..."}]},
+            }]
+        }
+        with pytest.raises(AIResponseError, match="truncated"):
+            _extract_text_from_candidate(body)
+
+    def test_truncation_error_message_is_diagnostic(self):
+        """Error message should mention finishReason value for diagnostics."""
+        body = {
+            "candidates": [{
+                "finishReason": "MAX_TOKENS",
+                "content": {"parts": [{"text": "truncated"}]},
+            }]
+        }
+        with pytest.raises(AIResponseError) as exc_info:
+            _extract_text_from_candidate(body)
+        msg = str(exc_info.value)
+        assert "MAX_TOKENS" in msg
+
+    def test_safety_finish_reason_falls_through(self):
+        """SAFETY is not a truncation reason — falls through to let JSON parse fail."""
+        body = {
+            "candidates": [{
+                "finishReason": "SAFETY",
+                "content": {"parts": [{"text": "blocked content"}]},
+            }]
+        }
+        # Should NOT raise AIResponseError for truncation; returns text
+        text = _extract_text_from_candidate(body)
+        assert text == "blocked content"
+
+    # ── Integration: recommend_from_summaries with MAX_TOKENS ─────────────────
+
+    def test_recommend_from_summaries_raises_on_max_tokens(self):
+        """recommend_from_summaries must surface the truncation error."""
+        provider = GeminiProvider(api_key="fake-key", model="gemini-2.0-flash")
+        summaries = _make_stage2_summaries()
+        # Return a truncated body with MAX_TOKENS finish reason
+        resp = _make_stage2_httpx_response(
+            '{"recommended_option_id": "OPTION-A", "reasoning": "truncated...',
+            finish_reason="MAX_TOKENS",
+        )
+        with _patch_stage2_httpx(resp):
+            with pytest.raises(AIResponseError, match="truncated"):
+                provider.recommend_from_summaries(
+                    summaries, make_link_state(), make_mission_state()
+                )
+
+    def test_recommend_from_summaries_succeeds_with_stop_reason(self):
+        """A STOP finish reason with complete JSON must succeed normally."""
+        provider = GeminiProvider(api_key="fake-key", model="gemini-2.0-flash")
+        summaries = _make_stage2_summaries()
+        resp = _make_stage2_httpx_response(
+            _valid_stage2_text("OPTION-A"),
+            finish_reason="STOP",
+        )
+        with _patch_stage2_httpx(resp):
+            result = provider.recommend_from_summaries(
+                summaries, make_link_state(), make_mission_state()
+            )
+        assert isinstance(result, AIRecommendation)
+        assert result.recommended_plan_id == "OPTION-A"
+
+    def test_truncation_error_does_not_leak_api_key(self):
+        """Error message for truncation must not contain the API key."""
+        provider = GeminiProvider(api_key="super-secret-key-12345", model="gemini-2.0-flash")
+        summaries = _make_stage2_summaries()
+        resp = _make_stage2_httpx_response("partial", finish_reason="MAX_TOKENS")
+        with _patch_stage2_httpx(resp):
+            with pytest.raises(AIResponseError) as exc_info:
+                provider.recommend_from_summaries(
+                    summaries, make_link_state(), make_mission_state()
+                )
+        assert "super-secret-key-12345" not in str(exc_info.value)
