@@ -15,7 +15,7 @@
  */
 
 import { useMemo } from 'react';
-import type { ApproveResponse, AnomalyEvent, DecisionMode } from '../types/domain';
+import type { ApproveResponse, AnomalyEvent } from '../types/domain';
 import type { GroundInformationObjectives } from '../types/experience';
 import {
   assessGroundObjectives,
@@ -89,10 +89,12 @@ interface GroundReceptionPanelProps {
   /** Modeled contact-window capacity in bits. */
   availableCapacityBits: number;
   /**
-   * Decision mode at transmission time.
+   * Phase 8B.5: Frozen execution mode from the authorization snapshot.
    * Drives the mode label (MANUAL TRANSMISSION / AI-ASSISTED TRANSMISSION).
+   * 'ai'     — operator approved an unmodified AI recommendation
+   * 'custom' — operator transmitted a manual or modified-AI plan
    */
-  decisionMode: DecisionMode;
+  executionMode: 'ai' | 'custom';
 }
 
 // ── Accounting summary stat cell ──────────────────────────────────────────────
@@ -138,7 +140,7 @@ export function GroundReceptionPanel({
   queueTotal,
   queueDataBits,
   availableCapacityBits,
-  decisionMode,
+  executionMode,
 }: GroundReceptionPanelProps) {
   const sim = approveResult.simulation_result;
   const executedPlan = approveResult.executed_plan;
@@ -171,10 +173,10 @@ export function GroundReceptionPanel({
     return result;
   }, [executedPlan, sim, queueTotal, queueDataBits, availableCapacityBits]);
 
-  const modeLabel = decisionMode === 'manual' ? 'MANUAL TRANSMISSION' : 'AI-ASSISTED TRANSMISSION';
-  const modeColor = decisionMode === 'manual' ? '#3fb950' : '#2f81f7';
-  const modeBorderColor = decisionMode === 'manual' ? 'rgba(63,185,80,0.25)' : 'rgba(47,129,247,0.22)';
-  const modeBgColor = decisionMode === 'manual' ? 'rgba(63,185,80,0.06)' : 'rgba(47,129,247,0.06)';
+  const modeLabel = executionMode === 'custom' ? 'MANUAL TRANSMISSION' : 'AI-ASSISTED TRANSMISSION';
+  const modeColor = executionMode === 'custom' ? '#3fb950' : '#2f81f7';
+  const modeBorderColor = executionMode === 'custom' ? 'rgba(63,185,80,0.25)' : 'rgba(47,129,247,0.22)';
+  const modeBgColor = executionMode === 'custom' ? 'rgba(63,185,80,0.06)' : 'rgba(47,129,247,0.06)';
 
   const capacityFill = accounting.capacity_bits > 0
     ? Math.min(1, accounting.selected_data_bits / accounting.capacity_bits)

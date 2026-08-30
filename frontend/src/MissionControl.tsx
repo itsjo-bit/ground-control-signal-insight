@@ -608,6 +608,18 @@ export default function MissionControl() {
   // pendingExecutionMode: kept for potential future use; was used in removed fallback
   const [_pendingExecutionMode, setPendingExecutionMode] = useState<'ai' | 'custom'>('custom');
 
+  /**
+   * Phase 8B.5: Frozen execution mode set at authorization time.
+   * Immutable after authorization — reflects the actual execution path taken,
+   * not the mutable current decisionMode UI state.
+   * Used by GroundReceptionPanel to display the correct transmission mode label.
+   *
+   * 'ai'     — operator approved unmodified AI recommendation
+   * 'custom' — operator transmitted a manual or modified-AI plan
+   * null     — no execution has been authorized yet this session
+   */
+  const [frozenExecutionMode, setFrozenExecutionMode] = useState<'ai' | 'custom' | null>(null);
+
   // ── Phase 4.2F: Experience manifest ───────────────────────────────────────
   const [experienceManifest, setExperienceManifest] = useState<ExperienceManifest | null>(null);
   const [experienceAvailable, setExperienceAvailable] = useState<boolean>(false);
@@ -805,6 +817,7 @@ export default function MissionControl() {
     setAiRecommendationRejected(false);
     setChoreographyActive(false);
     setPendingExecutionPlan(null);
+    setFrozenExecutionMode(null);
     setChoreographyPhase('plan_uplink');
     // Reset execution coordinator
     setExecutionId(null);
@@ -867,6 +880,7 @@ export default function MissionControl() {
     setAiRecommendationRejected(false);
     setChoreographyActive(false);
     setPendingExecutionPlan(null);
+    setFrozenExecutionMode(null);
     setChoreographyPhase('plan_uplink');
     setExecutionId(null);
     setAuthorizedAtMs(null);
@@ -1125,6 +1139,7 @@ export default function MissionControl() {
     setPlaybackStartedAtMs(null);
     setPresentationPhase('plan_uplink');
     approvalResultReceivedAtMsRef.current = null;
+    setFrozenExecutionMode('custom');
     setPendingExecutionPlan(planToExecute);
     setPendingExecutionMode('custom');
     setChoreographyPhase('plan_uplink');
@@ -1132,7 +1147,7 @@ export default function MissionControl() {
     setApprovalPhase('transmitting');
     addSessionEvent('plan_uplink_started', `manual:${manualOrder.length} products`);
     setActiveSection('transmission');
-  }, [manualAssessment, manualAssessmentStale, manualOrder, rawDataProducts, addSessionEvent, activeSourceId]);
+  }, [manualAssessment, manualAssessmentStale, manualOrder, rawDataProducts, addSessionEvent, activeSourceId, setFrozenExecutionMode]);
 
   // ── Derived values ─────────────────────────────────────────────────────────
 
@@ -1152,51 +1167,137 @@ export default function MissionControl() {
   const [aiRecommendationRejected, setAiRecommendationRejected] = useState<boolean>(false);
 
   /**
-   * Approve: start choreography with AI plan.
+   * Approve: start choreography with the AI plan (untouched) OR the modified manual selection.
+   *
+   * Phase 8B.5 — execution-semantics fix:
+   * If the operator clicked Modify Plan before returning here to Approve, the
+   * current manualOrder is the authoritative operator selection and MUST be used
+   * instead of the full recPlan (which is a complete prioritized queue, not the
+   * expected-to-fit subset).
+   *
+   * Detection: manualEditOrigin === 'ai_recommendation' AND manualOrder.length > 0
+   * means the operator entered the modified-AI workflow.  In that case we route
+   * through approveCustomPlan (exactly as handleManualTransmit does) so that the
+   * executed plan contains exactly the packets in manualOrder.
+   *
+   * Untouched AI Approve (manualEditOrigin !== 'ai_recommendation' OR manualOrder empty):
+   * Behaviour is identical to pre-8B.5 — approvePlan with the full recPlan, mode 'ai'.
+   *
    * INVARIANT E4: approval is dispatched IMMEDIATELY at authorization — not from a presentation timer.
    */
-  const handleApproveAiPlan = useCallback(() => {
-    if (!recPlan) return;
-    const newId = `exec-${++executionCounter.current}`;
-    const nowMs = Date.now();
+ const handleApproveAiPlan = useCallback(() => {
+   if (!recPlan) return;
 
-    // ── INVARIANT E4: Dispatch approval immediately at authorization time ──
-    const promise = approvePlan(recommendation!.recommended_plan_id, recPlan);
-    executionPromiseRef.current.set(newId, promise);
-    // Phase 5.1F: record approvalResultReceivedAtMs at resolution time (not panel mount)
-    promise.then(
-      (result) => {
-        executionResultRef.current.set(newId, result);
-        if (approvalResultReceivedAtMsRef.current === null) {
-          approvalResultReceivedAtMsRef.current = Date.now();
-        }
-      },
-      () => { /* error handled in TransmissionSequencePanel */ }
-    );
+   const newId = `exec-${++executionCounter.current}`;
+   const nowMs = Date.now();
 
-    // Freeze execution snapshot (INVARIANT E14)
-    // Phase 7B: use activeSourceId as stale-result discriminant (path was always null).
-    executionSnapshotRef.current = {
-      plan: recPlan,
-      mode: 'ai',
-      recommendedPlanId: recommendation!.recommended_plan_id,
-      sourceId: activeSourceId,
-    };
+   // ── Phase 8B.5: Modified-plan branch ──────────────────────────────────────
+   // If the operator clicked Modify Plan and has a current manualOrder, executing
+   // the full recPlan (1284 packets) would silently revert the operator's explicit
+   // selection.  Route through the custom execution path instead.
+   if (manualEditOrigin === 'ai_recommendation' && manualOrder.length > 0) {
+     // Build the execution plan from the operator's current manualOrder.
+     // This mirrors handleManualTransmit's plan construction exactly.
+     const localPlan: CandidatePlan = {
+       plan_id: 'operator-manual',
+       strategy: 'manual',
+       generated_by: 'operator',
+       metadata: { decision_mode: 'manual', selected_count: manualOrder.length, ai_modified: true },
+       packets: manualOrder.map((id) => {
+         const dp = rawDataProducts.find((p) => p.product_id === id);
+         return dp ? {
+           packet_id: dp.product_id,
+           packet_type: dp.product_type,
+           size_bits: dp.size_bits,
+           criticality: dp.criticality,
+           mission_relevance: dp.mission_relevance,
+           deadline_s: dp.deadline_s,
+           retry_cost: dp.retry_cost,
+           delivery_requirement: dp.delivery_requirement,
+         } : null;
+       }).filter(Boolean) as import('./types/domain').Packet[],
+     };
+     const planToExecute = (manualAssessment && !manualAssessmentStale)
+       ? manualAssessment.plan
+       : localPlan;
 
-    setExecutionId(newId);
-    setAuthorizedAtMs(nowMs);
-    setPlaybackStartedAtMs(null);
-    setPresentationPhase('plan_uplink');
-    approvalResultReceivedAtMsRef.current = null;
-    setAiRecommendationRejected(false);
-    setPendingExecutionPlan(recPlan);
-    setPendingExecutionMode('ai');
-    setChoreographyPhase('plan_uplink');
-    setChoreographyActive(true);
-    setApprovalPhase('transmitting');
-    addSessionEvent('recommendation_approved', `plan=${recPlan.plan_id}`);
-    setActiveSection('transmission');
-  }, [recPlan, recommendation, addSessionEvent, activeSourceId]);
+     // ── INVARIANT E4: Dispatch approval immediately at authorization time ──
+     const promise = approveCustomPlan(planToExecute, 'operator modified-ai transmission');
+     executionPromiseRef.current.set(newId, promise);
+     promise.then(
+       (result) => {
+         executionResultRef.current.set(newId, result);
+         if (approvalResultReceivedAtMsRef.current === null) {
+           approvalResultReceivedAtMsRef.current = Date.now();
+         }
+       },
+       () => { /* error handled in TransmissionSequencePanel */ }
+     );
+
+     // Freeze execution snapshot (INVARIANT E14)
+     executionSnapshotRef.current = {
+       plan: planToExecute,
+       mode: 'custom',
+       recommendedPlanId: null,
+       sourceId: activeSourceId,
+     };
+
+     setExecutionId(newId);
+     setAuthorizedAtMs(nowMs);
+     setPlaybackStartedAtMs(null);
+     setPresentationPhase('plan_uplink');
+     approvalResultReceivedAtMsRef.current = null;
+     setFrozenExecutionMode('custom');
+     setAiRecommendationRejected(false);
+     setPendingExecutionPlan(planToExecute);
+     setPendingExecutionMode('custom');
+     setChoreographyPhase('plan_uplink');
+     setChoreographyActive(true);
+     setApprovalPhase('transmitting');
+     addSessionEvent('plan_uplink_started', `modified-ai:${manualOrder.length} products`);
+     setActiveSection('transmission');
+     return;
+   }
+
+   // ── Untouched AI Approve (no Modify in this session) ─────────────────────
+   // INVARIANT E4: Dispatch approval immediately at authorization time.
+   const promise = approvePlan(recommendation!.recommended_plan_id, recPlan);
+   executionPromiseRef.current.set(newId, promise);
+   // Phase 5.1F: record approvalResultReceivedAtMs at resolution time (not panel mount)
+   promise.then(
+     (result) => {
+       executionResultRef.current.set(newId, result);
+       if (approvalResultReceivedAtMsRef.current === null) {
+         approvalResultReceivedAtMsRef.current = Date.now();
+       }
+     },
+     () => { /* error handled in TransmissionSequencePanel */ }
+   );
+
+   // Freeze execution snapshot (INVARIANT E14)
+   // Phase 7B: use activeSourceId as stale-result discriminant (path was always null).
+   executionSnapshotRef.current = {
+     plan: recPlan,
+     mode: 'ai',
+     recommendedPlanId: recommendation!.recommended_plan_id,
+     sourceId: activeSourceId,
+   };
+
+   setExecutionId(newId);
+   setAuthorizedAtMs(nowMs);
+   setPlaybackStartedAtMs(null);
+   setPresentationPhase('plan_uplink');
+   approvalResultReceivedAtMsRef.current = null;
+   setFrozenExecutionMode('ai');
+   setAiRecommendationRejected(false);
+   setPendingExecutionPlan(recPlan);
+   setPendingExecutionMode('ai');
+   setChoreographyPhase('plan_uplink');
+   setChoreographyActive(true);
+   setApprovalPhase('transmitting');
+   addSessionEvent('recommendation_approved', `plan=${recPlan.plan_id}`);
+   setActiveSection('transmission');
+ }, [recPlan, recommendation, addSessionEvent, activeSourceId, manualEditOrigin, manualOrder, rawDataProducts, manualAssessment, manualAssessmentStale]);
 
   /**
    * Modify: seed manual mode from the AI recommendation's expected-to-fit subset.
@@ -1434,6 +1535,7 @@ export default function MissionControl() {
     onApproveAiPlan: handleApproveAiPlan,
     onModifyAiPlan: handleModifyAiPlan,
     onRejectAiPlan: handleRejectAiPlan,
+    frozenExecutionMode,
     executionId,
     authorizedAtMs,
     playbackStartedAtMs,

@@ -201,6 +201,7 @@ function makeProps(overrides: {
     manualAssessmentStale: false,
     onManualEvaluate: NOOP,
     onManualTransmit: NOOP,
+    frozenExecutionMode: null,
     onApproveAiPlan: NOOP,
     onModifyAiPlan: NOOP,
     onRejectAiPlan: NOOP,

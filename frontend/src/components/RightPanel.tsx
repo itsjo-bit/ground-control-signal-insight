@@ -212,6 +212,13 @@ interface CommonProps {
    */
   executionResult?: import('../types/domain').ApproveResponse | null;
   // ── Phase 4.2F3 props ─────────────────────────────────────────────────────────
+  /**
+   * Phase 8B.5: Frozen execution mode set at authorization time.
+   * Reflects the actual execution path taken, not the mutable current decisionMode.
+   * Passed to GroundReceptionPanel for the mode label.
+   * null when no execution has been authorized yet.
+   */
+  frozenExecutionMode: 'ai' | 'custom' | null;
   /** Called when operator approves AI recommendation — does NOT execute transmission. */
   onApproveAiPlan: () => void;
   /** Called when operator wants to modify AI plan — seeds manual mode with AI plan IDs. */
@@ -2274,7 +2281,7 @@ function LogSection(props: CommonProps) {
                 queueTotal={props.dataProductsCount}
                 queueDataBits={props.queuedDataBits}
                 availableCapacityBits={props.availableCapacityBits}
-                decisionMode={props.decisionMode}
+                executionMode={props.frozenExecutionMode ?? (props.decisionMode === 'manual' ? 'custom' : 'ai')}
               />
             ) : (
               <div style={{ color: '#656d76', fontSize: 12, padding: '20px 0', textAlign: 'center' }}>
