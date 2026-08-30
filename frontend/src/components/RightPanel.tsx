@@ -152,6 +152,8 @@ interface CommonProps {
   manualEditOrigin: 'manual' | 'ai_recommendation';
   /** Phase 8B: immutable snapshot of AI baseline deferred IDs at Modify time */
   aiBaselineDeferredIds: ReadonlySet<string>;
+  /** Phase 8B.1: immutable snapshot of recommended plan packet ordering at Modify time */
+  aiBaselinePlanOrder: readonly string[];
   onToggleManualSelect: (productId: string) => void;
   onClearManualSelection: () => void;
   onManualReorder: (newOrder: string[]) => void;
@@ -675,7 +677,7 @@ const FILTER_LABELS: Record<string, string> = {
   navigation: 'Nav',
 };
 
-type SortKey = 'criticality' | 'deadline_s' | 'size_bits' | 'age_s' | 'mission_relevance';
+type SortKey = 'criticality' | 'deadline_s' | 'size_bits' | 'age_s' | 'mission_relevance' | 'plan_order' | 'selected';
 
 const PAGE_SIZE = 20;
 
@@ -701,6 +703,22 @@ function DataSection(props: CommonProps) {
   const hasAnomaly = useMemo(() => products.some((p) => p.anomaly_id), [products]);
   const hasRequired = useMemo(() => products.some((p) => p.delivery_requirement === 'required'), [products]);
 
+  // Phase 8B.1: conditions for the two new sort modes
+  const isAiModifyMode = props.decisionMode === 'manual' && props.manualEditOrigin === 'ai_recommendation';
+  const showPlanOrderSort = isAiModifyMode && props.aiBaselinePlanOrder.length > 0;
+  const showSelectedSort = props.decisionMode === 'manual';
+
+  // Phase 8B.1: when Modify is clicked (new non-empty plan order arrives), default to Plan Order.
+  useEffect(() => {
+    if (showPlanOrderSort) {
+      setSortKey('plan_order');
+      setSortDesc(true);
+      setPage(0);
+    }
+    // Only trigger when plan order provenance changes (new Modify session).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.aiBaselinePlanOrder]);
+
   // Filtered + sorted products
   const filtered = useMemo(() => {
     let list = products;
@@ -720,13 +738,60 @@ function DataSection(props: CommonProps) {
       else if (filter === 'anomaly') list = list.filter((p) => p.anomaly_id !== null);
       else list = list.filter((p) => p.product_type === filter);
     }
-    list = [...list].sort((a, b) => {
-      const va = a[sortKey] as number;
-      const vb = b[sortKey] as number;
-      return sortDesc ? vb - va : va - vb;
-    });
+
+    if (sortKey === 'plan_order') {
+      // Phase 8B.1: Display in the order captured from recPlan.packets at Modify time.
+      // Products not in the baseline plan order (e.g. added later) go to the end.
+      const planIdx = new Map<string, number>(
+        props.aiBaselinePlanOrder.map((id, i) => [id, i])
+      );
+      list = [...list].sort((a, b) => {
+        const ia = planIdx.get(a.product_id) ?? props.aiBaselinePlanOrder.length;
+        const ib = planIdx.get(b.product_id) ?? props.aiBaselinePlanOrder.length;
+        return sortDesc ? ia - ib : ib - ia;
+      });
+    } else if (sortKey === 'selected') {
+      // Phase 8B.1: Selected products first (sortDesc) or last (sortAsc).
+      // Group 1 (selected): ordered by manualOrder.
+      // Group 2 (unselected): ordered by aiBaselinePlanOrder if available, else stable original.
+      const manualIdx = new Map<string, number>(
+        props.manualOrder.map((id, i) => [id, i])
+      );
+      const planIdx = new Map<string, number>(
+        props.aiBaselinePlanOrder.map((id, i) => [id, i])
+      );
+      const originalIdx = new Map<string, number>(
+        products.map((p, i) => [p.product_id, i])
+      );
+      list = [...list].sort((a, b) => {
+        const aSelected = props.manualSelectedIds.has(a.product_id);
+        const bSelected = props.manualSelectedIds.has(b.product_id);
+        if (aSelected !== bSelected) {
+          // sortDesc = selected first; sortAsc = unselected first
+          return sortDesc ? (aSelected ? -1 : 1) : (aSelected ? 1 : -1);
+        }
+        if (aSelected) {
+          // Both selected: order by manualOrder
+          return (manualIdx.get(a.product_id) ?? 0) - (manualIdx.get(b.product_id) ?? 0);
+        }
+        // Both unselected: prefer aiBaselinePlanOrder, then original data order
+        const ia = planIdx.has(a.product_id)
+          ? (planIdx.get(a.product_id) as number)
+          : (originalIdx.get(a.product_id) ?? 0) + props.aiBaselinePlanOrder.length;
+        const ib = planIdx.has(b.product_id)
+          ? (planIdx.get(b.product_id) as number)
+          : (originalIdx.get(b.product_id) ?? 0) + props.aiBaselinePlanOrder.length;
+        return ia - ib;
+      });
+    } else {
+      list = [...list].sort((a, b) => {
+        const va = a[sortKey as keyof typeof a] as number;
+        const vb = b[sortKey as keyof typeof b] as number;
+        return sortDesc ? vb - va : va - vb;
+      });
+    }
     return list;
-  }, [products, search, filter, sortKey, sortDesc]);
+  }, [products, search, filter, sortKey, sortDesc, props.aiBaselinePlanOrder, props.manualOrder, props.manualSelectedIds]);
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -823,7 +888,7 @@ function DataSection(props: CommonProps) {
         <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', alignItems: 'center' }}>
           <span style={{ fontFamily: '"IBM Plex Sans"', fontSize: 9, color: '#656d76', marginRight: 2, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Sort</span>
           {(['criticality', 'deadline_s', 'size_bits', 'age_s', 'mission_relevance'] as SortKey[]).map((key) => {
-            const labels: Record<SortKey, string> = { criticality: 'Crit', deadline_s: 'Deadline', size_bits: 'Size', age_s: 'Age', mission_relevance: 'Relevance' };
+            const labels: Record<SortKey, string> = { criticality: 'Crit', deadline_s: 'Deadline', size_bits: 'Size', age_s: 'Age', mission_relevance: 'Relevance', plan_order: 'Plan Order', selected: 'Selected' };
             const activeS = sortKey === key;
             return (
               <button key={key} onClick={() => handleSort(key)} style={{
@@ -837,6 +902,36 @@ function DataSection(props: CommonProps) {
               </button>
             );
           })}
+          {/* Phase 8B.1: Selected sort — shown when manual selection is active */}
+          {showSelectedSort && (() => {
+            const activeS = sortKey === 'selected';
+            return (
+              <button onClick={() => handleSort('selected')} style={{
+                fontSize: 10, padding: '2px 7px',
+                background: activeS ? 'rgba(47,129,247,0.12)' : 'transparent',
+                color: activeS ? '#2f81f7' : '#8b949e',
+                border: `1px solid ${activeS ? 'rgba(47,129,247,0.30)' : '#30363d'}`,
+                borderRadius: 2, cursor: 'pointer', fontFamily: '"IBM Plex Sans"',
+              }}>
+                {'Selected'}{activeS ? (sortDesc ? ' ↓' : ' ↑') : ''}
+              </button>
+            );
+          })()}
+          {/* Phase 8B.1: Plan Order sort — shown only when Modify-AI provenance exists */}
+          {showPlanOrderSort && (() => {
+            const activeS = sortKey === 'plan_order';
+            return (
+              <button onClick={() => handleSort('plan_order')} style={{
+                fontSize: 10, padding: '2px 7px',
+                background: activeS ? 'rgba(47,129,247,0.12)' : 'transparent',
+                color: activeS ? '#2f81f7' : '#8b949e',
+                border: `1px solid ${activeS ? 'rgba(47,129,247,0.30)' : '#30363d'}`,
+                borderRadius: 2, cursor: 'pointer', fontFamily: '"IBM Plex Sans"',
+              }}>
+                {'Plan Order'}{activeS ? (sortDesc ? ' ↓' : ' ↑') : ''}
+              </button>
+            );
+          })()}
           <span style={{ marginLeft: 'auto', fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#656d76' }}>
             {filtered.length}/{products.length}
             {selectedCount > 0 && ` · ${selectedCount} sel`}
@@ -853,7 +948,6 @@ function DataSection(props: CommonProps) {
             const rank = props.manualOrder.indexOf(p.product_id);
             const critColor = p.criticality >= 0.85 ? '#f85149' : p.criticality >= 0.7 ? '#d29922' : '#3fb950';
             // Phase 8B: AI baseline deferred status (only relevant in Modify-AI mode)
-            const isAiModifyMode = props.decisionMode === 'manual' && props.manualEditOrigin === 'ai_recommendation';
             const wasAiBaselineDeferred = isAiModifyMode && props.aiBaselineDeferredIds.has(p.product_id);
             return (
               <div key={p.product_id} style={{

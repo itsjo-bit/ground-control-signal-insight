@@ -514,6 +514,13 @@ export default function MissionControl() {
   // manual workflow starts.
   const [aiBaselineDeferredIds, setAiBaselineDeferredIds] = useState<ReadonlySet<string>>(new Set());
 
+  // Phase 8B.1: Immutable snapshot of the recommended plan's packet ordering at
+  // Modify time. Captures recPlan.packets order — NOT Stage-1 aiPrioritization.
+  // Used exclusively for the "Plan Order" display sort in DataSection.
+  // Cleared together with aiBaselineDeferredIds on source switch, reset, and fresh
+  // manual workflow starts.
+  const [aiBaselinePlanOrder, setAiBaselinePlanOrder] = useState<string[]>([]);
+
   // ── Phase 5.1E: Application-level execution coordinator ──────────────────
   // INVARIANTS:
   //   E1 One operator authorization creates exactly one executionId.
@@ -793,6 +800,7 @@ export default function MissionControl() {
     setManualOrder([]);
     setManualEditOrigin('manual');
     setAiBaselineDeferredIds(new Set());
+    setAiBaselinePlanOrder([]);
     clearManualAssessmentState();
     setAiRecommendationRejected(false);
     setChoreographyActive(false);
@@ -854,6 +862,7 @@ export default function MissionControl() {
     setManualOrder([]);
     setManualEditOrigin('manual');
     setAiBaselineDeferredIds(new Set());
+    setAiBaselinePlanOrder([]);
     clearManualAssessmentState();
     setAiRecommendationRejected(false);
     setChoreographyActive(false);
@@ -1028,6 +1037,7 @@ export default function MissionControl() {
     // Clearing selection ends any AI-seeded modify context — operator is starting fresh.
     setManualEditOrigin('manual');
     setAiBaselineDeferredIds(new Set());
+    setAiBaselinePlanOrder([]);
     clearManualAssessmentState();
   }
 
@@ -1242,6 +1252,10 @@ export default function MissionControl() {
     // Record immutable AI baseline provenance for the UI.
     setManualEditOrigin('ai_recommendation');
     setAiBaselineDeferredIds(deferredIds);
+    // Phase 8B.1: Snapshot the full recommended plan packet order at Modify time.
+    // This is the complete CandidatePlan packet ordering (Stage-2), NOT Stage-1
+    // aiPrioritization.ranked_products. Used only for the "Plan Order" display sort.
+    setAiBaselinePlanOrder(recPlan.packets.map((p) => p.packet_id));
     clearManualAssessmentState();
     setDecisionMode('manual');
     setAiRecommendationRejected(false);
@@ -1405,6 +1419,7 @@ export default function MissionControl() {
     manualPlan,
     manualEditOrigin,
     aiBaselineDeferredIds,
+    aiBaselinePlanOrder,
     onToggleManualSelect: handleToggleManualSelect,
     onClearManualSelection: handleClearManualSelection,
     onManualReorder: handleManualReorder,
