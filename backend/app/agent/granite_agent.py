@@ -244,9 +244,23 @@ PRIORITIZATION GUIDANCE:
 - Products with high mission_relevance directly serve the current mission objective.
 - Products with high scientific_value contribute to the science goals.
 - Products with small deadline_s are time-sensitive; consider them carefully.
-- Products with low age_s contain fresh data; stale data (high age_s) is less valuable.
+- Products with low age_s contain fresher data.  Data freshness is ONE contextual
+  factor — it is NOT an automatic ranking rule.  Lower age_s (fresher) can be
+  operationally relevant when current mission context makes recency important, but
+  higher age_s does NOT by itself make a product scientifically or mission-wise less
+  valuable.  Active anomaly status, criticality, deadline urgency, mission relevance,
+  scientific value, related diagnostic context, and operational necessity may all
+  outweigh freshness.  Use freshness as a meaningful tie-breaker when products are
+  otherwise effectively equivalent, not as a default ranking criterion.
+  Do NOT write freshness-only ordinal boilerplate such as "most recent X data",
+  "second most recent X data", "third most recent X data" unless freshness is
+  genuinely the strongest differentiating factor among otherwise equivalent products.
 - Related products (related_ids) provide diagnostic context for each other.
 - Use the description field to explain WHY a product is relevant (not just its numeric score).
+- Each ranked product's reason must reference the strongest distinguishing factor(s)
+  from the supplied context and explain the mission significance of that product.
+  Where the supplied context supports it, briefly distinguish the product from
+  nearby alternatives.  Keep reasons concise and grounded — do not invent facts.
 - Explain trade-offs between operational urgency and scientific value.
 - Do NOT claim that any product will or will not fit in the window.
 

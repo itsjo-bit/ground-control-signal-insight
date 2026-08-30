@@ -11,8 +11,8 @@ Design principles
 This layer is deterministic — it uses no LLM and makes no probabilistic
 decisions.  Its purpose is:
 
-    "Ensure the AI receives the most relevant candidates while keeping the
-    context bounded."
+    "Ensure the AI receives the most relevant AND representative candidates
+    while keeping the context bounded."
 
 It is NOT a mission priority algorithm.  The AI is responsible for semantic
 prioritization; this layer is responsible for context management.
@@ -23,33 +23,52 @@ The selection process is quota-based and operates in a fixed priority order.
 Slots are allocated greedily; a product cannot occupy more than one slot:
 
 1. Anomaly-linked products (strongest protection)
-   All products with ``anomaly_id != None`` are included first, prioritised
-   by the severity of their linked anomaly (descending).  If the anomaly list
-   is empty, this quota is unused and redistributed to other slots.
+   All products with ``anomaly_id != None`` AND linked to an applicable
+   (active/monitoring) anomaly are included first, prioritised by the severity
+   of their linked anomaly (descending).  Resolved/unknown anomaly references
+   do NOT receive this protection.
 
-2. Critical products (criticality >= threshold, default 0.7)
-   Products meeting the criticality threshold that have not yet been selected.
+2. Subsystem representation pass (coverage pass)
+   From remaining products, deterministically allocate slots to ensure each
+   available subsystem receives at least one strong representative, and — when
+   the budget allows — a second representative per subsystem.
 
-3. Near-deadline products (deadline_s below window budget)
+   Grouping key: normalised ``subsystem`` field.
+   Fallback grouping key when subsystem is empty: normalised ``product_type``.
+
+   Coverage budget:
+   - First round: one representative per subsystem (sorted by composite urgency
+     desc, then product_id for determinism).
+   - Second round: one additional representative per subsystem when the budget
+     permits.
+   - The coverage budget is soft: if coverage itself would consume the entire
+     budget, the remaining stages still run with whatever budget remains (which
+     may be zero).  Coverage never exceeds the available max_candidates.
+
+3. Critical products (criticality >= threshold, default 0.7)
+   Products meeting the criticality threshold that have not yet been selected,
+   sorted by criticality desc then product_id.
+
+4. Near-deadline products (deadline_s below window budget)
    Products whose deadline falls within the remaining communication window,
    sorted by deadline_s ascending.
 
-4. High mission-relevance products
+5. High mission-relevance products
    Products with ``mission_relevance >= threshold`` (default 0.6) not yet
    selected.
 
-5. High scientific-value products
+6. High scientific-value products
    Products with ``scientific_value >= threshold`` (default 0.5) not yet
    selected.
 
-6. Recent products
+7. Recent products
    Products with lowest ``age_s`` not yet selected (freshest data first).
 
-7. Related products
+8. Related products
    Products referenced in ``related_ids`` of already-selected products, not
    yet selected.
 
-8. Fill-up
+9. Fill-up
    Any remaining products sorted by a composite urgency score to fill the
    budget to ``max_candidates``.
 
@@ -69,6 +88,7 @@ the raw DataProduct list.
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from typing import Sequence
 
 from ..config import AICandidateConfig
@@ -89,7 +109,7 @@ _DEFAULT_SCIENTIFIC_THRESHOLD: float = 0.5
 
 
 # ---------------------------------------------------------------------------
-# Helper
+# Helpers
 # ---------------------------------------------------------------------------
 
 
@@ -132,6 +152,22 @@ def _composite_urgency(dp: DataProduct) -> float:
         + 0.15 * deadline_urgency
         + 0.10 * max(0.0, 1.0 - dp.age_s / 3600.0)  # fresher = better
     )
+
+
+def _group_key(dp: DataProduct) -> str:
+    """Return the normalised grouping key for subsystem representation.
+
+    Uses ``subsystem`` when non-empty; falls back to ``product_type`` when
+    ``subsystem`` is empty or whitespace-only.  Both are lower-cased and
+    stripped so that minor casing differences do not create phantom groups.
+
+    This function does NOT use mission-specific names — it relies solely on
+    the generic fields present on every :class:`DataProduct`.
+    """
+    key = dp.subsystem.strip().lower()
+    if not key:
+        key = dp.product_type.strip().lower()
+    return key or "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +215,7 @@ class CandidatePrioritizer:
         anomalies: Sequence[AnomalyEvent] | None = None,
         remaining_window_s: float = 600.0,
     ) -> list[CandidateSummary]:
-        """Select a bounded candidate set from *products*.
+        """Select a bounded, representative candidate set from *products*.
 
         Args:
             products:           All available data products.
@@ -222,6 +258,9 @@ class CandidatePrioritizer:
             seen.add(pid)
             return True
 
+        def _budget_remaining() -> int:
+            return self._max - len(selected_ids)
+
         # ── Stage 1: Anomaly-linked products ─────────────────────────────
         # Only products linked to APPLICABLE anomalies (active + monitoring)
         # receive this protected slot.  Products linked to resolved anomalies
@@ -239,62 +278,139 @@ class CandidatePrioritizer:
             )
         )
         for dp in anomaly_linked:
-            if len(selected_ids) >= self._max:
+            if _budget_remaining() <= 0:
                 break
             _add(dp.product_id)
 
-        # ── Stage 2: Critical products ────────────────────────────────────
+        # ── Stage 2: Subsystem representation pass ────────────────────────
+        # Ensure each available subsystem receives at least one strong
+        # representative (and a second when the budget permits).
+        # This prevents a single high-criticality subsystem from consuming
+        # the entire budget via the greedy critical-products stage.
+        #
+        # The grouping key is generic (_group_key); no mission-specific names
+        # are used here.
+        if _budget_remaining() > 0:
+            # Partition unselected products by group key
+            groups: dict[str, list[DataProduct]] = defaultdict(list)
+            for dp in products:
+                if dp.product_id not in seen:
+                    groups[_group_key(dp)].append(dp)
+
+            # Sort each group internally: best representative first.
+            # Rank by composite urgency desc, then product_id for determinism.
+            for grp in groups.values():
+                grp.sort(key=lambda dp: (-_composite_urgency(dp), dp.product_id))
+
+            # Sort the group keys deterministically so selection order is stable
+            # regardless of the input sequence.
+            sorted_keys = sorted(groups.keys())
+            n_groups = len(sorted_keys)
+
+            # Determine how many rounds of coverage to perform.
+            # First round: one representative per subsystem (mandatory when budget exists).
+            # Second round: one additional representative per subsystem, when affordable.
+            #
+            # Soft heuristic: we aim for at most ~half of max_candidates for coverage,
+            # BUT we never sacrifice one-per-subsystem representation when sufficient
+            # budget exists.  That is: if n_groups <= remaining budget, round-1 always
+            # happens in full.  The "half" heuristic only constrains round-2.
+            budget_for_coverage = _budget_remaining()
+
+            # Round 1: one representative per subsystem
+            round1_needed = min(n_groups, budget_for_coverage)
+            round1_added: list[str] = []
+            round1_idx: dict[str, int] = {}  # track next index into sorted group
+            for key in sorted_keys[:round1_needed]:
+                grp = groups[key]
+                if grp and _budget_remaining() > 0:
+                    pid = grp[0].product_id
+                    if _add(pid):
+                        round1_added.append(pid)
+                        round1_idx[key] = 1  # next candidate is index 1
+                    else:
+                        round1_idx[key] = 0
+
+            # Round 2: a second representative per subsystem, when affordable.
+            # Target: total coverage ≤ roughly half of max_candidates (soft heuristic).
+            # But never drop round-2 when there is abundant remaining budget.
+            soft_coverage_cap = max(n_groups, self._max // 2)
+            round1_count = len(round1_added)
+            round2_budget = max(0, min(
+                _budget_remaining(),             # hard cap: never exceed overall budget
+                soft_coverage_cap - round1_count,  # soft heuristic cap
+            ))
+            # Override: if remaining budget is still large, allow full round-2.
+            if _budget_remaining() >= n_groups:
+                round2_budget = min(_budget_remaining(), n_groups)
+
+            round2_count = 0
+            for key in sorted_keys:
+                if round2_count >= round2_budget:
+                    break
+                if _budget_remaining() <= 0:
+                    break
+                grp = groups[key]
+                next_idx = round1_idx.get(key, 0)
+                # Find the next unselected product in this group
+                while next_idx < len(grp) and grp[next_idx].product_id in seen:
+                    next_idx += 1
+                if next_idx < len(grp):
+                    if _add(grp[next_idx].product_id):
+                        round2_count += 1
+
+        # ── Stage 3: Critical products ────────────────────────────────────
         critical = [
             dp for dp in products
             if dp.criticality >= self._criticality_threshold
         ]
         critical.sort(key=lambda dp: (-dp.criticality, dp.product_id))
         for dp in critical:
-            if len(selected_ids) >= self._max:
+            if _budget_remaining() <= 0:
                 break
             _add(dp.product_id)
 
-        # ── Stage 3: Near-deadline products ──────────────────────────────
+        # ── Stage 4: Near-deadline products ──────────────────────────────
         near_deadline = [
             dp for dp in products
             if 0.0 < dp.deadline_s <= remaining_window_s
         ]
         near_deadline.sort(key=lambda dp: (dp.deadline_s, dp.product_id))
         for dp in near_deadline:
-            if len(selected_ids) >= self._max:
+            if _budget_remaining() <= 0:
                 break
             _add(dp.product_id)
 
-        # ── Stage 4: High mission-relevance products ──────────────────────
+        # ── Stage 5: High mission-relevance products ──────────────────────
         high_relevance = [
             dp for dp in products
             if dp.mission_relevance >= self._relevance_threshold
         ]
         high_relevance.sort(key=lambda dp: (-dp.mission_relevance, dp.product_id))
         for dp in high_relevance:
-            if len(selected_ids) >= self._max:
+            if _budget_remaining() <= 0:
                 break
             _add(dp.product_id)
 
-        # ── Stage 5: High scientific-value products ───────────────────────
+        # ── Stage 6: High scientific-value products ───────────────────────
         high_science = [
             dp for dp in products
             if dp.scientific_value >= self._scientific_threshold
         ]
         high_science.sort(key=lambda dp: (-dp.scientific_value, dp.product_id))
         for dp in high_science:
-            if len(selected_ids) >= self._max:
+            if _budget_remaining() <= 0:
                 break
             _add(dp.product_id)
 
-        # ── Stage 6: Recent products (lowest age_s) ───────────────────────
+        # ── Stage 7: Recent products (lowest age_s) ───────────────────────
         recent = sorted(products, key=lambda dp: (dp.age_s, dp.product_id))
         for dp in recent:
-            if len(selected_ids) >= self._max:
+            if _budget_remaining() <= 0:
                 break
             _add(dp.product_id)
 
-        # ── Stage 7: Related products ─────────────────────────────────────
+        # ── Stage 8: Related products ─────────────────────────────────────
         # Collect all related_ids from currently selected products.
         related_candidates: list[str] = []
         for pid in list(selected_ids):  # snapshot to avoid mid-loop mutation
@@ -309,24 +425,32 @@ class CandidatePrioritizer:
         for rid in related_candidates:
             if rid not in seen_related:
                 seen_related.add(rid)
-                if len(selected_ids) < self._max:
+                if _budget_remaining() > 0:
                     _add(rid)
 
-        # ── Stage 8: Fill-up with composite urgency ───────────────────────
-        if len(selected_ids) < self._max:
+        # ── Stage 9: Fill-up with composite urgency ───────────────────────
+        if _budget_remaining() > 0:
             remaining = [dp for dp in products if dp.product_id not in seen]
             remaining.sort(key=lambda dp: (-_composite_urgency(dp), dp.product_id))
             for dp in remaining:
-                if len(selected_ids) >= self._max:
+                if _budget_remaining() <= 0:
                     break
                 _add(dp.product_id)
 
         n_total = len(products)
         n_selected = len(selected_ids)
         if n_total > self._max:
+            # Gather per-group counts for diagnostic logging
+            group_counts: dict[str, int] = defaultdict(int)
+            for pid in selected_ids:
+                dp = product_map.get(pid)
+                if dp:
+                    group_counts[_group_key(dp)] += 1
             logger.debug(
-                "CandidatePrioritizer: selected %d/%d products (max_candidates=%d)",
+                "CandidatePrioritizer: selected %d/%d products (max_candidates=%d) "
+                "subsystem distribution: %s",
                 n_selected, n_total, self._max,
+                dict(sorted(group_counts.items(), key=lambda kv: -kv[1])),
             )
 
         return [_summarise(product_map[pid]) for pid in selected_ids]
