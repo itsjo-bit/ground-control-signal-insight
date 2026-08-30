@@ -441,6 +441,18 @@ AI starts in STANDBY (does NOT run automatically at application open)
 
 ## Scenario System
 
+### Mission Source Catalog — Canonical User-Facing Sources
+
+GCSI exposes three supported mission sources through the Mission Source Catalog
+(`GET /sources`, `POST /sources/select`). These are the sources selectable via
+the **Scenario** dropdown in the UI:
+
+| Source ID | Display Name | Type |
+|---|---|---|
+| `asteria-7` | ASTERIA-7 | Canonical synthetic mission |
+| `juno-pj62-v1` | Juno PJ62 Historical V1 | Canonical historical replay |
+| `juno-pj62-v2` | Juno PJ62 Historical V2 | Canonical historical replay |
+
 ### Default demo scenario: `asteria7_thermal_priority_contact_v1.json`
 
 The canonical ASTERIA-7 mission — the primary hackathon demo. Capabilities:
@@ -456,29 +468,34 @@ The canonical ASTERIA-7 mission — the primary hackathon demo. Capabilities:
 
 See [`docs/asteria7_demo.md`](docs/asteria7_demo.md) for full mission parameters.
 
-### Alternative scenario: `mission_data_v3.json`
+### Internal / Developer Scenario Files
+
+The following files reside under `data/scenarios/` but are **not** Mission Source Catalog
+entries. They are not selectable through the UI and are not exposed by the user-facing
+source API. Physical location under `data/scenarios/` does not imply user-facing source status.
+
+**`mission_data_v3.json`** — Frozen benchmark input scenario (developer / internal use).
 
 A medium-scale scenario (150 products, 3 anomalies, ~54M km, ~3-min propagation).
-Useful for testing the same pipeline with a smaller dataset.
+This is the benchmark base scenario; its file bytes are frozen and verified by SHA-256
+integrity tests. Not the canonical demo; not user-facing. Useful for testing the full
+pipeline with a smaller, stable dataset.
 
 - Mission state: `GCSI-MISSION-003 / high_volume_pass`
-- 150 data products, 3 active anomalies
+- File-byte SHA-256: `dea5339623a604f3119a46c6fc754a2df22340acf7466f7783b3ac93e05501a9`
+- Benchmark model-dump SHA-256: `de43388647287c3b99849c0fc9b940ce7234acd4be6ae9d212befa5b6eac3b08`
 
-### Legacy scenarios
+**`mission_data_v2.json`** — Compatibility/test fixture (intermediate data-product scenario).
+Retained for backward-compatibility tests. Not user-facing.
 
-`nominal_pass.json` and `degraded_link.json` are legacy packet-mode scenarios retained for
-compatibility and unit testing. They use a small packet set and do not include:
+**`nominal_pass.json`** and **`degraded_link.json`** — Legacy packet-mode scenarios retained for
+regression tests and unit testing. They use a small packet set and do not include the
+data product model, anomaly model, spacecraft geometry, or AI product prioritization.
+Not user-facing; not the demo target.
 
-- Data product model
-- Anomaly model
-- Spacecraft geometry
-- AI product prioritization
-
-If you load a legacy scenario intentionally (e.g., for quick smoke tests), the application
-displays a clear warning that high-volume AI prioritization is unavailable. This is expected.
-Legacy scenarios are not the demo target.
-
-`mission_data_v2.json` is an intermediate data-product scenario, also retained for compatibility.
+If you load a legacy scenario intentionally (e.g., for quick smoke tests via `GCSI_SCENARIO_PATH`),
+the application displays a clear warning that high-volume AI prioritization is unavailable.
+This is expected.
 
 ---
 
@@ -983,11 +1000,11 @@ ground-control-signal-insight/
 │   └── pyproject.toml
 ├── data/
 │   └── scenarios/
-│       ├── asteria7_thermal_priority_contact_v1.json  # DEFAULT — 1,284 products, thermal anomaly
-│       ├── mission_data_v3.json  # Alternative — 150 products, 3 anomalies
-│       ├── mission_data_v2.json  # Intermediate data-product scenario
-│       ├── nominal_pass.json     # Legacy packet scenario
-│       └── degraded_link.json    # Legacy packet scenario (degraded link)
+│       ├── asteria7_thermal_priority_contact_v1.json  # CANONICAL — ASTERIA-7 Mission Source Catalog entry
+│       ├── mission_data_v3.json  # INTERNAL — frozen benchmark input; not user-facing
+│       ├── mission_data_v2.json  # INTERNAL — compatibility/test fixture; not user-facing
+│       ├── nominal_pass.json     # INTERNAL — legacy packet regression fixture; not user-facing
+│       └── degraded_link.json    # INTERNAL — legacy packet regression fixture; not user-facing
 ├── docs/
 │   └── telecom_model.md         # Telecom model reference
 ├── frontend/

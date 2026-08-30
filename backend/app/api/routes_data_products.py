@@ -112,9 +112,15 @@ class ScenariosResponse(BaseModel):
 def list_scenarios() -> ScenariosResponse:
     """List available scenario files.
 
+    **Compatibility API** — This endpoint is retained for internal use, developer
+    tooling, and regression tests.  It is NOT the canonical product source catalog.
+    For user-facing mission source selection, use GET /sources instead.
+
     Scans the configured scenarios directory for ``.json`` files and returns
-    lightweight metadata for each.  The caller can use this to build a
-    scenario selector UI without loading every file's full content.
+    lightweight metadata for each.  The result includes both canonical backing files
+    (e.g. asteria7_thermal_priority_contact_v1.json) and internal scenario files
+    (e.g. mission_data_v3.json, mission_data_v2.json) that are not Mission Source
+    Catalog entries.
 
     The ``is_active`` flag is set on the file whose path matches
     ``state.active_scenario_path``.
@@ -225,6 +231,10 @@ class SwitchScenarioResponse(BaseModel):
 @router.post("/scenarios/switch", response_model=SwitchScenarioResponse)
 def switch_scenario(req: SwitchScenarioRequest) -> SwitchScenarioResponse:
     """Switch the active scenario to a different scenario file.
+
+    **Compatibility API** — This endpoint is retained for internal use, developer
+    tooling, and regression tests.  It is NOT the canonical product source-selection
+    interface.  For user-facing mission switching, use POST /sources/select instead.
 
     The file must exist inside the configured scenarios directory
     (``data/scenarios`` by default).  Path traversal is explicitly rejected:

@@ -211,4 +211,58 @@ The three-layer authority model applies equally in both modes:
 
 ---
 
-*GCSI architecture documentation — Phase 6E-C8*
+## Mission Source Architecture
+
+GCSI maintains a strict boundary between canonical user-facing mission sources and internal
+scenario infrastructure. A physical file's location under `data/scenarios/` does NOT imply
+user-facing source status.
+
+### Canonical Mission Sources (Mission Source Catalog)
+
+User-facing source selection is exposed through the **Mission Source Catalog**:
+
+```
+                         USER
+                           |
+                  Mission Source Catalog
+                           |
+                    GET /sources
+                 POST /sources/select
+                           |
+             +-------------+--------------+
+             |             |              |
+         ASTERIA-7     Juno PJ62 V1   Juno PJ62 V2
+      (synthetic)     (historical)   (historical)
+```
+
+Exactly three catalog entries. No other file is user-facing.
+
+### Internal / Compatibility Scenario Infrastructure
+
+The legacy scenario API is retained for developer tooling, regression tests, and
+backward-compatibility workflows. It is NOT the canonical product interface.
+
+```
+             INTERNAL / DEVELOPMENT / TESTING
+
+                    GET /scenarios
+                POST /scenarios/switch
+                           |
+                   data/scenarios/*.json
+                           |
+       +-------------------+---------------------+
+       |              |             |            |
+ mission_data_v3  mission_data_v2 degraded   nominal_pass
+ frozen          compatibility   regression regression
+ benchmark       fixture         fixture    fixture
+```
+
+ASTERIA-7 also physically lives under `data/scenarios/` because its canonical source
+adapter loads that scenario file. Physical location does NOT determine catalog membership.
+
+See [`docs/mission_source_architecture.md`](mission_source_architecture.md) for
+the authoritative per-file classification table and full architecture definition.
+
+---
+
+*GCSI architecture documentation — Phase 6E-C8 / Phase 7E*

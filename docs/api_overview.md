@@ -62,13 +62,30 @@ Both approval endpoints verify canonical fingerprint integrity before registerin
 |---|---|---|---|
 | `GET` | `/experience` | READ-ONLY | Loads the scenario experience manifest (ingest timeline, ground objectives, subsystem status). ASTERIA-7 only. |
 
-### Scenario Management
+### Mission Source Catalog (Canonical Product Source Selection)
+
+> This is the canonical user-facing source-selection API. Production mission switching
+> uses these endpoints. The three supported sources are: `asteria-7`, `juno-pj62-v1`,
+> `juno-pj62-v2`.
 
 | Method | Path | Mutation | Description |
 |---|---|---|---|
-| `GET` | `/scenarios` | READ-ONLY | List available scenario files |
-| `POST` | `/scenarios/load` | **STATE-MUTATING** | Load a different scenario; resets all state |
-| `POST` | `/scenarios/switch` | **STATE-MUTATING** | Switch to a different scenario by filename (basename only; path traversal rejected). Switches from historical to synthetic mode. |
+| `GET` | `/sources` | READ-ONLY | Return the Mission Source Catalog — the three canonical user-facing sources. Active `source_id` included. |
+| `POST` | `/sources/select` | **STATE-MUTATING** | Select a catalog source by `source_id`. Activates the corresponding scenario or historical replay. Unknown IDs rejected with 404. |
+
+### Internal / Compatibility Scenario API
+
+> **Not the canonical product interface.** These endpoints are retained for developer
+> tooling, regression tests, and backward-compatibility workflows. They expose all
+> files under `data/scenarios/`, including internal benchmark and test fixtures
+> that are not Mission Source Catalog entries. Production source switching uses
+> `/sources/select` above, not `/scenarios/switch`.
+
+| Method | Path | Mutation | Description |
+|---|---|---|---|
+| `GET` | `/scenarios` | READ-ONLY | List all scenario files in `data/scenarios/` (includes internal fixtures) |
+| `POST` | `/scenarios/load` | **STATE-MUTATING** | Load a different scenario by path; resets all state |
+| `POST` | `/scenarios/switch` | **STATE-MUTATING** | Switch to a different scenario by filename (basename only; path traversal rejected). Compatibility API — use `/sources/select` for user-facing switching. |
 | `POST` | `/scenarios/reset` | **STATE-MUTATING** | Alias for `/state/reset`. Reset active scenario to initial state. |
 
 ---

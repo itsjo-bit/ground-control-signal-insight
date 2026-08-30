@@ -152,16 +152,16 @@ export async function getExperience(): Promise<ExperienceResponse> {
   return fetchJson<ExperienceResponse>(`${BASE}/experience`);
 }
 
-// Scenario management
-export async function listScenarios(): Promise<ScenariosResponse> {
-  return fetchJson<ScenariosResponse>(`${BASE}/scenarios`);
-}
+// ─── Mission Source Catalog (canonical product API) ─────────────────────────
+// These functions are the canonical user-facing mission source selection API.
+// Production mission switching always goes through selectSource() → POST /sources/select.
 
-// Phase 7: Mission source catalog
+// GET /sources — returns the Mission Source Catalog (three canonical user-facing sources)
 export async function getSources(): Promise<SourcesResponse> {
   return fetchJson<SourcesResponse>(`${BASE}/sources`);
 }
 
+// POST /sources/select — canonical product source switch; used by production UI
 export async function selectSource(sourceId: string): Promise<SelectSourceResponse> {
   return fetchJson<SelectSourceResponse>(`${BASE}/sources/select`, {
     method: 'POST',
@@ -169,6 +169,20 @@ export async function selectSource(sourceId: string): Promise<SelectSourceRespon
   });
 }
 
+// ─── Internal / Compatibility Scenario API ───────────────────────────────────
+// The functions below wrap the legacy /scenarios endpoints, which are retained
+// for developer tooling, regression tests, and backward compatibility.
+// They are NOT the canonical product source-selection interface.
+// Production mission switching uses selectSource() above, not switchScenario().
+
+// GET /scenarios — lists all files under data/scenarios/ including internal fixtures
+// (compatibility API; not restricted to Mission Source Catalog entries)
+export async function listScenarios(): Promise<ScenariosResponse> {
+  return fetchJson<ScenariosResponse>(`${BASE}/scenarios`);
+}
+
+// POST /scenarios/switch — compatibility scenario loader (internal / developer tooling)
+// Retained for tests and engineering workflows. Production UI uses selectSource() instead.
 export async function switchScenario(filename: string): Promise<{
   status: string;
   scenario_id: string;
