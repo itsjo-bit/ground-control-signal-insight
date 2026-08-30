@@ -139,7 +139,7 @@ export function MissionStatusSummary({
           fontFamily: SANS,
           fontSize: 10,
           fontWeight: 600,
-          color: '#8b949e',
+          color: '#e6edf3',
           textTransform: 'uppercase',
           letterSpacing: '0.07em',
         }}>

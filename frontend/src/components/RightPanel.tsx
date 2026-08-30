@@ -2710,7 +2710,7 @@ export function DecisionPanel({
           fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
           fontSize: 10,
           fontWeight: 600,
-          color: '#8b949e',
+          color: '#e6edf3',
           textTransform: 'uppercase',
           letterSpacing: '0.07em',
           flex: 1,
