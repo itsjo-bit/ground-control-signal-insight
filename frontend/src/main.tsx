@@ -1,10 +1,10 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import './theme.css'
-import MissionControl from './MissionControl'
+import { App } from './App'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <MissionControl />
+    <App />
   </React.StrictMode>,
 )
