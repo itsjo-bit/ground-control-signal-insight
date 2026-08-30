@@ -682,22 +682,27 @@ describe('F29-F32 — provider lifecycle labels (production classifyProvider)', 
     }
   });
 
-  // F31: known external providers may use AI label
-  it('F31: Granite → AI badge when identity is known', () => {
+  // F31: known external providers classified as external_ai — badge is neutral (Phase 8B.3)
+  it('F31: Granite → external_ai kind; badge is neutral ACTIVE (Phase 8B.3)', () => {
     expect(classifyProvider('Granite').kind).toBe('external_ai');
-    expect(buildProviderBadgeLabel('Granite', 'ready')).toMatch(/^AI /);
-    expect(buildProviderBadgeLabel('Granite', 'analyzing')).toMatch(/^AI /);
-    expect(buildProviderBadgeLabel('Granite', 'error')).toMatch(/^AI /);
+    // Phase 8B.3: badge is provider-neutral; header prepends "AI · " to form "AI · ACTIVE"
+    expect(buildProviderBadgeLabel('Granite', 'ready')).toBe('ACTIVE');
+    expect(buildProviderBadgeLabel('Granite', 'analyzing')).toBe('ANALYZING');
+    expect(buildProviderBadgeLabel('Granite', 'error')).toBe('FAILED');
+    // Must NOT expose vendor name
+    expect(buildProviderBadgeLabel('Granite', 'ready')).not.toContain('GRANITE');
   });
 
-  it('F31: Gemini → AI badge when identity is known', () => {
+  it('F31: Gemini → external_ai kind; badge is neutral ACTIVE (Phase 8B.3)', () => {
     expect(classifyProvider('Gemini').kind).toBe('external_ai');
-    expect(buildProviderBadgeLabel('Gemini', 'ready')).toMatch(/^AI /);
+    expect(buildProviderBadgeLabel('Gemini', 'ready')).toBe('ACTIVE');
+    expect(buildProviderBadgeLabel('Gemini', 'ready')).not.toContain('GEMINI');
   });
 
-  it('F31: Ollama → AI badge when identity is known', () => {
+  it('F31: Ollama → external_ai kind; badge is neutral ACTIVE (Phase 8B.3)', () => {
     expect(classifyProvider('Ollama').kind).toBe('external_ai');
-    expect(buildProviderBadgeLabel('Ollama', 'ready')).toMatch(/^AI /);
+    expect(buildProviderBadgeLabel('Ollama', 'ready')).toBe('ACTIVE');
+    expect(buildProviderBadgeLabel('Ollama', 'ready')).not.toContain('OLLAMA');
   });
 
   // F32: analyzing/error lifecycle respects provider classification
@@ -717,12 +722,13 @@ describe('F29-F32 — provider lifecycle labels (production classifyProvider)', 
     expect(buildProviderBadgeLabel('local', 'error')).toBe('TRIAGE · LOCAL · FAILED');
   });
 
-  it('F32: Granite+analyzing → AI · GRANITE · ANALYZING', () => {
-    expect(buildProviderBadgeLabel('Granite', 'analyzing')).toBe('AI · GRANITE · ANALYZING');
+  // Phase 8B.3: neutral badges for external providers
+  it('F32: Granite+analyzing → ANALYZING (neutral, Phase 8B.3)', () => {
+    expect(buildProviderBadgeLabel('Granite', 'analyzing')).toBe('ANALYZING');
   });
 
-  it('F32: Granite+error → AI · GRANITE · FAILED', () => {
-    expect(buildProviderBadgeLabel('Granite', 'error')).toBe('AI · GRANITE · FAILED');
+  it('F32: Granite+error → FAILED (neutral, Phase 8B.3)', () => {
+    expect(buildProviderBadgeLabel('Granite', 'error')).toBe('FAILED');
   });
 });
 

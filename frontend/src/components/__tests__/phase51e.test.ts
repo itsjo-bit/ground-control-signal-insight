@@ -350,36 +350,39 @@ describe('14.15 — local deterministic provider → TRIAGE, not AI', () => {
   }
 });
 
-describe('14.16 — known external providers → AI badge', () => {
-  it('Granite → external_ai', () => {
+// Phase 8B.3: external AI kind is preserved but badge is neutral (no vendor name)
+describe('14.16 — known external providers → neutral ACTIVE badge (Phase 8B.3)', () => {
+  it('Granite → external_ai, neutral ACTIVE badge', () => {
     const c = classifyProvider('Granite');
     expect(c.kind).toBe('external_ai');
     const badge = buildProviderBadgeLabel('Granite', 'ready');
-    expect(badge.startsWith('AI')).toBe(true);
-    expect(badge).toContain('GRANITE');
+    // Phase 8B.3: badge is "ACTIVE" not "AI · GRANITE"
+    expect(badge).toBe('ACTIVE');
+    expect(badge).not.toContain('GRANITE');
   });
 
-  it('IBM Granite → external_ai', () => {
+  it('IBM Granite → external_ai, neutral badge', () => {
     const c = classifyProvider('IBM Granite 3.1');
     expect(c.kind).toBe('external_ai');
     const badge = buildProviderBadgeLabel('IBM Granite 3.1', 'ready');
-    expect(badge.startsWith('AI')).toBe(true);
+    expect(badge).toBe('ACTIVE');
+    expect(badge).not.toContain('GRANITE');
   });
 
-  it('Gemini → external_ai', () => {
+  it('Gemini → external_ai, neutral ACTIVE badge', () => {
     const c = classifyProvider('Gemini');
     expect(c.kind).toBe('external_ai');
     const badge = buildProviderBadgeLabel('Gemini', 'ready');
-    expect(badge.startsWith('AI')).toBe(true);
-    expect(badge).toContain('GEMINI');
+    expect(badge).toBe('ACTIVE');
+    expect(badge).not.toContain('GEMINI');
   });
 
-  it('Ollama → external_ai', () => {
+  it('Ollama → external_ai, neutral ACTIVE badge', () => {
     const c = classifyProvider('Ollama');
     expect(c.kind).toBe('external_ai');
     const badge = buildProviderBadgeLabel('Ollama', 'ready');
-    expect(badge.startsWith('AI')).toBe(true);
-    expect(badge).toContain('OLLAMA');
+    expect(badge).toBe('ACTIVE');
+    expect(badge).not.toContain('OLLAMA');
   });
 });
 
@@ -666,10 +669,13 @@ describe('14.17 — Ground Reception derives from simulation_result', () => {
 
 // ─── Provider badge lifecycle coverage ───────────────────────────────────────
 
-describe('Provider badge — all lifecycle states (Phase 5.1F)', () => {
-  it('analyzing — external provider → AI badge with provider name', () => {
-    expect(buildProviderBadgeLabel('Granite', 'analyzing')).toBe('AI · GRANITE · ANALYZING');
-    expect(buildProviderBadgeLabel('Gemini', 'analyzing')).toBe('AI · GEMINI · ANALYZING');
+// Phase 8B.3: external provider badges are neutral (no vendor name in primary badge)
+describe('Provider badge — all lifecycle states (Phase 5.1F / 8B.3)', () => {
+  it('analyzing — external provider → neutral ANALYZING (Phase 8B.3)', () => {
+    expect(buildProviderBadgeLabel('Granite', 'analyzing')).toBe('ANALYZING');
+    expect(buildProviderBadgeLabel('Gemini', 'analyzing')).toBe('ANALYZING');
+    expect(buildProviderBadgeLabel('Granite', 'analyzing')).not.toContain('GRANITE');
+    expect(buildProviderBadgeLabel('Gemini', 'analyzing')).not.toContain('GEMINI');
   });
 
   it('analyzing — local provider → TRIAGE, not AI', () => {
@@ -682,9 +688,11 @@ describe('Provider badge — all lifecycle states (Phase 5.1F)', () => {
     expect(buildProviderBadgeLabel(null, 'analyzing')).not.toMatch(/^AI /);
   });
 
-  it('error — external provider → AI badge with provider name', () => {
-    expect(buildProviderBadgeLabel('Granite', 'error')).toBe('AI · GRANITE · FAILED');
-    expect(buildProviderBadgeLabel('Gemini', 'error')).toBe('AI · GEMINI · FAILED');
+  it('error — external provider → neutral FAILED (Phase 8B.3)', () => {
+    expect(buildProviderBadgeLabel('Granite', 'error')).toBe('FAILED');
+    expect(buildProviderBadgeLabel('Gemini', 'error')).toBe('FAILED');
+    expect(buildProviderBadgeLabel('Granite', 'error')).not.toContain('GRANITE');
+    expect(buildProviderBadgeLabel('Gemini', 'error')).not.toContain('GEMINI');
   });
 
   it('error — local provider → TRIAGE, not AI', () => {
@@ -697,8 +705,10 @@ describe('Provider badge — all lifecycle states (Phase 5.1F)', () => {
     expect(buildProviderBadgeLabel(null, 'error')).not.toMatch(/^AI /);
   });
 
-  it('stale states', () => {
-    expect(buildProviderBadgeLabel('Granite', 'stale')).toBe('AI · GRANITE · STALE');
+  it('stale states (Phase 8B.3)', () => {
+    // External AI: neutral STALE
+    expect(buildProviderBadgeLabel('Granite', 'stale')).toBe('STALE');
+    expect(buildProviderBadgeLabel('Granite', 'stale')).not.toContain('GRANITE');
     expect(buildProviderBadgeLabel('local', 'stale')).toBe('TRIAGE · STALE');
     expect(buildProviderBadgeLabel(null, 'stale')).toBe('ADVISORY · STALE');
   });

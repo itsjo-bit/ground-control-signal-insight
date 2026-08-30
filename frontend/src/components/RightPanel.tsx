@@ -1512,11 +1512,6 @@ function AiSection(props: CommonProps) {
               {triageInfo.subtitle}
             </span>
           )}
-          {props.aiProvider && (isReady || isStale) && (
-            <span style={{ marginLeft: 'auto', fontFamily: '"IBM Plex Mono"', fontSize: 9, color: triageInfo.isLocal ? '#d29922' : '#2f81f7', flexShrink: 0 }}>
-              {props.aiProvider}
-            </span>
-          )}
         </div>
 
         {/* Compact summary row when ready */}
@@ -1603,7 +1598,7 @@ function AiSection(props: CommonProps) {
                 { done: true, label: `${dp} data products ready` },
                 { done: true, label: `${anomCount} anomalies identified` },
                 { done: true, label: 'Communication constraints evaluated' },
-                { done: false, label: `Requesting AI analysis (${props.aiProvider ?? 'provider'})…` },
+                { done: false, label: 'Requesting AI analysis…' },
               ].map(({ done, label }) => (
                 <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: '"IBM Plex Sans"', fontSize: 11, color: done ? '#656d76' : '#2f81f7' }}>
                   <span style={{ flexShrink: 0 }}>{done ? '✓' : '●'}</span>
@@ -1618,9 +1613,6 @@ function AiSection(props: CommonProps) {
         {isError && (
           <div style={{ background: 'rgba(248,81,73,0.06)', border: '1px solid rgba(248,81,73,0.25)', borderRadius: 3, padding: '8px 10px', marginTop: 8 }}>
             <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, fontWeight: 700, color: '#f85149', marginBottom: 4 }}>⚠ ANALYSIS FAILED</div>
-            {props.aiProvider && (
-              <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 11, color: '#8b949e', marginBottom: 3 }}>Provider: {props.aiProvider}</div>
-            )}
             {props.aiError && (
               <div style={{ fontFamily: '"IBM Plex Mono"', fontSize: 10, color: '#f85149', wordBreak: 'break-all', lineHeight: 1.4 }}>
                 {props.aiError.slice(0, 200)}

@@ -1566,14 +1566,22 @@ export default function MissionControl() {
         {/* AI lifecycle — only show non-standby states, keep minimal */}
         {aiLifecycle !== 'standby' && ((): React.ReactNode => {
           const providerClass = classifyProvider(aiActualProvider ?? aiProvider);
-          const badgeLabel = buildProviderBadgeLabel(aiActualProvider ?? aiProvider, aiLifecycle);
+          // Phase 8B.3: buildProviderBadgeLabel returns neutral status for external AI
+          // (e.g. "ACTIVE", "ANALYZING") and full label for local/advisory.
+          // Prefix "AI · " only for external AI so the header reads "AI · ACTIVE".
+          const statusLabel = buildProviderBadgeLabel(aiActualProvider ?? aiProvider, aiLifecycle);
           const isLocal = providerClass.kind === 'local_deterministic';
+          const isExternal = providerClass.kind === 'external_ai';
           const isError = aiLifecycle === 'error';
           const isReady = aiLifecycle === 'ready';
           const isAnalyzing = aiLifecycle === 'analyzing';
           const titleText = isLocal
             ? 'Deterministic local fallback — not an AI model'
+            : isExternal
+            ? 'AI reasoning active'
             : undefined;
+          // Phase 8B.3: for external AI "AI · ACTIVE"; for local "TRIAGE · LOCAL" etc.
+          const badgeLabel = isExternal ? `AI · ${statusLabel}` : statusLabel;
           const color = isError ? '#f85149' : isLocal ? '#d29922' : isAnalyzing ? '#2f81f7' : isReady ? '#3fb950' : '#8b949e';
           const bg = isError ? 'rgba(248,81,73,0.10)' : isLocal ? 'rgba(210,153,34,0.10)' : isAnalyzing ? 'rgba(47,129,247,0.12)' : isReady ? 'rgba(63,185,80,0.10)' : 'transparent';
           const bdr = isError ? 'rgba(248,81,73,0.30)' : isLocal ? 'rgba(210,153,34,0.30)' : isAnalyzing ? 'rgba(47,129,247,0.30)' : isReady ? 'rgba(63,185,80,0.28)' : '#30363d';
@@ -1584,7 +1592,7 @@ export default function MissionControl() {
               fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
               fontSize: 9, fontWeight: 700, flexShrink: 0, marginRight: 8,
             }} title={titleText}>
-              AI · {badgeLabel}
+              {badgeLabel}
             </span>
           );
         })()}

@@ -463,18 +463,46 @@ describe('Provider labeling', () => {
     expect(badge).not.toMatch(/^AI /);
   });
 
-  it('16.15 — Granite provider keeps AI prefix', () => {
+  // Phase 8B.3: vendor names removed from primary badge; external AI shows "ACTIVE"
+  it('16.15 — Granite provider shows neutral ACTIVE badge (not GRANITE) — Phase 8B.3', () => {
     expect(isLocalProvider('granite')).toBe(false);
     expect(isLocalProvider('Granite-3.1')).toBe(false);
     const badge = prodBuildProviderBadgeLabel('Granite', 'ready');
-    expect(badge.startsWith('AI')).toBe(true);
-    expect(badge).toContain('GRANITE');
+    // External AI: badge is neutral "ACTIVE" — header prefixes "AI · " to form "AI · ACTIVE"
+    expect(badge).toBe('ACTIVE');
+    // Must NOT expose vendor name in primary badge
+    expect(badge).not.toContain('GRANITE');
+    expect(badge).not.toContain('Granite');
   });
 
-  it('16.15 — Gemini provider keeps AI prefix', () => {
+  it('16.15 — Gemini provider shows neutral ACTIVE badge (not GEMINI) — Phase 8B.3', () => {
     expect(isLocalProvider('gemini')).toBe(false);
     const badge = prodBuildProviderBadgeLabel('Gemini', 'ready');
-    expect(badge.startsWith('AI')).toBe(true);
+    expect(badge).toBe('ACTIVE');
+    expect(badge).not.toContain('GEMINI');
+    expect(badge).not.toContain('Gemini');
+  });
+
+  it('16.15 — Ollama provider shows neutral ACTIVE badge (not OLLAMA) — Phase 8B.3', () => {
+    expect(isLocalProvider('ollama')).toBe(false);
+    const badge = prodBuildProviderBadgeLabel('ollama', 'ready');
+    expect(badge).toBe('ACTIVE');
+    expect(badge).not.toContain('OLLAMA');
+  });
+
+  it('16.15 — External AI analyzing badge is neutral ANALYZING — Phase 8B.3', () => {
+    const badge = prodBuildProviderBadgeLabel('Gemini', 'analyzing');
+    expect(badge).toBe('ANALYZING');
+    expect(badge).not.toContain('GEMINI');
+    const badge2 = prodBuildProviderBadgeLabel('Granite', 'analyzing');
+    expect(badge2).toBe('ANALYZING');
+    expect(badge2).not.toContain('GRANITE');
+  });
+
+  it('16.15 — External AI fallback badge is FAILED — Phase 8B.3', () => {
+    const badge = prodBuildProviderBadgeLabel('Gemini', 'error');
+    expect(badge).toBe('FAILED');
+    expect(badge).not.toContain('GEMINI');
   });
 
   it('unknown provider uses ADVISORY (fail-safe) — not AI (Phase 5.1F)', () => {

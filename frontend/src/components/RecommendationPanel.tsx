@@ -55,7 +55,7 @@ interface Props {
 export function RecommendationPanel({
   recommendation: rec,
   providerName,
-  requestedProviderName,
+  requestedProviderName: _requestedProviderName,
   recommendationFallbackReason,
   evaluation,
   riskWeights,
@@ -98,15 +98,13 @@ export function RecommendationPanel({
 
   const hasFallback = !!recommendationFallbackReason;
 
-  // Determine provider kind for truthful labeling
+  // Determine provider kind for truthful labeling (Phase 8B.3: no vendor name in heading)
   const lower = (providerName ?? '').toLowerCase();
   const isLocal = lower === 'local' || lower === 'localrulebasedprovider' || lower === 'local_rule_based';
   const isExternal = lower === 'granite' || lower === 'gemini' || lower === 'ollama';
 
   const heading = isLocal
-    ? `Deterministic Recommendation — ${providerName}`
-    : providerName
-    ? `AI Reasoning — ${providerName}`
+    ? 'Deterministic Recommendation'
     : 'AI Reasoning';
 
   return (
@@ -137,12 +135,10 @@ export function RecommendationPanel({
           <div style={{ color: 'var(--text-muted, #8b949e)', marginBottom: 4 }}>
             {recommendationFallbackReason}
           </div>
-          {requestedProviderName && (
-            <div style={{ color: 'var(--text-dim, #57606a)', fontSize: 11 }}>
-              Requested: {requestedProviderName} · Actual: {providerName ?? 'Local'}.
-              Risk assessment uses the deterministic evaluator regardless of provider.
-            </div>
-          )}
+          <div style={{ color: 'var(--text-dim, #57606a)', fontSize: 11 }}>
+            External AI reasoning is unavailable. Deterministic fallback reasoning is in use.
+            Risk assessment uses the deterministic evaluator regardless of provider.
+          </div>
         </div>
       )}
 <p>
@@ -195,11 +191,11 @@ export function RecommendationPanel({
         />
       )}
 
-      {/* Phase 4.1: Stage-specific provider identity — show when providers differ */}
+      {/* Phase 4.1: Stage-specific provider identity — diagnostic note when stages differ */}
       {prioritizationProvider && recommendationProvider && prioritizationProvider !== recommendationProvider && (
         <p style={{ fontSize: 11, color: 'var(--text-muted, #8b949e)', marginTop: 4 }}>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10 }}>
-            Prioritization: {prioritizationProvider} · Recommendation: {recommendationProvider}
+            Prioritization stage and recommendation stage used different providers.
           </span>
         </p>
       )}

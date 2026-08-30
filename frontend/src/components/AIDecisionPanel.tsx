@@ -362,7 +362,7 @@ interface Props {
 export function AIDecisionPanel({
   prioritization,
   providerName,
-  requestedProviderName,
+  requestedProviderName: _requestedProviderName,
   candidateCount,
   totalProducts,
   prioritizationFallbackReason,
@@ -403,25 +403,6 @@ export function AIDecisionPanel({
       {/* Header */}
       <h2>
         <span style={{ color: isLocal ? DETERM_COLOR : AI_COLOR }}>{panelHeadingIcon}</span>&nbsp;{panelHeading}
-        {providerName && (
-          <span style={{
-            marginLeft: 8, fontSize: 9, fontWeight: 700,
-            background: hasFallback ? 'rgba(255,182,72,0.10)' : 'rgba(124,158,255,0.12)',
-            color: hasFallback ? WARN_COLOR : AI_COLOR,
-            border: `1px solid ${hasFallback ? 'rgba(255,182,72,0.35)' : 'rgba(124,158,255,0.3)'}`,
-            borderRadius: 2, padding: '1px 6px',
-          }}>
-            {providerName}
-          </span>
-        )}
-        {/* Show requested vs actual when they differ */}
-        {requestedProviderName && providerSwitchedToLocal && requestedProviderName.toLowerCase() !== (providerName ?? '').toLowerCase() && (
-          <span style={{
-            marginLeft: 4, fontSize: 9, color: DIM, fontFamily: 'var(--font-mono)',
-          }}>
-            ← {requestedProviderName}
-          </span>
-        )}
         <span style={{
           marginLeft: 6, fontSize: 9, fontWeight: 700,
           color: hasFallback ? WARN_COLOR : DETERM_COLOR,
@@ -429,7 +410,7 @@ export function AIDecisionPanel({
           border: `1px solid ${hasFallback ? 'rgba(255,182,72,0.3)' : 'rgba(53,231,183,0.25)'}`,
           borderRadius: 2, padding: '1px 6px', fontFamily: 'var(--font-mono)',
         }}>
-          {hasFallback ? '⚠ FALLBACK' : '● ACTIVE'}
+          {hasFallback ? '⚠ FALLBACK' : isLocal ? '● LOCAL' : '● ACTIVE'}
         </span>
         <button
           style={{
@@ -477,7 +458,7 @@ export function AIDecisionPanel({
 
           <div style={{ color: DIM, fontSize: 11, marginTop: 5 }}>
             {providerSwitchedToLocal
-              ? `Local deterministic fallback completed the workflow. Requested: ${requestedProviderName ?? 'external AI'}.`
+              ? 'External AI reasoning is unavailable. Deterministic fallback reasoning is in use. Operator approval is still required.'
               : 'Deterministic candidate ordering is active. Operator approval is still required.'}
           </div>
         </div>
