@@ -24,7 +24,6 @@ import {
   evaluatePlan,
   resetScenario,
   getDataProducts,
-  switchScenario,
   getExperience,
   assessManualPlan,
   approvePlan,
@@ -469,15 +468,6 @@ export default function MissionControl() {
   const [rawDataProducts, setRawDataProducts] = useState<DataProduct[]>([]);
   const [hasDataProducts, setHasDataProducts] = useState<boolean>(false);
 
-  // ── V3.4: Scenario management ──────────────────────────────────────────────
-  // activeScenarioPath: used for stale-result guard in handleChoreographyComplete.
-  //   Phase 7A: activeScenarioPath is no longer updated after scenario switches because
-  //   the legacy scenario switch UI was removed. The stale-result guard remains in place
-  //   for the Legacy Mode Banner switch path. The setter is intentionally unused.
-  // scenarioSwitching: used for the Legacy Mode Banner "Switch to High-Volume Demo" button.
-  const [activeScenarioPath, _setActiveScenarioPath] = useState<string | null>(null);
-  const [scenarioSwitching, setScenarioSwitching] = useState(false);
-
   // ── Phase 7: Mission source switcher ──────────────────────────────────────
   const [missionSources, setMissionSources] = useState<MissionSourceInfo[]>([]);
   const [activeSourceId, setActiveSourceId] = useState<string | null>(null);
@@ -551,12 +541,17 @@ export default function MissionControl() {
    * Frozen snapshot of the plan/mode chosen at authorization time.
    * These cannot drift even if later UI state changes recommendation/manualOrder.
    * (INVARIANT E14: execution snapshot immutability)
+   *
+   * Phase 7B: scenarioPath replaced by sourceId for the stale-result guard.
+   * activeScenarioPath was always null in production after Phase 7A, making the
+   * path-based comparison permanently ineffective.  Source identity is the
+   * correct and populated discriminant.
    */
   const executionSnapshotRef = useRef<{
     plan: CandidatePlan;
     mode: 'ai' | 'custom';
     recommendedPlanId: string | null;
-    scenarioPath: string | null;
+    sourceId: string | null;
   } | null>(null);
 
   /**
@@ -886,57 +881,6 @@ export default function MissionControl() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── V3.4: Scenario switch ─────────────────────────────────────────────────
-  // Used by the Legacy Mode Banner "Switch to High-Volume Demo" button.
-  const handleSwitchScenario = useCallback(async (filename: string) => {
-    setScenarioSwitching(true);
-    setDecisionMode('unselected');
-    setAiLifecycle('standby');
-    setAiError(null);
-    setRecommendation(null);
-    setAiProvider(null);
-    setAiRequestedProvider(null);
-    setAiActualProvider(null);
-    setAiPrioritization(null);
-    setAiCandidateCount(null);
-    setAiPrioritizationError(null);
-    setAiPrioritizationFallbackReason(null);
-    setAiRecommendationFallbackReason(null);
-    // Remove ai-prioritized plan from the list on scenario switch
-    setAllPlans((prev) => prev.filter((p) => p.plan_id !== 'ai-prioritized'));
-    setAllEvaluations((prev) => prev.filter((e) => e.plan_id !== 'ai-prioritized'));
-    setManualOrder([]);
-    clearManualAssessmentState();
-    setAiRecommendationRejected(false);
-    setChoreographyActive(false);
-    setPendingExecutionPlan(null);
-    setChoreographyPhase('plan_uplink');
-    // Reset execution coordinator
-    setExecutionId(null);
-    setAuthorizedAtMs(null);
-    setPlaybackStartedAtMs(null);
-    setActivePulse(null);
-    setPresentationPhase('plan_uplink');
-    approvalResultReceivedAtMsRef.current = null;
-    executionPromiseRef.current.clear();
-    executionResultRef.current.clear();
-    executionSnapshotRef.current = null;
-    // Clear scenario-specific experience state on switch
-    setExperienceManifest(null);
-    setExperienceAvailable(false);
-    aiRequestInFlight.current = false;
-    totalWindowRef.current = null;
-    try {
-      await switchScenario(filename);
-      await loadMissionData(false);
-      await loadExperience();  // load new scenario's experience (may be unavailable)
-    } catch (err) {
-      setError(`Failed to switch scenario: ${err}`);
-    } finally {
-      setScenarioSwitching(false);
-    }
-  }, [loadMissionData, loadExperience, clearManualAssessmentState]);
-
   // ── V3.4: Explicit AI analysis — ONLY called by operator action ───────────
   const runAiAnalysis = useCallback(async () => {
     if (aiRequestInFlight.current) return;
@@ -1135,11 +1079,12 @@ export default function MissionControl() {
     );
 
     // Freeze execution snapshot (INVARIANT E14)
+    // Phase 7B: use activeSourceId as stale-result discriminant (path was always null).
     executionSnapshotRef.current = {
       plan: planToExecute,
       mode: 'custom',
       recommendedPlanId: null,
-      scenarioPath: activeScenarioPath,
+      sourceId: activeSourceId,
     };
 
     setExecutionId(newId);
@@ -1154,7 +1099,7 @@ export default function MissionControl() {
     setApprovalPhase('transmitting');
     addSessionEvent('plan_uplink_started', `manual:${manualOrder.length} products`);
     setActiveSection('transmission');
-  }, [manualAssessment, manualAssessmentStale, manualOrder, rawDataProducts, addSessionEvent, activeScenarioPath]);
+  }, [manualAssessment, manualAssessmentStale, manualOrder, rawDataProducts, addSessionEvent, activeSourceId]);
 
   // ── Derived values ─────────────────────────────────────────────────────────
 
@@ -1197,11 +1142,12 @@ export default function MissionControl() {
     );
 
     // Freeze execution snapshot (INVARIANT E14)
+    // Phase 7B: use activeSourceId as stale-result discriminant (path was always null).
     executionSnapshotRef.current = {
       plan: recPlan,
       mode: 'ai',
       recommendedPlanId: recommendation!.recommended_plan_id,
-      scenarioPath: activeScenarioPath,
+      sourceId: activeSourceId,
     };
 
     setExecutionId(newId);
@@ -1217,7 +1163,7 @@ export default function MissionControl() {
     setApprovalPhase('transmitting');
     addSessionEvent('recommendation_approved', `plan=${recPlan.plan_id}`);
     setActiveSection('transmission');
-  }, [recPlan, recommendation, addSessionEvent, activeScenarioPath]);
+  }, [recPlan, recommendation, addSessionEvent, activeSourceId]);
 
   /** Modify: seed manual mode with AI plan packet IDs, switch to manual planning. */
   const handleModifyAiPlan = useCallback(() => {
@@ -1271,33 +1217,37 @@ export default function MissionControl() {
   }, []);
 
   /**
-   * Phase 5.1F (WORKSTREAM D): Production scenario stale-result guard.
-   * Checks whether the result belongs to the current scenario before committing it.
+   * Phase 5.1F / Phase 7B: Mission source stale-result guard.
+   * Checks whether the result belongs to the current mission source before committing it.
    * Called before any state update from a resolved approval Promise.
    *
-   * Uses executionSnapshotRef (frozen at authorization) to compare scenario identity
-   * against the current active scenario path. This is a ref-based check that does not
+   * Phase 7B correction: activeScenarioPath was always null in production after Phase 7A,
+   * making the path-based comparison permanently ineffective.  Source identity
+   * (activeSourceId) is the correct, always-populated discriminant.
+   *
+   * Uses executionSnapshotRef (frozen at authorization) to compare source identity
+   * against the current active source. This is a ref-based check that does not
    * depend on stale React closure values.
    */
-  const currentActiveScenarioPathRef = useRef<string | null>(null);
+  const currentActiveSourceIdRef = useRef<string | null>(null);
 
-  // Keep currentActiveScenarioPathRef up to date with active scenario
+  // Keep currentActiveSourceIdRef up to date with active source
   useEffect(() => {
-    currentActiveScenarioPathRef.current = activeScenarioPath;
-  }, [activeScenarioPath]);
+    currentActiveSourceIdRef.current = activeSourceId;
+  }, [activeSourceId]);
 
   /** Called when TransmissionSequencePanel completes the full sequence. */
   const handleChoreographyComplete = useCallback((result: ApproveResponse) => {
-    // Phase 5.1F (WORKSTREAM D): Validate scenario identity before committing result.
-    // If the operator switched scenarios after authorization, the old result must not
-    // overwrite the new scenario's UI state.
+    // Phase 5.1F / Phase 7B: Validate source identity before committing result.
+    // If the operator switched mission sources after authorization, the old result must not
+    // overwrite the new source's UI state.
     const snapshot = executionSnapshotRef.current;
-    if (snapshot && snapshot.scenarioPath !== currentActiveScenarioPathRef.current) {
+    if (snapshot && snapshot.sourceId !== currentActiveSourceIdRef.current) {
       // Stale result — log diagnostic and discard without touching current UI.
       console.warn(
-        `[GCSI] Stale execution result discarded: result for scenario "${snapshot.scenarioPath}" ` +
-        `arrived after switch to "${currentActiveScenarioPathRef.current}". ` +
-        `This is expected behavior when the operator switches scenarios during execution.`
+        `[GCSI] Stale execution result discarded: result for source "${snapshot.sourceId}" ` +
+        `arrived after switch to "${currentActiveSourceIdRef.current}". ` +
+        `This is expected behavior when the operator switches mission sources during execution.`
       );
       return;
     }
@@ -1408,8 +1358,8 @@ export default function MissionControl() {
     onChoreographyComplete: handleChoreographyComplete,
     onChoreographyError: (msg: string) => {
       const snap = executionSnapshotRef.current;
-      if (snap && snap.scenarioPath !== currentActiveScenarioPathRef.current) {
-        console.warn('[GCSI] Stale execution error discarded (scenario switched).');
+      if (snap && snap.sourceId !== currentActiveSourceIdRef.current) {
+        console.warn('[GCSI] Stale execution error discarded (mission source switched).');
         return;
       }
       setError(msg);
@@ -1657,16 +1607,19 @@ export default function MissionControl() {
 
       {/* ── Legacy mode banner ───────────────────────────────────────────── */}
       {!loading && !error && !hasDataProducts && dataProductsCount === 0 && (
-        <div style={{
-          background: 'rgba(210,153,34,0.06)',
-          borderBottom: '1px solid rgba(210,153,34,0.22)',
-          padding: '8px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 14,
-          flexShrink: 0,
-          zIndex: 50,
-        }}>
+        <div
+          data-testid="legacy-mode-banner"
+          style={{
+            background: 'rgba(210,153,34,0.06)',
+            borderBottom: '1px solid rgba(210,153,34,0.22)',
+            padding: '8px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            flexShrink: 0,
+            zIndex: 50,
+          }}
+        >
           <span style={{
             fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
             fontSize: 9, fontWeight: 700, letterSpacing: '0.07em',
@@ -1682,8 +1635,9 @@ export default function MissionControl() {
             Legacy packet scenario active. High-volume AI prioritization, anomaly analysis, and spacecraft geometry are unavailable.
           </span>
           <button
-            onClick={() => handleSwitchScenario('mission_data_v3.json')}
-            disabled={scenarioSwitching}
+            data-testid="legacy-banner-switch-btn"
+            onClick={() => handleSelectSource('asteria-7')}
+            disabled={sourceSwitching}
             style={{
               padding: '4px 12px',
               background: 'rgba(47,129,247,0.12)',
@@ -1692,10 +1646,10 @@ export default function MissionControl() {
               borderRadius: 3, cursor: 'pointer', flexShrink: 0,
               fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
               fontSize: 11, fontWeight: 600,
-              opacity: scenarioSwitching ? 0.5 : 1,
+              opacity: sourceSwitching ? 0.5 : 1,
             }}
           >
-            {scenarioSwitching ? 'Switching…' : 'Switch to High-Volume Demo'}
+            {sourceSwitching ? 'Switching…' : 'Switch to ASTERIA-7'}
           </button>
         </div>
       )}

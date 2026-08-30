@@ -805,7 +805,7 @@ The default scenario is **ASTERIA-7**: 1,284 products, active thermal anomaly, 1
 7. **Accept or modify** the AI recommendation.
 8. **Simulate transmission** — observe delivered, deferred, and failed products.
 9. **Open Mission Report** — review the full outcome with timing, risk, and product-level detail.
-10. **Switch scenarios** — try `mission_data_v3.json` for a lighter 150-product version.
+10. **Switch scenarios** — use the **Scenario** dropdown in the header to select ASTERIA-7, Juno PJ62 V1, or Juno PJ62 V2 via the Mission Source Catalog.
 
 ---
 

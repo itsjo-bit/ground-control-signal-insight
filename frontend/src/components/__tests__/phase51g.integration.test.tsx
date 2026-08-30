@@ -63,6 +63,8 @@ vi.mock('../../api/client', () => ({
   assessManualPlan: vi.fn(),
   getRecommendation: vi.fn(),
   resetScenario: vi.fn(),
+  getSources: vi.fn(),
+  selectSource: vi.fn(),
 }));
 
 import * as apiClient from '../../api/client';
@@ -410,6 +412,20 @@ function setupDefaultMocks() {
     data_products_count: 2,
     anomalies_count: 0,
   });
+  vi.mocked(apiClient.getSources).mockResolvedValue({
+    active_source_id: 'asteria-7',
+    sources: [
+      { source_id: 'asteria-7', display_name: 'ASTERIA-7', mode: 'synthetic_scenario', description: 'Test', historical: false, simulated: true },
+    ],
+  } as any);
+  vi.mocked(apiClient.selectSource).mockResolvedValue({
+    status: 'switched',
+    active_source_id: 'asteria-7',
+    display_name: 'ASTERIA-7',
+    mode: 'synthetic_scenario',
+    data_products_count: 3,
+    scenario_id: 'test',
+  } as any);
 }
 
 /** Render the real MissionControl inside React.StrictMode */
