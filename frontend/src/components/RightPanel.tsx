@@ -24,10 +24,8 @@ import type {
   DecisionMode,
   EvaluationResult,
   LinkState,
-  MissionSourceMode,
   MissionState,
   RankedProduct,
-  ScenarioInfo,
   WhatIfEvalResponse,
 } from '../types/domain';
 import type { ExperienceManifest } from '../types/experience';
@@ -153,12 +151,6 @@ interface CommonProps {
   onToggleManualSelect: (productId: string) => void;
   onClearManualSelection: () => void;
   onManualReorder: (newOrder: string[]) => void;
-  availableScenarios: ScenarioInfo[];
-  activeScenarioPath: string | null;
-  scenarioSwitching: boolean;
-  onSwitchScenario: (filename: string) => void;
-  // Phase 6E-C7: source mode for historical context note in ConfigPanel
-  sourceMode?: MissionSourceMode | null;
   // ── V3.5 props ───────────────────────────────────────────────────────────────
   workspaceMode?: WorkspaceMode;
   onSetWorkspaceMode?: (mode: WorkspaceMode) => void;
@@ -2529,11 +2521,6 @@ export function RightPanel({
             onResetPanelWidth={onResetPanelWidth}
             panelWidth={panelWidth}
             panelDefaultWidth={panelDefaultWidth}
-            availableScenarios={props.availableScenarios}
-            activeScenarioPath={props.activeScenarioPath}
-            scenarioSwitching={props.scenarioSwitching}
-            onSwitchScenario={props.onSwitchScenario}
-            sourceMode={props.sourceMode}
           />
         )}
       </div>
@@ -3035,11 +3022,6 @@ export function AnalysisPanel({
             onResetPanelWidth={onResetPanelWidth}
             panelWidth={panelWidth}
             panelDefaultWidth={panelDefaultWidth}
-            availableScenarios={props.availableScenarios}
-            activeScenarioPath={props.activeScenarioPath}
-            scenarioSwitching={props.scenarioSwitching}
-            onSwitchScenario={props.onSwitchScenario}
-            sourceMode={props.sourceMode}
           />
         )}
       </div>

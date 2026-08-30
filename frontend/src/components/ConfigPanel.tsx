@@ -1,11 +1,11 @@
 /**
  * ConfigPanel — Interface / Layout / View settings panel.
  *
- * V3.4: Added scenario management section.
  * V4.0: Light analytical workspace theme.
+ * Phase 7A: legacy scenario management section removed.
+ *           Mission source selection is now exclusively in the header ScenarioSwitcher.
  */
 import type { ViewSettings } from '../hooks/useViewSettings';
-import type { MissionSourceMode, ScenarioInfo } from '../types/domain';
 
 interface Props {
   settings: ViewSettings;
@@ -14,13 +14,6 @@ interface Props {
   onResetPanelWidth: () => void;
   panelWidth: number;
   panelDefaultWidth: number;
-  // V3.4: scenario management (optional — not shown when unavailable)
-  availableScenarios?: ScenarioInfo[];
-  activeScenarioPath?: string | null;
-  scenarioSwitching?: boolean;
-  onSwitchScenario?: (filename: string) => void;
-  // Phase 6E-C7: source mode for historical context note
-  sourceMode?: MissionSourceMode | null;
 }
 
 function ToggleRow({
@@ -152,14 +145,7 @@ export function ConfigPanel({
   onResetPanelWidth,
   panelWidth,
   panelDefaultWidth,
-  availableScenarios = [],
-  activeScenarioPath: _activeScenarioPath,
-  scenarioSwitching = false,
-  onSwitchScenario,
-  sourceMode,
 }: Props) {
-  const isHistoricalReplay = sourceMode === 'historical_replay';
-
   return (
     <div style={{ padding: '4px 0', minWidth: 0 }}>
       {/* Header */}
@@ -262,118 +248,6 @@ export function ConfigPanel({
           onChange={(v) => onUpdate('smoothCamera', v)}
         />
       </div>
-
-      {/* ── Scenario Management ── */}
-      {availableScenarios && availableScenarios.length > 0 && (
-        <>
-          <SectionHead>Active Scenario</SectionHead>
-
-          {/* Phase 6E-C7: Historical replay context note */}
-          {isHistoricalReplay && (
-            <div style={{
-              padding: '8px 10px',
-              marginBottom: 10,
-              background: 'rgba(47,129,247,0.06)',
-              border: '1px solid rgba(47,129,247,0.2)',
-              borderRadius: 4,
-              fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-              fontSize: 10.5, lineHeight: 1.5,
-              color: '#8b949e',
-            }}>
-              <span style={{
-                display: 'block', fontWeight: 600,
-                color: '#2f81f7', fontSize: 10, marginBottom: 3,
-              }}>
-                Historical replay is currently active.
-              </span>
-              The list below contains synthetic scenarios.
-              Selecting one exits historical replay and switches the runtime to synthetic mode.
-            </div>
-          )}
-
-          <div style={{ marginBottom: 10 }}>
-            {availableScenarios.map((scen: ScenarioInfo) => {
-              const isActive = scen.is_active;
-              return (
-                <div
-                  key={scen.filename}
-                  style={{
-                    padding: '10px 12px',
-                    marginBottom: 6,
-                    borderRadius: 4,
-                    border: `1px solid ${isActive ? 'rgba(47,129,247,0.30)' : '#30363d'}`,
-                    background: isActive ? 'rgba(47,129,247,0.10)' : '#21262d',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                    <div style={{
-                      fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
-                      fontSize: 10, fontWeight: 600,
-                      color: isActive ? '#2f81f7' : '#8b949e',
-                      wordBreak: 'break-all',
-                    }}>
-                      {scen.filename}
-                    </div>
-                    {isActive && (
-                      <span style={{
-                        fontSize: 8, fontWeight: 700, letterSpacing: '0.07em',
-                        background: 'rgba(63,185,80,0.10)', color: '#3fb950',
-                        border: '1px solid rgba(63,185,80,0.28)',
-                        borderRadius: 2, padding: '1px 5px',
-                        fontFamily: '"IBM Plex Mono"', flexShrink: 0, marginLeft: 6,
-                      }}>
-                        ACTIVE
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 10.5, color: '#8b949e', marginBottom: 4, lineHeight: 1.4 }}>
-                    {scen.label}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {scen.data_products_count > 0 && (
-                      <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#d29922' }}>
-                        {scen.data_products_count} products
-                      </span>
-                    )}
-                    {scen.anomalies_count > 0 && (
-                      <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#f85149' }}>
-                        {scen.anomalies_count} anomalies
-                      </span>
-                    )}
-                    {!scen.has_data_products && (
-                      <span style={{ fontFamily: '"IBM Plex Mono"', fontSize: 9, color: '#d29922' }}>
-                        legacy packets
-                      </span>
-                    )}
-                  </div>
-                  {!isActive && onSwitchScenario && (
-                    <button
-                      onClick={() => onSwitchScenario(scen.filename)}
-                      disabled={scenarioSwitching}
-                      style={{
-                        marginTop: 8, fontSize: 11, padding: '4px 12px',
-                        background: 'rgba(47,129,247,0.10)',
-                        color: '#2f81f7',
-                        border: '1px solid rgba(47,129,247,0.28)',
-                        borderRadius: 4, cursor: 'pointer',
-                        fontFamily: '"IBM Plex Sans"',
-                        opacity: scenarioSwitching ? 0.5 : 1,
-                      }}
-                    >
-                      {scenarioSwitching ? 'Switching…' : 'Switch to this scenario'}
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <div style={{
-            fontFamily: '"IBM Plex Sans"', fontSize: 10, color: '#656d76', lineHeight: 1.5, marginBottom: 8,
-          }}>
-            Switching scenarios resets AI analysis, manual selections, and transmission state.
-          </div>
-        </>
-      )}
 
       {/* ── Restore Defaults ── */}
       <SectionHead>Restore Defaults</SectionHead>

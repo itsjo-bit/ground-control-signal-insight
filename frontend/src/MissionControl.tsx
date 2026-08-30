@@ -24,7 +24,6 @@ import {
   evaluatePlan,
   resetScenario,
   getDataProducts,
-  listScenarios,
   switchScenario,
   getExperience,
   assessManualPlan,
@@ -46,7 +45,6 @@ import type {
   LinkState,
   MissionSourceInfo,
   MissionState,
-  ScenarioInfo,
   SourceSummary,
   WhatIfEvalResponse,
 } from './types/domain';
@@ -472,8 +470,12 @@ export default function MissionControl() {
   const [hasDataProducts, setHasDataProducts] = useState<boolean>(false);
 
   // ── V3.4: Scenario management ──────────────────────────────────────────────
-  const [availableScenarios, setAvailableScenarios] = useState<ScenarioInfo[]>([]);
-  const [activeScenarioPath, setActiveScenarioPath] = useState<string | null>(null);
+  // activeScenarioPath: used for stale-result guard in handleChoreographyComplete.
+  //   Phase 7A: activeScenarioPath is no longer updated after scenario switches because
+  //   the legacy scenario switch UI was removed. The stale-result guard remains in place
+  //   for the Legacy Mode Banner switch path. The setter is intentionally unused.
+  // scenarioSwitching: used for the Legacy Mode Banner "Switch to High-Volume Demo" button.
+  const [activeScenarioPath, _setActiveScenarioPath] = useState<string | null>(null);
   const [scenarioSwitching, setScenarioSwitching] = useState(false);
 
   // ── Phase 7: Mission source switcher ──────────────────────────────────────
@@ -875,11 +877,6 @@ export default function MissionControl() {
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      try {
-        const scenList = await listScenarios();
-        setAvailableScenarios(scenList.scenarios);
-        setActiveScenarioPath(scenList.active_scenario_path);
-      } catch { /* informational */ }
       // Phase 7: load source catalog
       await loadSources();
       await loadMissionData(false);
@@ -890,6 +887,7 @@ export default function MissionControl() {
   }, []);
 
   // ── V3.4: Scenario switch ─────────────────────────────────────────────────
+  // Used by the Legacy Mode Banner "Switch to High-Volume Demo" button.
   const handleSwitchScenario = useCallback(async (filename: string) => {
     setScenarioSwitching(true);
     setDecisionMode('unselected');
@@ -930,9 +928,6 @@ export default function MissionControl() {
     totalWindowRef.current = null;
     try {
       await switchScenario(filename);
-      const scenList = await listScenarios();
-      setAvailableScenarios(scenList.scenarios);
-      setActiveScenarioPath(scenList.active_scenario_path);
       await loadMissionData(false);
       await loadExperience();  // load new scenario's experience (may be unavailable)
     } catch (err) {
@@ -1389,11 +1384,6 @@ export default function MissionControl() {
     onToggleManualSelect: handleToggleManualSelect,
     onClearManualSelection: handleClearManualSelection,
     onManualReorder: handleManualReorder,
-    availableScenarios,
-    activeScenarioPath,
-    scenarioSwitching,
-    onSwitchScenario: handleSwitchScenario,
-    sourceMode: sourceSummary?.mode ?? null,
     experienceManifest,
     experienceAvailable,
     manualAssessment,
