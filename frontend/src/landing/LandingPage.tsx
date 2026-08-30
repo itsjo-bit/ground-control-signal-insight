@@ -168,9 +168,9 @@ function TopNav({ onLaunch }: TopNavProps) {
 
 // ── Hero section ──────────────────────────────────────────────────────────────
 
-interface HeroProps { onLaunch: () => void }
+interface HeroProps { onLaunch: () => void; onLaunchWithSource?: (sourceId: string) => void }
 
-function Hero({ onLaunch }: HeroProps) {
+function Hero({ onLaunch, onLaunchWithSource }: HeroProps) {
   return (
     <section style={{
       position: 'relative',
@@ -256,7 +256,7 @@ function Hero({ onLaunch }: HeroProps) {
             Launch Mission Console →
           </button>
           <button
-            onClick={onLaunch}
+            onClick={() => onLaunchWithSource ? onLaunchWithSource('juno-pj62-v2') : onLaunch()}
             style={{
               fontFamily: SANS, fontSize: 13, fontWeight: 500,
               color: C.text, background: 'transparent',
@@ -267,7 +267,7 @@ function Hero({ onLaunch }: HeroProps) {
             onMouseEnter={e => (e.currentTarget.style.borderColor = C.accent)}
             onMouseLeave={e => (e.currentTarget.style.borderColor = C.border)}
           >
-            Explore Historical Replay
+            Explore Juno PJ62 Replay
           </button>
         </div>
 
@@ -581,9 +581,9 @@ function CapabilitiesSection() {
 
 // ── Scenarios ─────────────────────────────────────────────────────────────────
 
-interface ScenariosProps { onLaunch: () => void }
+interface ScenariosProps { onLaunch: () => void; onLaunchWithSource?: (sourceId: string) => void }
 
-function ScenariosSection({ onLaunch }: ScenariosProps) {
+function ScenariosSection({ onLaunch, onLaunchWithSource }: ScenariosProps) {
   return (
     <Section id="scenarios">
       <div style={{ maxWidth: 900, margin: '0 auto' }}>
@@ -627,7 +627,7 @@ function ScenariosSection({ onLaunch }: ScenariosProps) {
               letterSpacing: '0.10em', textTransform: 'uppercase', marginBottom: 16 }}>
               Designed For · Onboarding · Workflow Testing · Demo
             </div>
-            <button onClick={onLaunch} style={{
+            <button onClick={() => onLaunchWithSource ? onLaunchWithSource('asteria-7') : onLaunch()} style={{
               fontFamily: SANS, fontSize: 12, fontWeight: 500,
               color: C.accent, background: 'transparent',
               border: `1px solid ${C.accent}44`, borderRadius: 3,
@@ -681,7 +681,7 @@ function ScenariosSection({ onLaunch }: ScenariosProps) {
               letterSpacing: '0.10em', textTransform: 'uppercase', marginBottom: 16 }}>
               403 Products · 9.35 Gbit Queue · 81 Mbit Budget · ~115× Pressure
             </div>
-            <button onClick={onLaunch} style={{
+            <button onClick={() => onLaunchWithSource ? onLaunchWithSource('juno-pj62-v2') : onLaunch()} style={{
               fontFamily: SANS, fontSize: 12, fontWeight: 500,
               color: C.amber, background: 'transparent',
               border: `1px solid ${C.amber}44`, borderRadius: 3,
@@ -691,7 +691,7 @@ function ScenariosSection({ onLaunch }: ScenariosProps) {
               onMouseEnter={e => { e.currentTarget.style.borderColor = C.amber; e.currentTarget.style.background = `${C.amber}12`; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = `${C.amber}44`; e.currentTarget.style.background = 'transparent'; }}
             >
-              Open Juno Historical Replay →
+              Open Juno PJ62 Replay →
             </button>
           </div>
         </div>
@@ -1029,9 +1029,10 @@ function Footer() {
 
 interface LandingPageProps {
   onLaunchConsole: () => void;
+  onLaunchWithSource: (sourceId: string) => void;
 }
 
-export function LandingPage({ onLaunchConsole }: LandingPageProps) {
+export function LandingPage({ onLaunchConsole, onLaunchWithSource }: LandingPageProps) {
   return (
     <div style={{
       background: C.bg, color: C.text,
@@ -1040,11 +1041,11 @@ export function LandingPage({ onLaunchConsole }: LandingPageProps) {
     }}>
       <TopNav onLaunch={onLaunchConsole} />
       <main>
-        <Hero onLaunch={onLaunchConsole} />
+        <Hero onLaunch={onLaunchConsole} onLaunchWithSource={onLaunchWithSource} />
         <ProblemSection />
         <HowItWorksSection />
         <CapabilitiesSection />
-        <ScenariosSection onLaunch={onLaunchConsole} />
+        <ScenariosSection onLaunch={onLaunchConsole} onLaunchWithSource={onLaunchWithSource} />
         <TrustSection />
         <ConsolePreview onLaunch={onLaunchConsole} />
         <FinalCTA onLaunch={onLaunchConsole} />

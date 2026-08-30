@@ -8,6 +8,21 @@
  * workspace. Same structure / hierarchy as V4.0 — only colors change.
  */
 
+/* ── Global reset ────────────────────────────────────────────────────────────
+ * Eliminates the browser's default 8px body gutter and ensures consistent
+ * box-sizing across landing page and console. overflow:hidden is intentionally
+ * omitted here — the landing page must scroll; MissionControl applies it
+ * locally where needed.
+ */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+}
+
 :root {
   /* ── Fonts ── */
   --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;

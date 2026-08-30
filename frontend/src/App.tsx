@@ -11,6 +11,7 @@
 import { useState, useEffect } from 'react';
 import { LandingPage } from './landing/LandingPage';
 import MissionControl from './MissionControl';
+import { selectSource } from './api/client';
 
 type View = 'landing' | 'console';
 
@@ -38,9 +39,28 @@ export function App() {
     setView('console');
   }
 
+  /**
+   * Select a specific source on the backend then open the console.
+   * If the API call fails (e.g. backend not running), we still open the
+   * console — the console will load whichever source is currently active.
+   */
+  async function launchWithSource(sourceId: string) {
+    try {
+      await selectSource(sourceId);
+    } catch {
+      // Non-fatal: console opens regardless; source selection is best-effort.
+    }
+    launchConsole();
+  }
+
   if (view === 'console') {
     return <MissionControl />;
   }
 
-  return <LandingPage onLaunchConsole={launchConsole} />;
+  return (
+    <LandingPage
+      onLaunchConsole={launchConsole}
+      onLaunchWithSource={launchWithSource}
+    />
+  );
 }
