@@ -50,14 +50,14 @@ during development and led to a deliberately iterative workflow:
 **small scoped task → Bob implementation → independent review → regression
 testing → refinement**
 
-At the **Phase 6E-C8 readiness checkpoint**, the canonical verification suite reports:
+At the **Phase 8A readiness checkpoint**, the canonical verification suite reports:
 
-- **3,590 backend tests passing** (3 skipped, 1 deselected) — run with `python -m pytest tests -q`
-- **218 frontend tests passing** (6 test files) — run with `npm test` from `frontend/`
+- **5,056 backend tests passing** (4 skipped, 1 deselected) — run with `python -m pytest tests -q`
+- **363 frontend tests passing** (12 test files) — run with `npm test` from `frontend/`
 - TypeScript typecheck: **pass** — run with `npm run typecheck` from `frontend/`
 - Production build: **pass** — run with `npm run build` from `frontend/`
 
-These numbers reflect the Phase 6E-C8 state.
+These numbers reflect the Phase 8A state.
 Reproduce them with the canonical commands above rather than relying on this static count.
 
 ---
