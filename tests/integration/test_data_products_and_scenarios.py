@@ -11,7 +11,7 @@ Covers all requirements from the V3.4.1 task:
 - POST /scenarios/switch rejects path traversal attempts (404)
 - Reset after switch reloads the switched-to scenario, not the original
 - /health returns version and scenario metadata
-- Default startup uses mission_data_v3.json (no GCSI_SCENARIO_PATH set)
+- Default startup uses ASTERIA-7 (no GCSI_SCENARIO_PATH set); mission_data_v3.json is the frozen benchmark input, not the default
 - Explicit GCSI_SCENARIO_PATH override is respected
 """
 

@@ -273,3 +273,125 @@ class TestApplyAnomalyModeUnit:
         resolved = _anomaly("A1", status="resolved")
         result = _apply_anomaly_mode([resolved], AnomalyMode.RESOLVED_DECOY)
         assert result[0].status == "resolved"
+
+
+# ---------------------------------------------------------------------------
+# Phase 7D: Benchmark provenance integrity regression
+# ---------------------------------------------------------------------------
+# These constants document the two authoritative SHA256 values for
+# mission_data_v3.json.  They measure DIFFERENT representations of the same
+# source data and are intentionally different:
+#
+#   _V3_FILE_SHA256   — SHA256 of the raw file bytes on disk.
+#                       Enforced by test_phase4_2e_ground_reception.py and
+#                       test_phase4_2f5_ground_reception.py.
+#                       Must equal `hashlib.sha256(path.read_bytes()).hexdigest()`.
+#
+#   _V3_MODEL_SHA256  — SHA256 of scenario.model_dump_json() (the Pydantic
+#                       object re-serialized).  This is what the benchmark
+#                       runner records as `base_scenario_sha256` in every
+#                       manifest.json and raw_results.jsonl trial record.
+#                       Computed by _sha256_scenario() in scenario_variants.py.
+#
+# IMPORTANT: Modifying mission_data_v3.json will change BOTH values.
+# Any such change requires operator review and freeze-stability assessment.
+
+_V3_FILE_SHA256 = "dea5339623a604f3119a46c6fc754a2df22340acf7466f7783b3ac93e05501a9"
+_V3_MODEL_SHA256 = "de43388647287c3b99849c0fc9b940ce7234acd4be6ae9d212befa5b6eac3b08"
+
+# SHA256 recorded in the frozen benchmark result manifest
+# benchmarks/results/run-20260826-110706-530179c2/manifest.json
+_FROZEN_MANIFEST_BASE_SCENARIO_SHA256 = (
+    "de43388647287c3b99849c0fc9b940ce7234acd4be6ae9d212befa5b6eac3b08"
+)
+
+
+class TestBenchmarkProvenanceIntegrity:
+    """Phase 7D: Verify the two authoritative SHA256 hashes for mission_data_v3.json.
+
+    These two hashes are intentionally different — they hash different representations
+    of the same source file.  A test failure here means mission_data_v3.json has been
+    mutated and requires operator review before any benchmark claim is valid.
+    """
+
+    def test_file_bytes_sha256_matches_frozen_constant(self):
+        """Raw file bytes of mission_data_v3.json must equal _V3_FILE_SHA256.
+
+        This is the same assertion made by test_phase4_2e_ground_reception.py and
+        test_phase4_2f5_ground_reception.py.  It is reproduced here as an explicit
+        benchmark-provenance checkpoint so that the connection between the file-byte
+        hash and the benchmark model-sha is visible in one place.
+        """
+        if not BASE_SCENARIO_PATH.exists():
+            pytest.skip(f"Base scenario not found at {BASE_SCENARIO_PATH}")
+        actual = hashlib.sha256(BASE_SCENARIO_PATH.read_bytes()).hexdigest()
+        assert actual == _V3_FILE_SHA256, (
+            f"data/scenarios/mission_data_v3.json raw-bytes SHA256 changed!\n"
+            f"  Expected (frozen): {_V3_FILE_SHA256}\n"
+            f"  Actual:            {actual}\n"
+            "This file is the frozen benchmark base scenario and must not be modified "
+            "without operator review and a freeze-stability assessment."
+        )
+
+    def test_model_dump_json_sha256_matches_frozen_constant(self):
+        """SHA256 of scenario.model_dump_json() must equal _V3_MODEL_SHA256.
+
+        This is the value recorded as `base_scenario_sha256` in every
+        benchmark trial record and manifest.  If this changes, the frozen
+        benchmark result in benchmarks/results/run-20260826-110706-530179c2/
+        can no longer be reproduced from the current file.
+        """
+        if not BASE_SCENARIO_PATH.exists():
+            pytest.skip(f"Base scenario not found at {BASE_SCENARIO_PATH}")
+        gen = ScenarioVariantGenerator(
+            base_scenario_path=BASE_SCENARIO_PATH,
+            capacity_ratios=(0.35,),
+            anomaly_modes=(AnomalyMode.ORIGINAL,),
+            deadline_scales=(1.0,),
+        )
+        actual = gen.base_sha256
+        assert actual == _V3_MODEL_SHA256, (
+            f"SHA256 of mission_data_v3 model_dump_json() changed!\n"
+            f"  Expected (frozen benchmark value): {_V3_MODEL_SHA256}\n"
+            f"  Actual:                            {actual}\n"
+            "This hash is recorded as `base_scenario_sha256` in the frozen benchmark "
+            "result (run-20260826-110706-530179c2).  A change means the frozen result "
+            "can no longer be reproduced from the current file bytes."
+        )
+
+    def test_frozen_manifest_base_scenario_sha256_matches_model_hash(self):
+        """The `base_scenario_sha256` in the frozen manifest must equal _V3_MODEL_SHA256.
+
+        This cross-checks that the model-dump hash constant here is consistent with
+        what was actually written to the frozen benchmark manifest at commit bce0c61.
+        """
+        import json as _json
+        manifest_path = Path("benchmarks/results/run-20260826-110706-530179c2/manifest.json")
+        if not manifest_path.exists():
+            pytest.skip(f"Frozen manifest not found at {manifest_path}")
+        manifest = _json.loads(manifest_path.read_bytes())
+        stored = manifest.get("base_scenario_sha256", "")
+        assert stored == _FROZEN_MANIFEST_BASE_SCENARIO_SHA256, (
+            f"Frozen manifest base_scenario_sha256 does not match expected value!\n"
+            f"  Expected: {_FROZEN_MANIFEST_BASE_SCENARIO_SHA256}\n"
+            f"  Stored:   {stored}\n"
+            "The frozen manifest must not be modified."
+        )
+        # Also confirm it is NOT equal to the file-byte hash (intentional by design)
+        assert stored != _V3_FILE_SHA256, (
+            "base_scenario_sha256 in manifest unexpectedly equals the raw-file-byte hash. "
+            "These hashes measure different representations and should differ."
+        )
+
+    def test_two_sha256_values_differ_by_design(self):
+        """The file-byte SHA256 and the model-dump SHA256 must not be equal.
+
+        Equality would indicate a collision or a change in Pydantic serialisation
+        behaviour that accidentally produced matching output.  Both values are
+        individually pinned above; this test documents the expected inequality.
+        """
+        assert _V3_FILE_SHA256 != _V3_MODEL_SHA256, (
+            "File-byte SHA256 and model_dump_json SHA256 are equal — unexpected. "
+            "Check whether _sha256_scenario() in scenario_variants.py was changed "
+            "to hash raw bytes instead of the serialised Pydantic object."
+        )

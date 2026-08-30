@@ -301,6 +301,15 @@ Every run produces a `manifest.json` containing:
 - `retry_policy`, `primary_metrics`, `comparison_tolerance`
 - `python_version`, `platform`
 
+**Hash semantics — `base_scenario_sha256`**: This field is computed by
+`_sha256_scenario()` in `scenario_variants.py`, which hashes the
+**Pydantic-serialized JSON** (`scenario.model_dump_json()`) of the loaded
+`Scenario` object — **not** the raw bytes of `mission_data_v3.json`.
+The authoritative file-byte SHA256 of `mission_data_v3.json` is maintained
+separately by the frozen integrity tests in `test_phase4_2e_ground_reception.py`
+and `test_phase4_2f5_ground_reception.py`. These two hashes differ by design:
+they measure different representations of the same source data.
+
 **No secrets** (no API keys, no IAM tokens, no project IDs) are written to any output file.
 
 Provenance hashes per trial:
