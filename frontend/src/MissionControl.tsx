@@ -1380,6 +1380,7 @@ export default function MissionControl() {
     aiLifecycle,
     aiError,
     onRunAiAnalysis: runAiAnalysis,
+    onNavigateSection: setActiveSection,
     rawDataProducts,
     hasDataProducts,
     manualSelectedIds,

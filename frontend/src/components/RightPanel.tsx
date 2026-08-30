@@ -224,6 +224,11 @@ interface CommonProps {
   aiRecommendationRejected: boolean;
   /** Session event log from missionExperienceReducer. */
   sessionEvents: SessionEvent[];
+  /**
+   * Navigate to the given section (e.g. 'ai') from within a panel.
+   * Optional for backward compatibility; used by TransmissionSection.
+   */
+  onNavigateSection?: (section: NavSection) => void;
 }
 
 // ── StatGrid ──────────────────────────────────────────────────────────────────
@@ -1852,9 +1857,175 @@ function TransmissionSection(props: CommonProps) {
     );
   }
 
-  // AI Assisted mode: show "AWAITING AUTHORIZATION" until operator approves in Decision
   const isAiMode = props.decisionMode === 'ai';
   const isTransmissionComplete = props.approvalPhase === 'complete';
+
+  // ── AI lifecycle-aware gate ─────────────────────────────────────────────────
+  // Only shown when AI mode is selected and transmission is not yet complete.
+  // The gate varies by aiLifecycle so the user is never sent to a dead-end.
+  let aiGateSection: React.ReactNode = null;
+  if (isAiMode && !isTransmissionComplete) {
+    const lc = props.aiLifecycle;
+
+    if (lc === 'standby') {
+      // STATE A — no analysis yet; prompt user to run it right here
+      aiGateSection = (
+        <ResizableSection title="AI Analysis Required" icon="◈" accent="#d29922">
+          <div style={{
+            background: '#21262d',
+            border: '1px solid rgba(210,153,34,0.22)',
+            borderRadius: 4, padding: '14px 16px',
+          }}>
+            <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 9, color: '#d29922', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 10 }}>
+              No Analysis Yet
+            </div>
+            <div style={{ fontFamily: '"IBM Plex Sans", system-ui', fontSize: 12, color: '#8b949e', lineHeight: 1.6, marginBottom: 14 }}>
+              AI has not analyzed this mission yet.
+              Run mission analysis before reviewing or authorizing a transmission.
+            </div>
+            <button
+              onClick={() => props.onRunAiAnalysis()}
+              style={{
+                width: '100%', padding: '8px 0', fontSize: 12, fontWeight: 600,
+                fontFamily: '"IBM Plex Sans", system-ui', cursor: 'pointer',
+                background: '#d29922', color: '#0d1117',
+                border: '1px solid #d29922', borderRadius: 3,
+              }}
+            >
+              Analyze Mission with AI
+            </button>
+          </div>
+        </ResizableSection>
+      );
+    } else if (lc === 'analyzing') {
+      // STATE B — analysis in progress
+      aiGateSection = (
+        <ResizableSection title="AI Analysis In Progress" icon="◈" accent="#2f81f7">
+          <div style={{
+            background: '#21262d',
+            border: '1px solid rgba(47,129,247,0.22)',
+            borderRadius: 4, padding: '14px 16px',
+          }}>
+            <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 9, color: '#2f81f7', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 10 }}>
+              Analyzing…
+            </div>
+            <div style={{ fontFamily: '"IBM Plex Sans", system-ui', fontSize: 12, color: '#8b949e', lineHeight: 1.6, marginBottom: 14 }}>
+              AI analysis is running. Authorization will become available once analysis completes.
+            </div>
+            <button
+              disabled
+              style={{
+                width: '100%', padding: '8px 0', fontSize: 12, fontWeight: 600,
+                fontFamily: '"IBM Plex Sans", system-ui', cursor: 'not-allowed',
+                background: 'rgba(47,129,247,0.18)', color: '#2f81f7',
+                border: '1px solid rgba(47,129,247,0.30)', borderRadius: 3,
+                opacity: 0.7,
+              }}
+            >
+              Analyzing…
+            </button>
+          </div>
+        </ResizableSection>
+      );
+    } else if (lc === 'error') {
+      // STATE C — analysis failed; offer retry
+      aiGateSection = (
+        <ResizableSection title="AI Analysis Failed" icon="◈" accent="#f85149">
+          <div style={{
+            background: '#21262d',
+            border: '1px solid rgba(248,81,73,0.22)',
+            borderRadius: 4, padding: '14px 16px',
+          }}>
+            <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 9, color: '#f85149', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 10 }}>
+              Analysis Failed
+            </div>
+            {props.aiError && (
+              <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 10, color: '#f85149', marginBottom: 10, lineHeight: 1.4, wordBreak: 'break-word' }}>
+                {props.aiError}
+              </div>
+            )}
+            <div style={{ fontFamily: '"IBM Plex Sans", system-ui', fontSize: 12, color: '#8b949e', lineHeight: 1.6, marginBottom: 14 }}>
+              AI analysis could not complete. Retry to generate a recommendation before authorizing transmission.
+            </div>
+            <button
+              onClick={() => props.onRunAiAnalysis()}
+              style={{
+                width: '100%', padding: '8px 0', fontSize: 12, fontWeight: 600,
+                fontFamily: '"IBM Plex Sans", system-ui', cursor: 'pointer',
+                background: 'rgba(248,81,73,0.12)', color: '#f85149',
+                border: '1px solid rgba(248,81,73,0.35)', borderRadius: 3,
+              }}
+            >
+              Retry AI Analysis
+            </button>
+          </div>
+        </ResizableSection>
+      );
+    } else if (lc === 'stale') {
+      // STATE D — previous result exists but is no longer current
+      aiGateSection = (
+        <ResizableSection title="AI Analysis Stale" icon="◈" accent="#d29922">
+          <div style={{
+            background: '#21262d',
+            border: '1px solid rgba(210,153,34,0.22)',
+            borderRadius: 4, padding: '14px 16px',
+          }}>
+            <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 9, color: '#d29922', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 10 }}>
+              Analysis Out of Date
+            </div>
+            <div style={{ fontFamily: '"IBM Plex Sans", system-ui', fontSize: 12, color: '#8b949e', lineHeight: 1.6, marginBottom: 14 }}>
+              Mission context or data has changed since the last analysis.
+              Re-run analysis to get a current recommendation before authorizing transmission.
+            </div>
+            <button
+              onClick={() => props.onRunAiAnalysis()}
+              style={{
+                width: '100%', padding: '8px 0', fontSize: 12, fontWeight: 600,
+                fontFamily: '"IBM Plex Sans", system-ui', cursor: 'pointer',
+                background: '#d29922', color: '#0d1117',
+                border: '1px solid #d29922', borderRadius: 3,
+              }}
+            >
+              Re-run AI Analysis
+            </button>
+          </div>
+        </ResizableSection>
+      );
+    } else {
+      // STATE E — ready (aiLifecycle === 'ready' and recommendation exists)
+      aiGateSection = (
+        <ResizableSection title="Authorization Required" icon="◉" accent="#2f81f7">
+          <div style={{
+            background: '#21262d',
+            border: '1px solid rgba(47,129,247,0.22)',
+            borderRadius: 4, padding: '14px 16px',
+          }}>
+            <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 9, color: '#8b949e', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 10 }}>
+              Awaiting Operator Authorization
+            </div>
+            <div style={{ fontFamily: '"IBM Plex Sans", system-ui', fontSize: 12, color: '#8b949e', lineHeight: 1.6, marginBottom: 14 }}>
+              AI analysis is ready. Review the Decision tab in AI Copilot before authorizing transmission.
+            </div>
+            <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 11, color: '#8b949e', marginBottom: 12, lineHeight: 1.5 }}>
+              Use <strong>✓ Approve Transmission</strong> in the Decision tab to authorize a single authoritative execution.
+              Once approved, this Transmission panel will show execution status and playback.
+            </div>
+            <button
+              onClick={() => props.onNavigateSection?.('ai')}
+              style={{
+                width: '100%', padding: '8px 0', fontSize: 12, fontWeight: 600,
+                fontFamily: '"IBM Plex Sans", system-ui', cursor: 'pointer',
+                background: '#2f81f7', color: '#ffffff',
+                border: '1px solid #2f81f7', borderRadius: 3,
+              }}
+            >
+              Open AI Copilot
+            </button>
+          </div>
+        </ResizableSection>
+      );
+    }
+  }
 
   return (
     <>
@@ -1868,38 +2039,8 @@ function TransmissionSection(props: CommonProps) {
         </div>
       </ResizableSection>
 
-      {/* AI mode: single authorization point gate */}
-      {isAiMode && !isTransmissionComplete && (
-        <ResizableSection title="Authorization Required" icon="◉" accent="#2f81f7">
-          <div style={{
-            background: '#21262d',
-            border: '1px solid rgba(47,129,247,0.22)',
-            borderRadius: 4, padding: '14px 16px',
-          }}>
-            <div style={{ fontFamily: '"IBM Plex Mono", ui-monospace, monospace', fontSize: 9, color: '#8b949e', letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: 10 }}>
-              Awaiting Operator Authorization
-            </div>
-            <div style={{ fontFamily: '"IBM Plex Sans", system-ui', fontSize: 12, color: '#8b949e', lineHeight: 1.6, marginBottom: 14 }}>
-              Review the final recommendation in <strong style={{ color: '#2f81f7' }}>AI Copilot → Decision</strong>.
-            </div>
-            <div style={{ fontFamily: '"IBM Plex Sans"', fontSize: 11, color: '#8b949e', marginBottom: 12, lineHeight: 1.5 }}>
-              Use <strong>✓ Approve Transmission</strong> in the Decision tab to authorize a single authoritative execution.
-              Once approved, this Transmission panel will show execution status and playback.
-            </div>
-            <button
-              onClick={() => props.onSelectDecisionMode('ai')}
-              style={{
-                width: '100%', padding: '8px 0', fontSize: 12, fontWeight: 600,
-                fontFamily: '"IBM Plex Sans", system-ui', cursor: 'pointer',
-                background: '#2f81f7', color: '#ffffff',
-                border: '1px solid #2f81f7', borderRadius: 3,
-              }}
-            >
-              Go to Decision
-            </button>
-          </div>
-        </ResizableSection>
-      )}
+      {/* AI mode lifecycle-aware gate */}
+      {aiGateSection}
 
       {/* Manual mode: keep Approval bar with EVALUATE SELECTION / TRANSMIT SELECTED */}
       {!isAiMode && (

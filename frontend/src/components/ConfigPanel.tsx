@@ -178,40 +178,6 @@ export function ConfigPanel({
         Interface, layout, and 3D view preferences. All settings are saved automatically.
       </div>
 
-      {/* ── Interface ── */}
-      <SectionHead>Interface</SectionHead>
-
-      <div style={{ padding: '4px 0 0' }}>
-        <div style={{
-          fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-          fontSize: 12, fontWeight: 500, color: '#e6edf3',
-          marginBottom: 6,
-        }}>
-          Density
-        </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {(['compact', 'comfortable'] as const).map((d) => (
-            <button
-              key={d}
-              onClick={() => onUpdate('density', d)}
-              style={{
-                padding: '5px 14px',
-                borderRadius: 4,
-                fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
-                fontSize: 11.5, fontWeight: 500,
-                cursor: 'pointer',
-                border: `1px solid ${settings.density === d ? 'rgba(47,129,247,0.40)' : '#444c56'}`,
-                background: settings.density === d ? 'rgba(47,129,247,0.14)' : '#21262d',
-                color: settings.density === d ? '#2f81f7' : '#8b949e',
-                transition: 'all 0.15s',
-              }}
-            >
-              {d.charAt(0).toUpperCase() + d.slice(1)}
-            </button>
-          ))}
-        </div>
-      </div>
-
       {/* ── Main Control Layout ── */}
       <SectionHead>Main Control Layout</SectionHead>
 
