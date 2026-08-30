@@ -493,8 +493,8 @@ class GeminiProvider(BaseAIProvider):
 
         Stage-2 uses:
         - maxOutputTokens = 4096 (increased from 1024 to prevent truncation)
-        - responseSchema enforcing the exact OPTION alias set (structured output)
-        - thinkingConfig with thinkingLevel=MINIMAL for Gemini 3.x models only
+        - response_mime_type = application/json
+        - temperature = 0.0
 
         Raises:
             AIProviderError:  If the API key is missing or the API fails.
@@ -507,26 +507,8 @@ class GeminiProvider(BaseAIProvider):
         alias_map = {s.option_id: s.option_id for s in summaries}
         user_message = build_stage2_user_message(summaries, link_state, mission_state, anomalies)
 
-        # Build the list of valid opaque OPTION aliases for the response schema.
-        option_aliases = sorted(alias_map.keys())
-        response_schema = _build_stage2_response_schema(option_aliases)
-
         url = f"{_GEMINI_BASE_URL}/{self._model}:generateContent"
         params = {"key": self._api_key}
-
-        generation_config: dict[str, Any] = {
-            "response_mime_type": "application/json",
-            "responseSchema": response_schema,
-            "temperature": 0.0,
-            "maxOutputTokens": _STAGE2_MAX_OUTPUT_TOKENS,
-        }
-
-        # Gemini 3.x models support thinkingConfig.  Stage-2 is a constrained
-        # selection task — MINIMAL thinking reduces latency and output pressure
-        # without changing the decision criteria.  Older Gemini models do not
-        # support this parameter and must not receive it.
-        if _is_gemini_3x(self._model):
-            generation_config["thinkingConfig"] = {"thinkingBudget": 0}
 
         payload = {
             "system_instruction": {
@@ -538,7 +520,11 @@ class GeminiProvider(BaseAIProvider):
                     "parts": [{"text": user_message}],
                 }
             ],
-            "generationConfig": generation_config,
+            "generationConfig": {
+                "response_mime_type": "application/json",
+                "temperature": 0.0,
+                "maxOutputTokens": _STAGE2_MAX_OUTPUT_TOKENS,
+            },
         }
         try:
             with httpx.Client(timeout=self._timeout_s) as client:

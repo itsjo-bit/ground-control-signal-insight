@@ -861,65 +861,38 @@ def _captured_stage2_payload(
 
 
 # ---------------------------------------------------------------------------
-# TASK 11 — Stage-2 request shape
+# TASK 11 — Stage-2 request shape (8B.4-R: no responseSchema, no thinkingConfig)
 # ---------------------------------------------------------------------------
 
 class TestStage2RequestShape:
-    """Task 11: prove Stage-2 request contains the required fields/values."""
+    """Task 11: prove Stage-2 request has the correct generationConfig shape.
+
+    8B.4-R correction: responseSchema and thinkingConfig have been removed from
+    Stage-2 requests.  The accepted pre-8B.4 request shape is restored, except
+    maxOutputTokens is 4096 instead of 1024.
+    """
 
     def _provider_2x(self) -> GeminiProvider:
-        """Provider configured with a Gemini 2.x model (no thinkingConfig)."""
+        """Provider configured with a Gemini 2.x model."""
         return GeminiProvider(api_key="fake-key", model="gemini-2.0-flash")
 
     def _provider_3x(self) -> GeminiProvider:
-        """Provider configured with a Gemini 3.x model (thinkingConfig required)."""
+        """Provider configured with a Gemini 3.x model."""
         return GeminiProvider(api_key="fake-key", model="gemini-3.0-flash")
 
     def test_response_mime_type_is_application_json(self):
         payload = _captured_stage2_payload(self._provider_2x())
         assert payload["generationConfig"]["response_mime_type"] == "application/json"
 
-    def test_response_schema_is_present(self):
+    def test_no_response_schema_in_generation_config(self):
+        """8B.4-R: responseSchema must NOT be present — it caused HTTP 400."""
         payload = _captured_stage2_payload(self._provider_2x())
-        assert "responseSchema" in payload["generationConfig"]
+        assert "responseSchema" not in payload["generationConfig"]
 
-    def test_response_schema_root_is_object(self):
-        payload = _captured_stage2_payload(self._provider_2x())
-        schema = payload["generationConfig"]["responseSchema"]
-        assert schema["type"] == "OBJECT"
-
-    def test_response_schema_required_fields(self):
-        payload = _captured_stage2_payload(self._provider_2x())
-        schema = payload["generationConfig"]["responseSchema"]
-        required = set(schema["required"])
-        assert "recommended_option_id" in required
-        assert "reasoning" in required
-        assert "confidence" in required
-        assert "evidence" in required
-
-    def test_response_schema_option_aliases_are_opaque(self):
-        """Schema enum must only contain OPTION-X aliases, no real plan IDs."""
-        summaries = _make_stage2_summaries()
-        payload = _captured_stage2_payload(self._provider_2x(), summaries=summaries)
-        schema = payload["generationConfig"]["responseSchema"]
-        aliases = schema["properties"]["recommended_option_id"]["enum"]
-        for alias in aliases:
-            assert alias.startswith("OPTION-"), (
-                f"Schema enum contains non-opaque alias: {alias!r}"
-            )
-        # Must contain all provided aliases
-        assert set(aliases) == {"OPTION-A", "OPTION-B", "OPTION-C"}
-
-    def test_response_schema_no_real_plan_ids(self):
-        """Schema must never enumerate real plan names."""
-        summaries = _make_stage2_summaries()
-        payload = _captured_stage2_payload(self._provider_2x(), summaries=summaries)
-        schema_json = json.dumps(payload["generationConfig"]["responseSchema"])
-        for forbidden in ("baseline", "ai-prioritized", "deadline-first",
-                          "mission-critical-first", "value-per-cost"):
-            assert forbidden not in schema_json, (
-                f"Forbidden plan name {forbidden!r} found in responseSchema"
-            )
+    def test_no_response_schema_for_3x_model_either(self):
+        """responseSchema must be absent regardless of model generation."""
+        payload = _captured_stage2_payload(self._provider_3x())
+        assert "responseSchema" not in payload["generationConfig"]
 
     def test_max_output_tokens_is_4096(self):
         payload = _captured_stage2_payload(self._provider_2x())
@@ -930,21 +903,25 @@ class TestStage2RequestShape:
         payload = _captured_stage2_payload(self._provider_2x())
         assert payload["generationConfig"]["maxOutputTokens"] != 1024
 
-    def test_gemini_2x_has_no_thinking_config(self):
-        """A Gemini 2.x model must NOT receive thinkingConfig."""
+    def test_temperature_is_zero(self):
+        payload = _captured_stage2_payload(self._provider_2x())
+        assert payload["generationConfig"]["temperature"] == 0.0
+
+    def test_no_thinking_config_for_2x_model(self):
+        """thinkingConfig must NOT be present for Gemini 2.x models."""
         payload = _captured_stage2_payload(self._provider_2x())
         assert "thinkingConfig" not in payload["generationConfig"]
 
-    def test_gemini_3x_has_thinking_config(self):
-        """A Gemini 3.x model MUST receive thinkingConfig."""
+    def test_no_thinking_config_for_3x_model(self):
+        """8B.4-R: thinkingConfig must NOT be present for any model — it caused HTTP 400."""
         payload = _captured_stage2_payload(self._provider_3x())
-        assert "thinkingConfig" in payload["generationConfig"]
+        assert "thinkingConfig" not in payload["generationConfig"]
 
-    def test_gemini_3x_thinking_budget_is_zero(self):
-        """thinkingConfig must set thinkingBudget=0 (minimal thinking)."""
-        payload = _captured_stage2_payload(self._provider_3x())
-        thinking = payload["generationConfig"]["thinkingConfig"]
-        assert thinking.get("thinkingBudget") == 0
+    def test_generation_config_keys_are_exact(self):
+        """generationConfig must contain exactly the three pre-8B.4 keys."""
+        payload = _captured_stage2_payload(self._provider_2x())
+        gc_keys = set(payload["generationConfig"].keys())
+        assert gc_keys == {"response_mime_type", "temperature", "maxOutputTokens"}
 
 
 # ---------------------------------------------------------------------------
